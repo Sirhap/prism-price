@@ -243,3 +243,12 @@ test('新轮次随机起点，断点续跑保留起点且覆盖另一半', async
   const next=[];const two=await runSync(options(checkpoint,{apply:true,resume:true}),{...dependencies,chooseStart:()=>0,collect:async s=>{next.push(s.id);return snapshot;}});
   assert.deepEqual(next,['c']);assert.equal(two.resumed,2);
 });
+
+test('超限时仅向支持部分同步的服务推送前 2000 件并保留标记', async () => {
+  const checkpoint=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-large-')),'state.json');
+  const large={...snapshot,items:Array.from({length:2001},(_,i)=>({...snapshot.items[0],itemKey:String(i)}))};let entry;
+  const deps={load:async()=>({shops:[shops[0]],partialSnapshotSupport:true}),collect:async()=>large,push:async e=>{entry=e;return result(e.shopId);}};
+  const ok=await runSync(options(checkpoint,{apply:true}),deps);assert.equal(ok.pushed,1);assert.equal(entry.partial,true);assert.equal(entry.snapshot.items.length,2000);
+  large.items.push({...snapshot.items[0],itemKey:'extra'}); entry=null;
+  const old=await runSync(options(checkpoint,{apply:true}),{...deps,load:async()=>({shops:[shops[0]]})});assert.equal(old.failed,1);assert.equal(entry,null);
+});

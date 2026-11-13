@@ -167,13 +167,18 @@ export async function runSync(options, deps = {}) {
           if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
           const error = new Error('源站完整采集后无可收录商品'); error.shopUnavailable = 'empty'; throw error;
         }
-        if (snapshot.items.length > 2000) throw new Error("快照超过接收接口 2000 件上限，已停止该店推送以避免截断");
-        const unchanged = shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });
+        const partial = snapshot.items.length > 2000;
+        if (partial) {
+          if (!data.partialSnapshotSupport) throw new Error('目标站尚不支持部分同步，已停止该店推送以保护原有商品');
+          console.warn(`[local-sync] ${shop.id}: 商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`);
+          snapshot.items = snapshot.items.slice(0, 2000);
+        }
+        const unchanged = !partial && shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });
         if (unchanged) stats.unchanged++;
         else {
           stats.changed++;
           if (options.apply) {
-            const result = await push({ shopId: shop.id, shopUrl: shop.shopUrl, snapshot });
+            const result = await push({ shopId: shop.id, shopUrl: shop.shopUrl, snapshot, ...(partial ? { partial: true } : {}) });
             if (result.failedCount || !Array.isArray(result.outcomes) || result.outcomes.length !== 1 || result.outcomes[0].shopId !== shop.id || !['updated', 'unchanged'].includes(result.outcomes[0].status)) throw new Error('推送结果未确认成功');
             stats.pushed++;
           }

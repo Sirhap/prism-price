@@ -656,6 +656,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
       {
         systemTypePersistence: caps.systemType,
         descriptionPersistence: caps.description,
+        partialSnapshotSupport: true,
         shops: (results || []).map((s) => {
           const systemType = inferShopSystem(s.shop_url, s.canonical_url) !== "unknown" ? inferShopSystem(s.shop_url, s.canonical_url) : (normalizeShopSystem(s.system_type) ?? "unknown");
           return {
@@ -1167,6 +1168,8 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
     if (entry.snapshot?.description !== undefined && typeof entry.snapshot.description !== "string") {
       return Response.json({ error: "snapshot.description 必须为字符串" }, { status: 400 });
     }
+    if (entry.partial !== undefined && typeof entry.partial !== "boolean") return Response.json({ error: "partial 必须为布尔值" }, { status: 400 });
+    if (entry.partial && !entry.snapshot) return Response.json({ error: "partial 需要商品快照" }, { status: 400 });
     if (entry.error !== undefined && typeof entry.error !== "string") {
       return Response.json({ error: "error 必须为字符串" }, { status: 400 });
     }
