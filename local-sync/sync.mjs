@@ -31,7 +31,7 @@ export function parseArgs(args) {
     else throw new Error(`未知参数: ${arg}`);
   }
   if (!Number.isInteger(result.concurrency) || result.concurrency < 1 || result.concurrency > 8) throw new Error('并发数必须为 1–8');
-  if (result.intervalMs !== null && (!Number.isInteger(result.intervalMs) || result.intervalMs < 500)) throw new Error('请求间隔至少为 500 毫秒');
+  if (result.intervalMs !== null && (!Number.isInteger(result.intervalMs) || result.intervalMs < 100)) throw new Error('请求间隔至少为 100 毫秒');
   if (!Number.isInteger(result.shardCount) || result.shardCount < 1 || result.shardCount > 256 || !Number.isInteger(result.shardIndex) || result.shardIndex < 1 || result.shardIndex > result.shardCount) throw new Error('分片范围无效（1 ≤ 序号 ≤ 总数 ≤ 256）');
   if (!result.checkpointExplicit && result.shardCount > 1) result.checkpoint = path.join(root, 'output', `local-sync-checkpoint-${result.shardIndex}-of-${result.shardCount}.json`);
   if (!Number.isInteger(result.limit) || result.limit < 0) throw new Error('limit 必须是非负整数');
@@ -97,7 +97,7 @@ export function shardForShop(shopId, total) {
 
 /** 为整个进程的源站请求串行调度，发现风控后阻止后续请求。 */
 export function createRequestGate(intervalMs = 1000, { maxIntervalMs = 2000, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random, now = Date.now } = {}) {
-  if (!Number.isInteger(intervalMs) || intervalMs < 500 || !Number.isInteger(maxIntervalMs) || maxIntervalMs < intervalMs) throw new Error("请求间隔范围无效：最小值至少 500 毫秒，最大值不能小于最小值");
+  if (!Number.isInteger(intervalMs) || intervalMs < 100 || !Number.isInteger(maxIntervalMs) || maxIntervalMs < intervalMs) throw new Error("请求间隔范围无效：最小值至少 100 毫秒，最大值不能小于最小值");
   let queue = Promise.resolve();
   let nextAt = 0;
   let blocked = false;
@@ -228,7 +228,7 @@ export async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.explain) { console.log(JSON.stringify(describeWorkflow(), null, 2)); return; }
   if (options.help) {
-    console.log('本地采集并推送店铺快照（默认只预览）\n用法：node local-sync/sync.mjs [--explain] [--apply] [--delete-unavailable] [--resume] [--shop=店铺ID或地址末段] [--limit=数量] [--concurrency=1..8] [--interval-ms=500以上] [--shard=序号/总数] [--checkpoint=文件]\n配置：local-sync/config.env 或 API_BASE、INGEST_SECRET 环境变量；密钥也可使用项目 .dev.vars');
+    console.log('本地采集并推送店铺快照（默认只预览）\n用法：node local-sync/sync.mjs [--explain] [--apply] [--delete-unavailable] [--resume] [--shop=店铺ID或地址末段] [--limit=数量] [--concurrency=1..8] [--interval-ms=100以上] [--shard=序号/总数] [--checkpoint=文件]\n配置：local-sync/config.env 或 API_BASE、INGEST_SECRET 环境变量；密钥也可使用项目 .dev.vars');
     return;
   }
   const config = loadConfig();

@@ -78,7 +78,7 @@ test('稳定分片覆盖每家店且不会重叠，参数防止过快请求', ()
   assert.equal(new Set(shards.flat()).size, ids.length);
   assert.ok(shards.every(group => group.length > 0));
   assert.deepEqual(ids.map(id => shardForShop(id, 4)), [...ids].map(id => shardForShop(id, 4)));
-  assert.throws(() => parseArgs(['--interval-ms=100']), /500/);
+  assert.throws(() => parseArgs(['--interval-ms=99']), /100/);
   assert.throws(() => parseArgs(['--shard=3/2']), /分片范围/);
   assert.notEqual(parseArgs(['--shard=1/2']).checkpoint, parseArgs(['--shard=2/2']).checkpoint);
 });
@@ -171,8 +171,8 @@ test('关闭交易默认不删除，明确启用后才删除', async () => {
 });
 
 test('支持 500ms 配置并维持随机范围，低于下限拒绝', async () => {
-  assert.equal(parseArgs(['--interval-ms=500']).intervalMs,500);
-  assert.throws(()=>parseArgs(['--interval-ms=499']), /500/);
+  assert.equal(parseArgs(['--interval-ms=100']).intervalMs,100);
+  assert.throws(()=>parseArgs(['--interval-ms=99']), /100/);
   let clock=0; const gate=createRequestGate(500,{maxIntervalMs:750,now:()=>clock,random:()=>0,sleep:async ms=>{clock+=ms;}});
   await gate.before();gate.cooldown(2000);await gate.before();assert.equal(clock,2000);
   await gate.before();assert.equal(clock,2500);
@@ -226,4 +226,12 @@ test('暂时缺货的商品保留且全店缺货不触发删除', async () => {
   const checkpoint=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-stock-')),'state.json');let removed=0;
   const stats=await runSync(options(checkpoint,{apply:true}),{load:async()=>({shops:[shops[0]]}),collect:async()=>snap,remove:async()=>{removed++;},push:async()=>result('a')});
   assert.equal(stats.pushed,1);assert.equal(removed,0);
+});
+
+
+test('100ms 下限适用于配置范围和命令行', async () => {
+  assert.equal(parseArgs(['--interval-ms=100']).intervalMs, 100);
+  assert.throws(() => createRequestGate(99, {maxIntervalMs: 200}), /100/);
+  let clock=0; const gate=createRequestGate(100,{maxIntervalMs:100,now:()=>clock,random:()=>0,sleep:async ms=>{clock+=ms;}});
+  await gate.before(); await gate.before(); assert.equal(clock,100);
 });
