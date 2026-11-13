@@ -6,7 +6,7 @@ import path from 'node:path';
 import { runSync, parseArgs, loadConfig, shardForShop, createRequestGate } from '../local-sync/sync.mjs';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
 
-const snapshot = { shopName: 'Shop', canonicalUrl: 'https://example.test/shop/a', description: '', items: [] };
+const snapshot = { shopName: 'Shop', canonicalUrl: 'https://example.test/shop/a', description: '', items: [{itemKey:'one',rawName:'test',shopCategory:'',price:1,stockCount:1,stockStatus:'normal',itemUrl:'https://example.test/item/one'}] };
 const shops = ['a', 'b', 'c'].map((id) => ({ id, shopUrl: `https://example.test/shop/${id}`, syncSupported: true, adapterType: 'push_ingest', syncState: 'ready' }));
 const load = async () => ({ shops, descriptionPersistence: true });
 const options = (checkpoint, extra = {}) => ({ apiBase: 'https://example.test', apply: false, resume: false, concurrency: 1, limit: 0, shops: [], checkpoint, ...extra });
@@ -204,4 +204,17 @@ test('已不存在的目标删除为幂等成功，普通 404 仍失败', async 
       assert.equal(Boolean(JSON.parse(fs.readFileSync(checkpoint)).completed.a),absent);
     }
   } finally {globalThis.fetch=orig;}
+});
+
+
+test('完整采集无在售商品时预览提示，正式同步删除；采集错误不删除', async () => {
+  const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-empty-')), 'state.json');
+  const empty = {...snapshot, items: []}; let removed = 0, pushed = 0;
+  const deps = { load: async()=>({shops:[shops[0]]}), collect: async()=>empty, remove: async s=>{removed++;return {deleted:true,shopId:s.id};}, push: async()=>{pushed++;return result('a');} };
+  const preview = await runSync(options(checkpoint),deps);
+  assert.equal(preview.emptyCandidates,1);assert.equal(removed,0);
+  const applied = await runSync(options(checkpoint,{apply:true}),deps);
+  assert.equal(applied.deleted,1);assert.equal(removed,1);assert.equal(pushed,0);
+  const failed = await runSync(options(checkpoint,{apply:true}),{...deps,collect:async()=>{throw Error('fetch failed');}});
+  assert.equal(failed.failed,1);assert.equal(removed,1);
 });

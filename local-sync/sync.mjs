@@ -147,7 +147,7 @@ export async function runSync(options, deps = {}) {
     state = JSON.parse(fs.readFileSync(options.checkpoint, 'utf8'));
     if (state.version !== 2 || state.apiBase !== base || JSON.stringify(state.scope) !== JSON.stringify(scope) || !state.completed || Array.isArray(state.completed) || typeof state.completed !== 'object') throw new Error('续跑记录无效或目标地址不匹配');
   } else if (options.apply) saveCheckpoint(options.checkpoint, state);
-  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, alreadyAbsent: 0, failed: 0, unprocessed: 0 };
+  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, unprocessed: 0 };
   let cursor = 0;
   const blocked = new Set();
   console.log(`[local-sync] ${options.apply ? '执行推送' : '预览（不会写入）'}：${targets.length} 家，分片 ${shardIndex}/${shardCount}，并发 ${options.concurrency}，请求间隔 ${minInterval}～${maxInterval}ms，目标 ${base}`);
@@ -160,6 +160,10 @@ export async function runSync(options, deps = {}) {
         origin = new URL(shop.shopUrl).origin;
         if (blocked.has(origin)) throw new Error('源站已限流，本轮跳过');
         const snapshot = await collect(shop);
+        if (snapshot.items.length === 0) {
+          if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无在售商品，正式同步将删除`); continue; }
+          const error = new Error('源站完整采集后无在售商品'); error.shopUnavailable = 'empty'; throw error;
+        }
         if (snapshot.items.length > 2000) throw new Error("快照超过接收接口 2000 件上限，已停止该店推送以避免截断");
         const unchanged = shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });
         if (unchanged) stats.unchanged++;
@@ -174,7 +178,7 @@ export async function runSync(options, deps = {}) {
         if (options.apply) { state.completed[shop.id] = shop.shopUrl; saveCheckpoint(options.checkpoint, state); }
         console.log(`[local-sync] ${shop.id}: ${unchanged ? '未变化' : options.apply ? '已推送' : '有变化'}`);
       } catch (error) {
-        if (options.apply && (error?.shopUnavailable === 'not_found' || (error?.shopUnavailable === 'closed' && options.deleteUnavailable))) {
+        if (options.apply && (error?.shopUnavailable === 'not_found' || error?.shopUnavailable === 'empty' || (error?.shopUnavailable === 'closed' && options.deleteUnavailable))) {
           try {
             const result = await remove(shop);
             if (result?.deleted !== true || result.shopId !== shop.id) throw new Error('删除结果未确认');
@@ -211,7 +215,7 @@ export function describeWorkflow() {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
       source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
-      delete: '使用 --apply 时，源站明确报告店铺不存在会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
+      delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无在售商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },
     deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；判断来自源站单次响应，可能误判。封禁和普通网络失败不删除。',
     rate: '默认单并发、随机间隔 1～2 秒；风控最多重试 2 次，遵守 Retry-After，持续受限则停止。多进程不共享限速。',
