@@ -218,3 +218,12 @@ test('完整采集无在售商品时预览提示，正式同步删除；采集�
   const failed = await runSync(options(checkpoint,{apply:true}),{...deps,collect:async()=>{throw Error('fetch failed');}});
   assert.equal(failed.failed,1);assert.equal(removed,1);
 });
+
+test('暂时缺货的商品保留且全店缺货不触发删除', async () => {
+  const {buildShopApiSnapshot}=await import('../scripts/push-sync.mjs');
+  const snap=buildShopApiSnapshot(shops[0],{nickname:'test'},[{goods_key:'sold',name:'Codex 月卡',price:10,extend:{stock_count:0,show_stock_type:0}}],'https://example.test','a');
+  assert.equal(snap.items.length,1);assert.equal(snap.items[0].stockCount,0);
+  const checkpoint=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-stock-')),'state.json');let removed=0;
+  const stats=await runSync(options(checkpoint,{apply:true}),{load:async()=>({shops:[shops[0]]}),collect:async()=>snap,remove:async()=>{removed++;},push:async()=>result('a')});
+  assert.equal(stats.pushed,1);assert.equal(removed,0);
+});

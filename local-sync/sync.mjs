@@ -161,8 +161,8 @@ export async function runSync(options, deps = {}) {
         if (blocked.has(origin)) throw new Error('源站已限流，本轮跳过');
         const snapshot = await collect(shop);
         if (snapshot.items.length === 0) {
-          if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无在售商品，正式同步将删除`); continue; }
-          const error = new Error('源站完整采集后无在售商品'); error.shopUnavailable = 'empty'; throw error;
+          if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
+          const error = new Error('源站完整采集后无可收录商品'); error.shopUnavailable = 'empty'; throw error;
         }
         if (snapshot.items.length > 2000) throw new Error("快照超过接收接口 2000 件上限，已停止该店推送以避免截断");
         const unchanged = shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });
@@ -215,7 +215,7 @@ export function describeWorkflow() {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
       source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
-      delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无在售商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
+      delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },
     deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；判断来自源站单次响应，可能误判。封禁和普通网络失败不删除。',
     rate: '默认单并发、随机间隔 1～2 秒；风控最多重试 2 次，遵守 Retry-After，持续受限则停止。多进程不共享限速。',

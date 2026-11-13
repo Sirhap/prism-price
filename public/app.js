@@ -484,6 +484,7 @@ function formatAdapterBadge(adapterType) {
 
 function formatStockText(stockCount, stockStatus) {
   if (stockCount !== null && stockCount !== undefined) {
+    if (Number(stockCount) <= 0) return "采集时缺货，库存以店铺为准";
     return `余 ${stockCount}`;
   }
   return "库存以店铺为准";

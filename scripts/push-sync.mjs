@@ -305,7 +305,7 @@ function resolveStock(extend) {
   const rawCount = extend?.stock_count;
   const showType = extend?.show_stock_type;
   if (typeof rawCount === "number" && Number.isFinite(rawCount)) {
-    if (rawCount <= 0) return { inStock: false, stockCount: 0, stockStatus: "low" };
+    if (rawCount <= 0) return { inStock: true, stockCount: 0, stockStatus: "low" };
     const stockCount = showType === 0 ? null : rawCount;
     const stockStatus = rawCount <= 5 ? "low" : rawCount <= 20 ? "normal" : "sufficient";
     return { inStock: true, stockCount, stockStatus };
@@ -325,7 +325,6 @@ export function buildShopApiSnapshot(shop, info, allGoods, apiOrigin, token) {
     const shopCategory = String(g.category?.name || g._fallbackCategoryName || "").trim();
     if (!rawName || isNonSalePlaceholderItem(rawName, shopCategory, price)) continue;
     const stock = resolveStock(g.extend);
-    if (!stock.inStock) continue;
 
     const itemKey = String(g.goods_key || g.link || items.length + 1);
     if (seenItemKeys.has(itemKey)) continue;

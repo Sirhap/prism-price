@@ -168,7 +168,7 @@ function resolveStock(extend: ShopApiGoodsItem["extend"]): {
 
   if (typeof rawCount === "number" && Number.isFinite(rawCount)) {
     if (rawCount <= 0) {
-      return { inStock: false, stockCount: 0, stockStatus: "low" };
+      return { inStock: true, stockCount: 0, stockStatus: "low" };
     }
     // show_stock_type === 0 时源站向前台隐藏精确数值
     const stockCount = showType === 0 ? null : rawCount;
@@ -335,9 +335,6 @@ export const shopApiAdapter: ShopAdapter = {
       }
 
       const stock = resolveStock(g.extend);
-      if (!stock.inStock) {
-        continue;
-      }
 
       const itemKey = String(g.goods_key || g.link || items.length + 1);
       if (seenItemKeys.has(itemKey)) {
