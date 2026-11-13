@@ -7,6 +7,7 @@ import {
 } from "./shopSystems";
 import type { AdapterType, RawShopSnapshot, ShopRecord, SyncRunSummary, SyncShopOutcome } from "../types";
 import { resolveAdapter } from "./adapters";
+import { market16688Adapter } from "./adapters/market16688Adapter";
 import { normalizeDescription } from "./adapters/fetcher";
 import { clearShopOffers, persistShopSnapshot, rebuildProductGroups } from "./etl/hashAndDiff";
 import { INITIAL_SHOPS } from "./seedShops";
@@ -133,7 +134,9 @@ export async function runSyncBatch(
 
   for (const shop of targets) {
     const shopStart = Date.now();
-    const adapter = resolveAdapter(shop.adapter_type);
+    let is16688 = false;
+    try { is16688 = ['16688.com.cn', 'www.16688.com.cn'].includes(new URL(shop.shop_url).hostname.toLowerCase()); } catch { /* invalid stored URL */ }
+    const adapter = targetShopId && is16688 ? market16688Adapter : resolveAdapter(shop.adapter_type);
     if (!adapter) {
       outcomes.push({
         shopId: shop.id,
@@ -149,6 +152,14 @@ export async function runSyncBatch(
 
     try {
       const snapshot = await adapter.fetchSnapshot(shop, env);
+      if (is16688) {
+        const keys = new Set(snapshot.items.map((item) => item.itemKey));
+        const previous = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(shop.id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
+        for (const row of previous.results || []) {
+          const key = row.id.startsWith(`${shop.id}:`) ? row.id.slice(shop.id.length + 1) : '';
+          if (key && !keys.has(key)) snapshot.items.push({itemKey:key,rawName:row.raw_name,shopCategory:row.shop_category,price:Number(row.price),stockCount:row.stock_count,stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient',itemUrl:row.item_url});
+        }
+      }
       const res = await persistShopSnapshot(env.DB, shop, snapshot, nowIso, {
         hasDescriptionColumn: cols.description,
       });
