@@ -10,7 +10,7 @@ export const market16688Adapter: ShopAdapter = {
     const token = source.pathname.match(/^\/shop\/([a-zA-Z0-9_-]+)\/?$/)?.[1];
     if (!token) throw new Error('16688 店铺地址无效');
     async function post(path: string, data: unknown): Promise<Record<string, unknown>> {
-      const response = await fetch(`https://www.16688.com.cn/shopApi/${path}`, { method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'}, body:JSON.stringify(data), signal:AbortSignal.timeout(12000), redirect:'error' });
+      const response = await fetch(`https://www.16688.com.cn/shopApi/${path}`, { method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'}, body:JSON.stringify(data), signal:AbortSignal.timeout(12000), redirect:'manual' });
       if (!response.ok || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) throw new Error(`16688 源站异常 HTTP ${response.status}`);
       const json = await response.json() as {code?:number;msg?:string;data?:unknown};
       if (json.code !== 1 || !json.data || typeof json.data !== 'object' || Array.isArray(json.data)) throw new Error(String(json.msg || '16688 数据无效'));
