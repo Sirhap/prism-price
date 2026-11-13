@@ -1,0 +1,10 @@
+[Unit]
+Description=LDXP daily SQLite backup
+
+[Timer]
+OnCalendar=*-*-* 19:00:00 UTC
+Persistent=true
+Unit=ldxp-backup.service
+
+[Install]
+WantedBy=timers.target

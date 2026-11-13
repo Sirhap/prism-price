@@ -1,0 +1,27 @@
+{
+  "shops": [
+    {
+      "id": "real-wzyp-example",
+      "shopName": "示例发卡店铺",
+      "shopUrl": "https://pay.ldxp.cn/shop/example_token",
+      "canonicalUrl": "https://wzyp.cn/shop/example_token",
+      "adapterType": "push_ingest",
+      "telegram": "@example_shop_support",
+      "systemType": "ldxp"
+    },
+    {
+      "shopName": "通用只读 JSON 店铺示例",
+      "shopUrl": "https://shop.example.com/api/products.json",
+      "adapterType": "json_api",
+      "telegram": "",
+      "systemType": "unknown"
+    },
+    {
+      "id": "example-acg-shop",
+      "shopName": "二次元发卡系统示例（人工收录）",
+      "shopUrl": "https://acg-shop.example.com/",
+      "adapterType": "manual",
+      "systemType": "acg-faka"
+    }
+  ]
+}

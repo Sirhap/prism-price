@@ -1,0 +1,22 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+dist/
+coverage/
+output/local-sync-checkpoint*.json
+local-sync/config.env
+output/
+.playwright-cli/
+.DS_Store
+deploy/huoshan/worker.mjs
+*.sqlite
+*.sqlite-*
+*.log
+# 维护记录与独立同步仓库副本保留在本机
+sync-kit/
+DEEP-READ-OPTIMIZATION-2026-11-12.md
+OPENPRICE-REFERENCE.md
+OPTIMIZATION-2026-11-12.md
+OPTIMIZATION.md
+RELEASE-2026-11-12.md

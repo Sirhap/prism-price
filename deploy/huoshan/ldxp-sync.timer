@@ -1,0 +1,10 @@
+[Unit]
+Description=LDXP collector every four hours (UTC)
+
+[Timer]
+OnCalendar=*-*-* 00,04,08,12,16,20:00:00 UTC
+Persistent=true
+Unit=ldxp-sync.service
+
+[Install]
+WantedBy=timers.target

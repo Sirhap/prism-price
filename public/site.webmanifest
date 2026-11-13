@@ -1,0 +1,23 @@
+{
+  "name": "棱镜比价 PRISM · AI 与数字权益多店比价雷达",
+  "short_name": "棱镜比价",
+  "description": "按品牌、商品类型、套餐、时长和价格实时比价，一站浏览公开店铺介绍与目录。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090b14",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=LDXP online database backup
+
+[Service]
+Type=oneshot
+User=ldxp
+Group=ldxp
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/ldxp-cf-demo/current/deploy/huoshan/backup.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ldxp-cf-demo

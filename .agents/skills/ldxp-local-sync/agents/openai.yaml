@@ -1,0 +1,3 @@
+interface:
+  display_name: "店铺本地同步"
+  short_description: "预览并增量同步店铺和商品"

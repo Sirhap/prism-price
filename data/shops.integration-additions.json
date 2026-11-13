@@ -1,0 +1,31 @@
+{
+  "shops": [
+    {
+      "id": "ainice",
+      "shopName": "91ai小店",
+      "shopUrl": "https://wzyp.cn/shop/ainice",
+      "canonicalUrl": "https://wzyp.cn/shop/ainice",
+      "adapterType": "push_ingest",
+      "systemType": "ldxp",
+      "description": "新旧站点累计成交2w+单，请放心购买！有问题优先联系客服处理，客服一下没回复可以在网站申请售后，有问题一律都会给处理的✅\n原店铺已停用，但仍可访问，有多余余额，请联系客服退款。\n售后流程：\n1️⃣ 问题截图（如账号风控、登录异常等）\n2️⃣ 完整发货截图（包含查看卡密页面）\n━━━━━━━━━━━━━━━\n📌 质保说明\n• 商品未注明质保期限的，默认仅保首次登录\n• 商品未明确标注保证内容的，均不作额外保证。\n━━━━━━━━━━━━━━━\n✈️客服：@AIagent888\n📱VX客服：niceai6\n群组：https://t.me/AI91shop\n新店铺https://wzyp.cn/shop/niceai，请及时更新您的收藏夹。\n✅原店铺所有商品均可以在第一个分类下购买到【91shop商品】（mail邮箱制成的成品普号等）每一个渠道的账号品质都是不一样的，挑选适合自己的即可"
+    },
+    {
+      "id": "aiman",
+      "shopName": "🔥AKMOZ魔卡Ai（销量2w+）【OpenAI成品号 官方直充 codex接码】对接码AKM",
+      "shopUrl": "https://wzyp.cn/shop/AiMan",
+      "canonicalUrl": "https://wzyp.cn/shop/AiMan",
+      "adapterType": "push_ingest",
+      "systemType": "ldxp",
+      "description": "自动发货、下单即用｜销量 2w+｜已服务数千用户｜承诺质保必兑现｜提供详细教程与售后支持\n\n我们专注提供稳定可靠的 AI 服务体验：\n✅ G Plus 成品账号 官方直充\n✅ Claude / Gemini / Grok 等热门AI产品\n✅ 接码服务\n\n🚀 官方直充服务 支持为你的账号直接升级 AI 会员，无需更换账号。\n🔐 精选成品账号 独享使用，购买后即可登录使用。\n📚 完善教程支持 提供详细使用指南，新手也能快速上手。\n🛡️ 售后保障 购买后遇到问题，我们提供持续售后支持。"
+    },
+    {
+      "id": "340",
+      "shopName": "340 【招代理】",
+      "shopUrl": "https://wzyp.cn/shop/340",
+      "canonicalUrl": "https://wzyp.cn/shop/340",
+      "adapterType": "push_ingest",
+      "systemType": "ldxp",
+      "description": "上货通知群：577985666    中转：api340.com 对接码：340 。"
+    }
+  ]
+}

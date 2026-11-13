@@ -1,0 +1,25 @@
+[Unit]
+Description=LDXP catalog (workerd + local D1 SQLite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ldxp
+Group=ldxp
+WorkingDirectory=/opt/ldxp-cf-demo/current
+EnvironmentFile=/etc/ldxp-cf-demo.env
+ExecStart=/usr/local/bin/node deploy/huoshan/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ldxp-cf-demo
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

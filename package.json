@@ -1,0 +1,26 @@
+{
+  "name": "ldxp-cf-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply ldxp-demo-db --local",
+    "push": "node scripts/push-sync.mjs",
+    "sync:upstream": "node scripts/sync-from-qizhang.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "audit:integration-codes": "node scripts/audit-integration-codes.mjs",
+    "sync:local": "node scripts/local-sync.mjs",
+    "test:sync": "node --test tests/*.node-check.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261110.1",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.99.0"
+  }
+}

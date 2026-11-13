@@ -1,0 +1,165 @@
+{
+  "description": "人工提供的公开店铺对接码，仅在店名、简介均没有明确码时兜底；保留原始大小写和空格。",
+  "labels": [
+    "对接代码",
+    "對接代碼",
+    "对接码",
+    "對接碼",
+    "对接马",
+    "對接馬",
+    "分销码",
+    "分銷碼"
+  ],
+  "colonLabels": [
+    "对接",
+    "對接",
+    "分销",
+    "分銷"
+  ],
+  "fallbacks": [
+    {
+      "shopUrl": "https://wzyp.cn/shop/ikun666",
+      "code": "ikun666"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/XUZ2PGGL",
+      "code": "mueecso8"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/XHA54E0U",
+      "code": "qianchuan"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/EE8LWO59",
+      "code": "fbjb"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/G062JE24",
+      "code": "DJDJ"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/ainice",
+      "code": "ainice"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/5HONMETA",
+      "code": "oszg8e89"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/shuwang",
+      "code": "shuwang"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/X23TO6QE",
+      "code": "Lucky plus"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/FT7",
+      "code": "FT7"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/parhom",
+      "code": "zzx"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/5R8T9H0Q",
+      "code": "tuzki666"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/911",
+      "code": "911"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/CSFUDWIX",
+      "code": "icmc8ahi"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/pixelshop",
+      "code": "000001"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/ok1",
+      "code": "ok1"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/AEUQ8PP3",
+      "code": "aijiaofu"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/G3UG3ZDZ",
+      "code": "chengzi"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/BOP1WKBD",
+      "code": "n2qimei8"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/OUJ1HPBV",
+      "code": "chiyu"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/harvey",
+      "code": "harvey"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/P98T49H8",
+      "code": "wen666"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/nailonggemini",
+      "code": "wsnailong"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/aibeibei",
+      "code": "aibeibei"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/GV0HQ2C0",
+      "code": "GV0HQ2C0"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/AIgame",
+      "code": "KIKI"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/AiMan",
+      "code": "AKM"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/google23",
+      "code": "uirn39bk"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/mmdou",
+      "code": "mmdou"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/daiyu",
+      "code": "chongpro"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/mrnf",
+      "code": "mrnf"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/aisell",
+      "code": "aisell"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/F2RAU1AV",
+      "code": "maoge"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/ai888",
+      "code": "ai888"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/loveai",
+      "code": "loveai"
+    },
+    {
+      "shopUrl": "https://wzyp.cn/shop/340",
+      "code": "340"
+    }
+  ]
+}

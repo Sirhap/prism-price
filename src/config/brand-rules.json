@@ -1,0 +1,606 @@
+[
+  {
+    "id": "virtual-card-explicit",
+    "group": "虚拟卡",
+    "priority": 10,
+    "description": "明确的银行卡/虚拟卡商品优先，避免用途提及 AI 品牌时被误分组。",
+    "includeAny": [
+      "虚拟卡",
+      "vcard",
+      "万事达",
+      "visa\\s*卡",
+      "mastercard",
+      "开卡",
+      "(?:0|o|零|1|一|2|两|空)\\s*刀卡",
+      "\\d+\\s*刀卡",
+      "0美元卡",
+      "(?:0|1|2|5|10)\\s*美元卡",
+      "\\bvisa\\b.*(?:刀|卡)",
+      "\\b485954\\b",
+      "卡头",
+      "\\bpokepay\\b",
+      "\\bwildcard\\b"
+    ]
+  },
+  {
+    "id": "proxy-ip-explicit",
+    "group": "代理IP",
+    "priority": 15,
+    "description": "明确的家宽/静态/原生/双ISP代理节点优先，同时排除以注册IP为附带说明的成品账号。",
+    "includeAny": [
+      "proxy",
+      "i屁",
+      "🏠宽",
+      "家宽",
+      "双\\s*isp",
+      "单\\s*isp",
+      "(?:静态|动态|独享|原生|纯净)(?:\\s*住宅)?\\s*(?:代理|ip)",
+      "住宅\\s*(?:ip|代理)",
+      "att\\s*运营商",
+      "\\bsocks5\\b",
+      "机场(?:订阅|节点|月卡)?",
+      "v2ray",
+      "\\bclash\\b",
+      "\\bvpn\\b",
+      "节点(?:订阅|月卡|年卡|体验)?"
+    ],
+    "excludeAny": [
+      "成品",
+      "账号",
+      "帐号",
+      "白号",
+      "老号",
+      "新号",
+      "邮箱",
+      "接码",
+      "接马",
+      "接ma",
+      "代充",
+      "直充",
+      "直冲",
+      "cdk",
+      "plus\\s*(?:成品|月卡|代充)",
+      "pro\\s*(?:成品|月卡|代充)",
+      "注册\\s*(?:ip|地)",
+      "ip\\s*注册",
+      "自备\\s*ip",
+      "需自备",
+      "不挑\\s*ip",
+      "原生\\s*ip\\s*(?:登录|使用|养)"
+    ]
+  },
+  {
+    "id": "relay-explicit",
+    "group": "中转",
+    "priority": 20,
+    "description": "中转与 API 余额兑换卡优先；成品账号、拼车席位、接码、直充及平台充值卡除外。",
+    "includeAny": [
+      "中转",
+      "按量计费",
+      "按量",
+      "api\\s*key",
+      "apikey",
+      "api\\s*(?:余额|兑换码|兑换卡|充值卡)",
+      "api.*(?:金额|余额|网站.*充值)",
+      "[a-z]*api[-_\\s]*\\d+\\s*(?:美金|刀)",
+      "\\d+\\s*(?:刀|r|元)\\s*(?:充值卡|兑换码|体验卡)",
+      "(?:cny|rmb)\\s*\\d+\\s*=\\s*usd\\s*\\d+",
+      "\\byehanapi\\b",
+      "\\bone\\s*api\\b",
+      "\\bnew\\s*api\\b",
+      "\\bmtline\\b",
+      "\\baida\\b",
+      "反代",
+      "刀额度",
+      "通用.*额度"
+    ],
+    "excludeAny": [
+      "成品",
+      "账号",
+      "帐号",
+      "独享",
+      "普号",
+      "free号",
+      "接码",
+      "接马",
+      "接ma",
+      "plus\\s*月卡",
+      "直充",
+      "直冲",
+      "代充",
+      "代冲",
+      "卡充",
+      "卡冲",
+      "官充",
+      "官冲",
+      "拼车",
+      "席位",
+      "车位",
+      "合租",
+      "家庭组",
+      "长效车",
+      "头车",
+      "二车",
+      "首车",
+      "反代不保",
+      "反代需绑卡",
+      "可网页反代",
+      "只能反代",
+      "只可用于反代",
+      "微软邮箱",
+      "谷歌邮箱",
+      "gmail邮箱",
+      "outlook",
+      "hotmail",
+      "icloud",
+      "教程",
+      "提链",
+      "注册机",
+      "话费",
+      "giffgaff",
+      "apple",
+      "google\\s*play",
+      "steam"
+    ]
+  },
+  {
+    "id": "muse",
+    "group": "Muse",
+    "priority": 25,
+    "includeAny": [
+      "\\bmuse(?![a-z])",
+      "\\bmuseai\\b"
+    ]
+  },
+  {
+    "id": "qwen",
+    "group": "千问",
+    "priority": 26,
+    "includeAny": [
+      "千问",
+      "\\bqwen\\b"
+    ]
+  },
+  {
+    "id": "ai-video",
+    "group": "AI视频",
+    "priority": 27,
+    "includeAny": [
+      "即梦",
+      "jimeng",
+      "seedance",
+      "可灵",
+      "kling",
+      "海螺\\s*ai",
+      "hailuo",
+      "runway",
+      "\\bluma\\b",
+      "\\bpika\\b",
+      "\\bcapcut\\b",
+      "剪映",
+      "ai\\s*(?:视频生成)",
+      "国际豆包dola",
+      "dola视频"
+    ]
+  },
+  {
+    "id": "ai-image",
+    "group": "AI绘图",
+    "priority": 28,
+    "includeAny": [
+      "midjourney",
+      "\\bmj\\b",
+      "\\bleonardo\\b",
+      "g-?image\\d*",
+      "\\bflux\\b",
+      "ai\\s*(?:生图|绘图|绘画)",
+      "生图站",
+      "image\\s*2\\.0\\s*生图"
+    ]
+  },
+  {
+    "id": "ai-music",
+    "group": "AI音乐",
+    "priority": 29,
+    "includeAny": [
+      "\\bsuno\\b",
+      "\\budio\\b",
+      "elevenlabs"
+    ]
+  },
+  {
+    "id": "ai-creation",
+    "group": "AI创作",
+    "priority": 30,
+    "description": "无法进一步区分的视频、绘图、音乐、设计等 AI 创作商品。",
+    "includeAny": [
+      "\\bfigma\\b",
+      "智谱",
+      "\\bmanus\\b",
+      "canvas无限画布",
+      "inmind\\s*ai",
+      "算力点",
+      "lovart",
+      "ai\\s*(?:生图|绘图|绘画|视频生成)"
+    ]
+  },
+  {
+    "id": "antigravity",
+    "group": "Antigravity",
+    "priority": 40,
+    "includeAny": [
+      "antigravity",
+      "反重力"
+    ],
+    "excludeAny": [
+      "gemini"
+    ]
+  },
+  {
+    "id": "deepseek",
+    "group": "DeepSeek",
+    "priority": 50,
+    "includeAny": [
+      "deepseek",
+      "深度求索"
+    ]
+  },
+  {
+    "id": "claude-explicit",
+    "group": "Claude",
+    "priority": 55,
+    "includeAny": [
+      "claude",
+      "cluade",
+      "anthropic",
+      "克劳德"
+    ]
+  },
+  {
+    "id": "claude-model",
+    "group": "Claude",
+    "priority": 65,
+    "description": "仅以模型名匹配 Claude 时，避免抢占标注支持 opus/sonnet 的 Gemini/Antigravity/Grok 商品。",
+    "includeAny": [
+      "\\b(?:sonnet|opus)(?:[\\d.]|\\b)"
+    ],
+    "excludeAny": [
+      "gemini",
+      "antigravity",
+      "反重力",
+      "grok",
+      "gr[0o]k",
+      "gork",
+      "deepseek"
+    ]
+  },
+  {
+    "id": "cursor",
+    "group": "Cursor",
+    "priority": 70,
+    "includeAny": [
+      "\\bcursor"
+    ],
+    "excludeAny": [
+      "grok",
+      "super\\s*gr[o0]k",
+      "gr[0o]k",
+      "gork"
+    ]
+  },
+  {
+    "id": "kiro",
+    "group": "Kiro",
+    "priority": 80,
+    "includeAny": [
+      "\\bkiro\\b"
+    ]
+  },
+  {
+    "id": "gemini",
+    "group": "Gemini",
+    "priority": 90,
+    "includeAny": [
+      "\\bgemini(?:pro|ultra|max|advanced|\\d+(?:\\.\\d+)?(?:pro|ultra)?)?(?:\\b|\\d)",
+      "\\b(?:google\\s*ai|veo|gcp)\\b"
+    ],
+    "excludeAny": [
+      "gemini\\d+(?:pro)?图片模型",
+      "leonardo",
+      "仅图文教程",
+      "图文教程"
+    ]
+  },
+  {
+    "id": "grok",
+    "group": "Grok",
+    "priority": 95,
+    "description": "优先于 ChatGPT 匹配 Grok 及商家避敏变形（supergrok/gr0k/gr-k/gork/gro/xAI/马斯克）。",
+    "includeAny": [
+      "grok",
+      "super\\s*gr[o0](?:k|\\b)",
+      "g[-_.\\s]?r[-_.\\s]?[0o][-_.\\s]?k",
+      "gr[-_.\\s]?k",
+      "gork",
+      "(?<![a-z])gro(?=(?:[^a-z]|$|普|成品|月|会员|直充|代充|4\\.))",
+      "\\bxai\\b",
+      "马斯克"
+    ]
+  },
+  {
+    "id": "codex",
+    "group": "Codex",
+    "priority": 110,
+    "includeAny": [
+      "codex",
+      "coedx"
+    ],
+    "excludeAny": [
+      "chatgpt",
+      "\\bgpt(?:s|pro|plus|team|free|go|\\d+[a-z]*)?\\b",
+      "\\bch-?at(?:g|\\b)"
+    ]
+  },
+  {
+    "id": "chatgpt",
+    "group": "ChatGPT",
+    "priority": 120,
+    "description": "识别 OpenAI/ChatGPT/GPT/OAI 及商家避敏简写（pgt/jpt/c.h.a.t.g/G Pro/10×Pro/G5.6/GO直充/pro100~500/Sora/puls/G接码/OA授权），避免通用接码词及 Teams/纯教程污染。",
+    "includeAny": [
+      "chatgpt",
+      "openai",
+      "open\\s*/\\s*ai",
+      "\\boai\\b",
+      "\\boa授权",
+      "\\bgpt(?:s|pro|plus|team|free|go|\\d+[a-z]*)?\\b",
+      "\\bpgt\\b",
+      "\\bjpt\\b",
+      "\\bch-?at(?:g|\\s*g|机皮替|\\b)",
+      "c\\.?h\\.?a\\.?t\\.?g",
+      "(?:gpt|chatgpt|g)plus",
+      "\\bplus\\b",
+      "\\bpuls\\b",
+      "(?<!s)team(?![a-z])",
+      "\\bg\\s*(?:plus|pro(?:\\d+|\\s*(?:5|10|20|25|50)\\s*[x×])?|(?:5|10|20|25|50)\\s*[x×]|free|go)(?![a-z0-9])",
+      "\\bg\\s*(?:普通|普号|账号|官方|直充|直冲|代充|代冲|卡充|卡冲|接码|接马|接ma|business)",
+      "已接[码马]\\s*free",
+      "\\bgm\\s*(?:未?接[码马])?\\s*free",
+      "gp提",
+      "g皮t",
+      "\\bg\\s*(?:5\\.6|6)(?:[^a-z0-9]|$)",
+      "\\bgp\\s*pro\\b",
+      "\\b(?:g\\s*)?(?:5|10|20|25|50)\\s*[x×]\\s*pro(?![a-z0-9])",
+      "\\b(?:g\\s*)?pro\\s*(?:5|10|20|25|50)\\s*[x×]",
+      "\\b(?:g\\s*)?pro\\s*(?:100|200|500)\\b",
+      "\\bpro(?:100|200|500|5[x×]|10[x×]|20[x×]|50[x×])\\b",
+      "(?:^|[^a-z0-9])go(?:\\s*月卡|\\s*年卡|\\s*季卡|\\s*直充|\\s*代充|\\s*官冲|\\s*官充|\\s*【)",
+      "sora"
+    ],
+    "excludeAny": [
+      "仅图文教程",
+      "纯教程"
+    ]
+  },
+  {
+    "id": "virtual-card-fallback",
+    "group": "虚拟卡",
+    "priority": 130,
+    "includeAny": [
+      "虚拟卡",
+      "vcard",
+      "万事达",
+      "visa卡",
+      "美卡",
+      "开卡",
+      "卡头",
+      "u卡"
+    ]
+  },
+  {
+    "id": "relay-fallback",
+    "group": "中转",
+    "priority": 140,
+    "includeAny": [
+      "额度",
+      "tokens?",
+      "api\\s*(?:兑换|充值|余额)"
+    ],
+    "excludeAny": [
+      "成品",
+      "账号",
+      "帐号",
+      "独享",
+      "拼车",
+      "席位",
+      "车位",
+      "合租",
+      "家庭组",
+      "长效车",
+      "头车",
+      "二车",
+      "首车",
+      "邮箱",
+      "outlook",
+      "hotmail",
+      "gmail",
+      "icloud",
+      "proton",
+      "oauth2",
+      "refresh_token",
+      "推特",
+      "2fa",
+      "(?:老|新|白|普|free|子|母|令牌|token)号",
+      "教程",
+      "提链",
+      "注册机",
+      "giffgaff",
+      "话费",
+      "苹果",
+      "apple",
+      "steam",
+      "礼品卡",
+      "算力点"
+    ]
+  },
+  {
+    "id": "mail-account",
+    "group": "邮箱账号",
+    "priority": 150,
+    "includeAny": [
+      "gmail",
+      "outlook",
+      "hotmail",
+      "proton",
+      "icloud",
+      "微软邮箱",
+      "谷歌邮箱",
+      "邮箱",
+      "email@",
+      "\\byahoo\\b"
+    ]
+  },
+  {
+    "id": "proxy-ip-fallback",
+    "group": "代理IP",
+    "priority": 155,
+    "description": "未被 AI/账号/邮箱规则命中的通用 IP/VPS/专线产品兜底进入代理IP。",
+    "includeAny": [
+      "(?<![a-z])ip(?![a-z])",
+      "专线",
+      "落地机",
+      "\\bvps\\b"
+    ],
+    "excludeAny": [
+      "成品",
+      "账号",
+      "帐号",
+      "邮箱",
+      "教程"
+    ]
+  },
+  {
+    "id": "mobile-sim",
+    "group": "手机卡",
+    "priority": 156,
+    "includeAny": [
+      "\\besim\\b",
+      "实体手机卡",
+      "美国实体卡",
+      "实卡号",
+      "giffgaff",
+      "\\bgg卡"
+    ]
+  },
+  {
+    "id": "game-products",
+    "group": "游戏商品",
+    "priority": 157,
+    "includeAny": [
+      "\\bsteam\\b",
+      "神庙[_\\s-]*(?:sl[-_ ]?tool|典藏版|至尊版)",
+      "地铁[_\\s-]*(?:典藏版|至尊版)"
+    ]
+  },
+  {
+    "id": "platform-account",
+    "group": "平台账号",
+    "priority": 160,
+    "includeAny": [
+      "paypal",
+      "\\bpp\\b",
+      "apple\\s*id",
+      "美区id",
+      "meta",
+      "instagram",
+      "threads",
+      "telegram",
+      "tg号",
+      "(?<![a-z])tg(?![a-z])",
+      "✈",
+      "飞机号",
+      "灰机(?:会员|号)",
+      "星星赠送",
+      "github",
+      "tiktok",
+      "(?<![a-z])tk(?:账号|白号|老号|成品|号)",
+      "(?<![a-z])ios\\s*(?:id|账号|账户)",
+      "苹果(?:\\s*id|账号|账户|.*分身|.*礼品卡)",
+      "a\\*ple",
+      "小火箭",
+      "shadowrocket",
+      "twitte",
+      "twitter",
+      "推特",
+      "推x(?:账号|号)?",
+      "(?<![a-z])x\\s*接(?:码|马|ma)",
+      "\\bdiscord\\b",
+      "\\breddit\\b",
+      "\\bfacebook\\b",
+      "\\bfb(?:号|账号)",
+      "\\bwhatsapp\\b",
+      "google\\s*voice",
+      "\\bgv(?:全新|永久|老|白)?号",
+      "giffgaff",
+      "gg卡",
+      "实卡号",
+      "美国实体卡",
+      "实体手机卡",
+      "\\bnetflix\\b",
+      "奈飞",
+      "\\byoutube\\b",
+      "油管",
+      "\\bbilibili\\b",
+      "小红书",
+      "\\bspotify\\b",
+      "\\badobe\\b",
+      "\\bduolingo\\b",
+      "多邻国",
+      "夸克网盘",
+      "workbuddy",
+      "remail",
+      "\\bebay\\b",
+      "\\bwechat\\b",
+      "微信(?:账号|账户|僵尸粉)"
+    ]
+  },
+  {
+    "id": "google-account-mail",
+    "group": "邮箱账号",
+    "priority": 165,
+    "description": "Google 通用账号及短信接码归入谷歌邮箱账号体系（Google Voice/Play 除外）。",
+    "includeAny": [
+      "\\bgoogle\\b"
+    ],
+    "excludeAny": [
+      "google\\s*play",
+      "google\\s*voice",
+      "\\bgv"
+    ]
+  },
+  {
+    "id": "tool-tutorial",
+    "group": "工具教程",
+    "priority": 170,
+    "description": "不直接归属具体 AI 品牌或账号资产的教程、脚本、注册机、源码、技术咨询及效率工具兜底。",
+    "includeAny": [
+      "教程",
+      "指南",
+      "拆解",
+      "搭建",
+      "逆向",
+      "源码",
+      "脚本",
+      "自动化工具",
+      "注册机",
+      "注册鸡",
+      "g注册",
+      "工具卡密",
+      "批提",
+      "提链",
+      "401.*授权",
+      "清理.*粉",
+      "技术咨询",
+      "助手"
+    ]
+  }
+]
