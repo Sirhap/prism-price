@@ -28,3 +28,8 @@ test('用户网络采集后向本站写入，不携带管理密钥', async () =>
   const {result}=await syncShopFromBrowser('s1','https://wzyp.cn/shop/a',{fetcher,send,wait:async()=>{}});
   assert.equal(result.itemCount,1);assert.equal(sent.url,'/api/shops/browser-sync');assert.equal(sent.body.shopName,'测试店');assert.equal(sent.body.items[0].itemUrl,'https://wzyp.cn/item/one');assert.equal(sent.headers.Authorization,undefined);
 });
+
+test('源站返回验证页面时提示先到源站核实，不伪装为同步成功', async () => {
+  const fetcher=async()=>new Response('<html><title>验证</title></html>',{status:200,headers:{'content-type':'text/html'}});
+  await assert.rejects(previewShopFromBrowser('https://wzyp.cn/shop/340',{fetcher,wait:async()=>{}}),/打开源站店铺完成验证/);
+});

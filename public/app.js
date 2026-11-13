@@ -3073,7 +3073,11 @@ document.addEventListener("keydown", (event) => {
       const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
       const { snapshot, result: saved } = await syncShopFromBrowser(submittedShopId, confirmedUrl);
       result.textContent = `同步成功：${snapshot.name}，读取 ${snapshot.count} 件，已写入 ${saved.itemCount} 件收录商品。`;
-    } catch (error) { result.textContent = `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`; }
+    } catch (error) {
+      result.textContent = `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`;
+      const link = document.createElement('a'); link.href = confirmedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = '打开源站店铺';
+      result.append(' ', link);
+    }
     finally { preview.disabled = false; }
   });
   form.addEventListener('submit', async (event) => {

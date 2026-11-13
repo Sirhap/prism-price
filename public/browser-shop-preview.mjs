@@ -10,8 +10,8 @@ export async function previewShopFromBrowser(rawUrl, { fetcher = fetch, wait = (
     let response;
     try { response = await fetcher(`${origin}/shopApi/Shop/${path}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data), credentials:'omit', signal:AbortSignal.timeout(10000) }); }
     catch (error) { throw new Error(error?.name === 'TimeoutError' ? '连接源站超时，请稍后重试' : '无法连接源站，可能受到网络或跨域限制'); }
-    if (!response.ok) throw new Error(`源站暂不可用（HTTP ${response.status}）`);
-    if (!(response.headers.get('content-type') || '').includes('json')) throw new Error('源站返回验证页面或非 JSON 内容');
+    if (!response.ok) throw new Error(`源站暂不可用（HTTP ${response.status}）；请打开源站店铺确认后再试`);
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('json')) throw new Error('源站可能要求浏览器验证，请先打开源站店铺完成验证后再重试；店铺已收录，商品暂未同步');
     const body = await response.json();
     if (body.code !== 1 || !body.data) throw new Error('源站未返回可用商品信息');
     return body.data;
