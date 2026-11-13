@@ -524,7 +524,7 @@ export async function persistShopSnapshot(
         shopMinPrice,
         shopMedianPrice,
         snapshot.shopSellCount,
-        normalizedOffers.length > 0 ? 1 : 0,
+        normalizedOffers.some((offer) => offer.stockCount === null || offer.stockCount > 0) ? 1 : 0,
       ),
   );
 

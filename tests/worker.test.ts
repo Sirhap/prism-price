@@ -308,8 +308,8 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     ).json()) as {
       items: Array<{ minPrice: number }>;
     };
-    expect(cursorData.items).toHaveLength(1);
-    expect(cursorData.items[0].minPrice).toBe(71.5);
+    expect(cursorData.items).toHaveLength(2);
+    expect(cursorData.items.map((item) => item.minPrice).sort((a, b) => a - b)).toEqual([5, 71.5]);
   });
 
   it("POST /api/ingest 应支持增量推送、facets 计数、offerKey 展开与 DELETE 级联重算", async () => {
@@ -1428,7 +1428,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     });
     expect(manualRes.status).toBe(400);
 
-    // 试采 Schema.org Product/Offer JSON-LD 自建站，验证 USD 折算、OutOfStock 剔除、占位过滤且零 DB 写入
+    // 试采 Schema.org Product/Offer JSON-LD 自建站，验证 USD 折算、OutOfStock 保留、占位过滤且零 DB 写入
     const beforeShops = (await env.DB.prepare("SELECT COUNT(*) AS cnt FROM shops").first<{ cnt: number }>())?.cnt || 0;
     const beforeOffers = (await env.DB.prepare("SELECT COUNT(*) AS cnt FROM offers").first<{ cnt: number }>())?.cnt || 0;
 
@@ -1496,7 +1496,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
       telegram: string;
       rawItemCount: number;
       validItemCount: number;
-      sampleOffers: Array<{ cleanName: string; brandGroup: string; price: number }>;
+      sampleOffers: Array<{ cleanName: string; brandGroup: string; price: number; stockStatus: string }>;
     };
     expect(probeData).toMatchObject({
       ok: true,
@@ -1504,9 +1504,10 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
       adapterType: "json_ld",
       shopName: "星云 JSON-LD 官方店",
       telegram: "@jsonld_shop_support",
-      rawItemCount: 1,
-      validItemCount: 1,
+      rawItemCount: 2,
+      validItemCount: 2,
     });
+    expect(probeData.sampleOffers.find((item) => item.price === 1200)?.stockStatus).toBe("low");
     expect(probeData.sampleOffers[0]).toMatchObject({
       cleanName: "Claude Pro 独享月卡",
       brandGroup: "Claude",

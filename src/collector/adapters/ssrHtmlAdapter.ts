@@ -155,10 +155,6 @@ export const ssrHtmlAdapter: ShopAdapter = {
         stockCount = Number(trimmedStock);
       }
 
-      // 过滤掉无库存商品，避免死链污染比价列表
-      if (stockCount !== null && stockCount <= 0) {
-        continue;
-      }
 
       items.push({
         itemKey: card.itemKey,

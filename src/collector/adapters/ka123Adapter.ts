@@ -66,9 +66,6 @@ export const ka123Adapter: ShopAdapter = {
       }
 
       const rawStock = prod.stock_available;
-      if (typeof rawStock === "number" && rawStock <= 0) {
-        continue;
-      }
 
       const usdtPrice = Number(prod.price_micro || 0) / 1_000_000;
       if (!Number.isFinite(usdtPrice) || usdtPrice <= 0) {
@@ -76,7 +73,7 @@ export const ka123Adapter: ShopAdapter = {
       }
 
       const priceCny = Number((usdtPrice * rate).toFixed(2));
-      const stockCount = typeof rawStock === "number" ? rawStock : null;
+      const stockCount = typeof rawStock === "number" ? Math.max(0, rawStock) : null;
       const stockStatus: StockStatus =
         stockCount !== null && stockCount <= 5
           ? "low"

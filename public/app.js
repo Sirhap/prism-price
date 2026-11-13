@@ -302,7 +302,7 @@ const SHOP_RISK_NOTICE_TEXT =
 
 const SHOP_SORT_LABELS = {
   default: "综合推荐",
-  "products-desc": "在售商品最多",
+  "products-desc": "收录商品最多",
   "sales-desc": "参考销量优先",
   "updated-desc": "最近更新优先",
 };
@@ -1712,7 +1712,7 @@ function renderActiveFilters() {
       tags.push(["shopSort", `排序：${SHOP_SORT_LABELS[state.shopSort] || state.shopSort}`]);
     }
     if (state.shopOnlyInStock) {
-      tags.push(["shopOnlyInStock", "仅看有在售商品"]);
+      tags.push(["shopOnlyInStock", "仅看有收录商品"]);
     }
     if (state.shopHasIntegrationCode) {
       tags.push(["shopHasIntegrationCode", "仅看有对接码"]);
@@ -2077,7 +2077,7 @@ function renderMainCategoryBadges(mainCategories, productCount, maxCount = 5) {
   if (!Array.isArray(mainCategories) || mainCategories.length === 0) {
     return Number(productCount || 0) > 0
       ? "<span class='badge'>暂无主营类别统计</span>"
-      : "<span class='badge'>暂无在售商品</span>";
+      : "<span class='badge'>暂无收录商品</span>";
   }
   const visible = maxCount > 0 ? mainCategories.slice(0, maxCount) : mainCategories;
   const badges = visible.map(
@@ -2240,7 +2240,7 @@ async function openShopProfile(shopId) {
           hasCategories
             ? `<div class="profile-categories-list">${renderMainCategoryBadges(s.mainCategories, s.productCount, 0)}</div>`
             : `<p class="profile-empty-note" style="margin:0;font-size:13px;">${
-                Number(s.productCount || 0) > 0 ? "暂无主营类别统计" : "暂无在售商品，暂无法统计主营类别"
+                Number(s.productCount || 0) > 0 ? "暂无主营类别统计" : "暂无收录商品，暂无法统计主营类别"
               }</p>`
         }
       </section>
@@ -2251,7 +2251,7 @@ async function openShopProfile(shopId) {
           <strong>${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))}</strong>
         </div>
         <div class="signal-box">
-          <span>在售商品</span>
+          <span>收录商品</span>
           <strong>${Number(s.productCount || 0)} 件</strong>
         </div>
         <div class="signal-box">
@@ -2364,7 +2364,7 @@ function renderWorkbenchBody() {
               return `<span class="${isBest ? "compare-best-cell" : ""}">${formatPrice(item.minPrice)}${isBest && list.length > 1 ? "（本组最低）" : ""}</span>`;
             })}
             ${makeRow("均价 / 最高", (item) => `${formatPrice(item.medianPrice)} / ${formatPrice(item.maxPrice)}`)}
-            ${makeRow("在售店铺数", (item) => `${Number(item.shopCount || 0)} 家（${Number(item.offerCount || 0)} 条报价）`)}
+            ${makeRow("收录店铺数", (item) => `${Number(item.shopCount || 0)} 家（${Number(item.offerCount || 0)} 条报价）`)}
             ${makeRow("主分类", (item) => escapeHtml(formatGroupLabel(item.group || "其它")))}
             ${makeRow("商品类型", (item) => escapeHtml(CARD_BADGE_LABELS.type[item.attributes?.type] || "—"))}
             ${makeRow("套餐 / 时长", (item) => {
@@ -2407,7 +2407,7 @@ function renderWorkbenchBody() {
                  return `
                    <article class="fav-item-card">
                      <strong>${escapeHtml(item.name)}</strong>
-                     <div class="fav-item-meta">${escapeHtml(formatGroupLabel(item.group || ""))} · 最低 ${formatPrice(item.minPrice)} · ${Number(item.shopCount || 0)} 店在售</div>
+                     <div class="fav-item-meta">${escapeHtml(formatGroupLabel(item.group || ""))} · 最低 ${formatPrice(item.minPrice)} · ${Number(item.shopCount || 0)} 家店收录</div>
                      <div class="fav-item-actions">
                        ${
                          link
@@ -2435,7 +2435,7 @@ function renderWorkbenchBody() {
                  (s) => `
                    <article class="fav-item-card">
                      <strong>${escapeHtml(hideSavedTelegram(s.shopName))}</strong>
-                     <div class="fav-item-meta">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))} · 在售 ${Number(s.productCount || 0)} 件</div>
+                     <div class="fav-item-meta">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))} · 收录 ${Number(s.productCount || 0)} 件</div>
                      <div class="fav-item-actions">
                        <button type="button" class="btn btn-secondary btn-compact" data-wb-open-shop="${escapeHtml(s.id)}">店铺信息</button>
                        <button type="button" class="mini-icon-btn" data-wb-remove-fav-shop="${escapeHtml(s.id)}">移除</button>

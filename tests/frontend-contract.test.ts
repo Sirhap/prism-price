@@ -36,7 +36,7 @@ describe("前端静态资源与前后端契约对齐验证", () => {
 
     // 店铺筛选控件：仅看有在售商品开关、清空筛选按钮与提示栏
     expect(html).toContain('id="shopOnlyInStockInput"');
-    expect(html).toContain("仅看有在售商品");
+    expect(html).toContain("仅看有收录商品");
     expect(html).toContain('id="shopResetFiltersBtn"');
     expect(html).toContain('id="filterNoticeBar"');
     expect(html).not.toContain('id="refreshBtn"');
@@ -120,7 +120,7 @@ describe("前端静态资源与前后端契约对齐验证", () => {
     expect(js).not.toContain("formatShortTime");
     expect(js).not.toContain("最近同步时间");
     expect(js).not.toContain("同步：");
-    expect(js).toContain("暂无在售商品，暂无法统计主营类别");
+    expect(js).toContain("暂无收录商品，暂无法统计主营类别");
     expect(js).toContain("暂无主营类别统计");
     expect(js).toContain("未记录（早期收录）");
     expect(js).toContain("OFFICIAL_REFERENCE_PRICES");

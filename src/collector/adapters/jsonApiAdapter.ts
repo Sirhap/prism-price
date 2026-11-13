@@ -76,10 +76,11 @@ export const jsonApiAdapter: ShopAdapter = {
 
       const rawStock = p.stock ?? p.stockCount ?? null;
       const stockCount = rawStock === null || rawStock === undefined ? null : Number(rawStock);
-      if (stockCount !== null && (!Number.isFinite(stockCount) || stockCount <= 0)) {
+      if (stockCount !== null && !Number.isFinite(stockCount)) {
         continue;
       }
 
+      const availableStock = stockCount === null ? null : Math.max(0, stockCount);
       const currency = String(p.currency || "CNY").toUpperCase();
       const priceCny = currency === "USDT" || currency === "USD"
         ? Number((basePrice * USDT_TO_CNY_RATE).toFixed(2))
@@ -90,8 +91,8 @@ export const jsonApiAdapter: ShopAdapter = {
         rawName,
         shopCategory: String(p.categoryName ?? p.category ?? "").trim(),
         price: priceCny,
-        stockCount,
-        stockStatus: normalizeStockStatus(p.stockLevel ?? p.stockStatus, stockCount),
+        stockCount: availableStock,
+        stockStatus: normalizeStockStatus(p.stockLevel ?? p.stockStatus, availableStock),
         itemUrl: String(p.url ?? p.itemUrl ?? finalUrl),
       });
     }

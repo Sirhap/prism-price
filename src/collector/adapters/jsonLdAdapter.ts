@@ -132,9 +132,6 @@ function collectJsonLdNodes(
       }
 
       const { inStock, stockStatus } = normalizeAvailability(offer.availability);
-      if (!inStock) {
-        continue;
-      }
 
       const rawPrice = parseOfferPrice(offer.price ?? offer.lowPrice);
       if (!Number.isFinite(rawPrice) || rawPrice <= 0) {
@@ -158,13 +155,10 @@ function collectJsonLdNodes(
       }
 
       const rawInventory = (offer.inventoryLevel as Record<string, unknown> | undefined)?.value ?? offer.inventoryLevel;
-      const stockCount =
+      const stockCount = !inStock ? 0 :
         typeof rawInventory === "number" && Number.isFinite(rawInventory)
           ? Math.max(0, Math.floor(rawInventory))
           : null;
-      if (stockCount !== null && stockCount <= 0) {
-        continue;
-      }
 
       const itemUrl = resolveOfferItemUrl(offer.url, productUrl);
       const itemKey = String(
