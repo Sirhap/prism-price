@@ -297,6 +297,7 @@
                 </div>
               </div>
 
+              <button id="submitShopBtn" class="btn btn-secondary btn-compact" type="button">提交店铺</button>
               <a id="shopOpenStoreLink" data-open-store class="btn btn-primary btn-compact shop-open-store-link" href="https://wzyp.cn/merchant/register?invite_token=sirhao" target="_blank" rel="noopener noreferrer" title="前往第三方店铺平台开店">我想开店 <span aria-hidden="true">↗</span></a>
 
               <div id="moreFiltersPanel" class="more-filters-panel" hidden></div>
@@ -410,6 +411,19 @@
 
     <!-- Toast 轻提示容器 -->
     <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog id="submitShopDialog" class="submit-shop-dialog" aria-labelledby="submitShopTitle">
+      <form id="submitShopForm">
+        <div class="submit-shop-heading"><h2 id="submitShopTitle">提交店铺</h2><button type="button" id="closeSubmitShop" aria-label="关闭">×</button></div>
+        <p>填写公开的卡网商家或第三方店铺网址，提交后将加入店铺列表。</p>
+        <label for="submitShopUrl">店铺网址</label>
+        <input id="submitShopUrl" type="url" placeholder="https://example.com/shop/…" required maxlength="2048" />
+        <p class="submit-shop-hint">商品和库存需要后续同步，第三方店铺可能需要人工适配。</p>
+        <p id="submitShopResult" role="status" aria-live="polite"></p>
+        <button type="button" id="previewShopNetwork" class="btn btn-secondary" hidden>使用我的网络同步商品</button>
+        <div class="submit-shop-actions"><button type="button" id="confirmShopBack" hidden>返回修改</button><button class="btn btn-primary" id="submitShopNext" type="submit">继续</button></div>
+      </form>
+    </dialog>
 
     <!-- 店铺介绍与跳转弹窗 -->
     <div id="profileModal" class="modal" hidden>

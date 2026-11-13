@@ -1826,6 +1826,14 @@ function buildAttributeBadges(item) {
   return tags.join("");
 }
 
+/** 仅已验证浏览器跨域的店铺显示用户网络刷新入口。 */
+function browserRefreshSupported(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return ['wzyp.cn', 'pay.ldxp.cn', 'catfk.com', 'www.catfk.com'].includes(url.hostname.toLowerCase()) && /^\/shop\/[a-zA-Z0-9_-]+\/?$/.test(url.pathname);
+  } catch { return false; }
+}
+
 function renderOfferPanel(item) {
   const offers = state.fullOffersCache.get(item.id) || item.offers || [];
   const isLoadedFull = state.fullOffersCache.has(item.id);
@@ -1848,6 +1856,7 @@ function renderOfferPanel(item) {
         <div class="offer-row">
           <div class="offer-shop-cell">
             ${shopNameHtml}
+            ${browserRefreshSupported(shopLink) ? `<button type="button" class="copy-inline-btn" data-browser-refresh="offer" data-shop-id="${escapeHtml(offer.shopId || '')}" data-shop-url="${escapeHtml(shopLink)}" data-item-url="${escapeHtml(link || '')}" title="使用当前网络读取源站">↻ 刷新参考</button>` : ''}
             ${isBest ? `<span class="offer-tag is-best">★ 当前最低</span>` : ""}
             <span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>
           </div>
@@ -2146,6 +2155,7 @@ function renderShops(append = false) {
               </div>
             </div>
             <div class="shop-quick-actions">
+              ${browserRefreshSupported(shopLink) ? `<button type="button" class="mini-icon-btn" data-browser-refresh="shop" data-shop-id="${escapeHtml(s.id)}" data-shop-url="${escapeHtml(shopLink)}" aria-label="使用当前网络刷新店铺参考" title="使用当前网络刷新店铺参考">↻</button>` : ''}
               ${shopLink ? `<a class="mini-icon-btn shop-visit-link" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer" aria-label="进入店铺：${escapeHtml(hideSavedTelegram(s.shopName))}" title="进入店铺（新标签打开）">↗</a>` : ""}
               <button type="button" class="mini-icon-btn${isFaved ? " is-active" : ""}" data-fav-shop="${escapeHtml(s.id)}" aria-pressed="${isFaved}" title="收藏店铺">
                 ${isFaved ? "★" : "☆"}
@@ -3037,4 +3047,83 @@ document.addEventListener("keydown", (event) => {
     triggerKunEgg(true);
     kunSecretBuffer = "";
   }
+});
+
+
+/** 用户提交店铺：确认地址后由服务端规范化并去重。 */
+(() => {
+  const dialog = document.querySelector('#submitShopDialog');
+  const open = document.querySelector('#submitShopBtn');
+  const form = document.querySelector('#submitShopForm');
+  const input = document.querySelector('#submitShopUrl');
+  const result = document.querySelector('#submitShopResult');
+  const next = document.querySelector('#submitShopNext');
+  const back = document.querySelector('#confirmShopBack');
+  const close = document.querySelector('#closeSubmitShop');
+  const preview = document.querySelector('#previewShopNetwork');
+  if (!dialog || !open || !form || !input || !result || !next || !back || !close || !preview) return;
+  let confirmedUrl = ''; let submittedShopId = '';
+  const reset = () => { confirmedUrl = ''; submittedShopId = ''; input.readOnly = false; input.hidden = false; back.hidden = true; next.hidden = false; next.textContent = '继续'; result.textContent = ''; preview.hidden = true; };
+  open.addEventListener('click', () => { form.reset(); reset(); dialog.showModal(); input.focus(); });
+  close.addEventListener('click', () => dialog.close());
+  back.addEventListener('click', () => { reset(); input.focus(); });
+  preview.addEventListener('click', async () => {
+    preview.disabled = true; result.textContent = '正在通过你的网络读取源站商品…';
+    try {
+      const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
+      const { snapshot, result: saved } = await syncShopFromBrowser(submittedShopId, confirmedUrl);
+      result.textContent = `同步成功：${snapshot.name}，读取 ${snapshot.count} 件，已写入 ${saved.itemCount} 件收录商品。`;
+    } catch (error) { result.textContent = `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`; }
+    finally { preview.disabled = false; }
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!confirmedUrl) {
+      try { const u = new URL(input.value.trim()); if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error(); confirmedUrl = u.href; }
+      catch { result.textContent = '请输入有效的店铺网址'; return; }
+      input.readOnly = true; result.textContent = `请确认提交：${confirmedUrl}`; back.hidden = false; next.textContent = '确认提交'; return;
+    }
+    next.disabled = true; back.disabled = true; result.textContent = '正在提交…';
+    try {
+      const response = await fetch('/api/shops/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopUrl: confirmedUrl }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '提交失败');
+      submittedShopId = data.shopId || '';
+      result.textContent = data.existing ? '该店铺已收录。' : '提交成功，店铺已收录。';
+      next.hidden = true; back.hidden = true; preview.hidden = !submittedShopId || !browserRefreshSupported(confirmedUrl);
+      if (!preview.hidden && !data.existing) preview.click();
+      if (!data.existing && state.mode === 'shop') fetchShops(false);
+    } catch (error) { result.textContent = error instanceof Error ? error.message : '提交失败，请稍后重试'; }
+    finally { next.disabled = false; back.disabled = false; }
+  });
+})();
+
+
+// 用户网络读取并回传；服务端不因回传缺项删除原有报价。
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-browser-refresh]');
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = '读取中…';
+  try {
+    const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
+    const { snapshot } = await syncShopFromBrowser(button.dataset.shopId, button.dataset.shopUrl);
+    const container = button.closest('.offer-row, .shop-card');
+    if (!container) return;
+    let status = container.querySelector('.browser-refresh-result');
+    if (!status) { status = document.createElement('p'); status.className = 'browser-refresh-result'; status.setAttribute('role', 'status'); container.appendChild(status); }
+    if (button.dataset.browserRefresh === 'offer') {
+      const target = button.dataset.itemUrl || '';
+      let key = '';
+      try { key = decodeURIComponent(new URL(target).pathname.split('/').filter(Boolean).at(-1) || ''); } catch {}
+      const item = snapshot.items.find(x => String(x.link || '') === target || (key && String(x.goods_key || '') === key));
+      if (!item) status.textContent = '本次未在源站找到该商品，请进入店铺核实。';
+      else {
+        const price = Number(item.price); const stock = item.extend?.stock_count;
+        status.textContent = `源站参考：${Number.isFinite(price) ? `¥${price.toFixed(2)}` : '价格未提供'} · ${typeof stock === 'number' && stock <= 0 ? '当前缺货' : '库存以店铺为准'}（已同步）`;
+      }
+    } else status.textContent = `源站当前返回 ${snapshot.count} 件商品（已同步，具体库存请进入店铺核实）。`;
+  } catch (error) { showToast(`读取源站失败：${error instanceof Error ? error.message : '请稍后再试'}`); }
+  finally { button.disabled = false; button.textContent = label; }
 });

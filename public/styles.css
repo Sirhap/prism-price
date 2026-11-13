@@ -2962,3 +2962,6 @@ html[data-theme="dark"] .toast-item {
 .seo-about h2, .seo-about h3 { color: var(--text, #172033); margin: 0 0 .4rem; font-size: 1rem; }
 .seo-about h3 { margin-top: 1rem; }
 .seo-about p { margin: 0; font-size: .9rem; }
+.submit-shop-dialog{width:min(520px,calc(100vw - 32px));padding:1.5rem;border:1px solid #dce4f0;border-radius:18px;background:var(--surface,#fff);color:var(--text,#172033);box-shadow:0 24px 70px #17203333}
+.submit-shop-dialog::backdrop{background:#11182799}.submit-shop-heading{display:flex;justify-content:space-between;align-items:center;gap:1rem}.submit-shop-heading h2{margin:0}.submit-shop-heading button{border:0;background:transparent;color:inherit;font-size:1.7rem;cursor:pointer}.submit-shop-dialog label{display:block;font-weight:600;margin-top:1rem}.submit-shop-dialog input{width:100%;box-sizing:border-box;margin-top:.5rem;padding:.8rem;border:1px solid #cad5e5;border-radius:10px;font:inherit}.submit-shop-hint{font-size:.9rem;opacity:.75}.submit-shop-actions{display:flex;justify-content:flex-end;gap:.75rem}.submit-shop-actions button{cursor:pointer}
+.browser-refresh-result{margin:.5rem 0;color:var(--text-muted,#64748b);font-size:.85rem;line-height:1.5}.offer-row .browser-refresh-result{grid-column:1/-1}

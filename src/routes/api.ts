@@ -1,3 +1,4 @@
+import { normalizeSubmittedShopUrl } from "../collector/submittedShopUrl";
 import { cachedQuery, cachedShopCount, catalogVersion, catalogIndexes } from "../cache/queryCache";
 import { TYPE_SQL_EXPR, PLAN_SQL_EXPR, loadProductBuckets, summarizeProducts, catalogGroups } from "./productStats";
 import { resolveIntegrationCodes, integrationCodeCandidateFilter, hideTelegramContacts } from "../collector/shopPresentation";
@@ -33,6 +34,7 @@ import {
   type AdminShopInput,
   type PushedShopEntry,
 } from "../collector/scheduler";
+import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
 import {
   calculateMedian,
   extractWarrantyText,
@@ -997,6 +999,93 @@ async function handleAdminUpsertShops(request: Request, env: Env): Promise<Respo
   return Response.json({ ok: true, upserted: result.upserted });
 }
 
+/** 提交店铺地址：仅入库待同步，不代表已核实商品或库存。 */
+async function handlePublicShopSubmission(request: Request, env: Env): Promise<Response> {
+  const requestOrigin = request.headers.get("Origin");
+  if (requestOrigin && requestOrigin !== new URL(request.url).origin) return Response.json({ error: "请求来源不匹配" }, { status: 403 });
+  if (!(request.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")) return Response.json({ error: "请使用 JSON 提交" }, { status: 415 });
+  if (Number(request.headers.get("Content-Length") || 0) > 4096) return Response.json({ error: "提交内容过长" }, { status: 413 });
+  const raw = await request.text();
+  if (raw.length > 4096) return Response.json({ error: "提交内容过长" }, { status: 413 });
+  let data: { shopUrl?: unknown };
+  try { data = JSON.parse(raw) as { shopUrl?: unknown }; } catch { return Response.json({ error: "请求格式不正确" }, { status: 400 }); }
+  const canonical = normalizeSubmittedShopUrl(data?.shopUrl);
+  if (!canonical) return Response.json({ error: "请输入有效的公网店铺网址" }, { status: 400 });
+  const url = new URL(canonical);
+  const known = ['wzyp.cn', 'catfk.com', 'www.16688.com.cn'].includes(url.hostname);
+  const token = known ? url.pathname.split('/')[2] : '';
+  const browserSupported = ['wzyp.cn', 'catfk.com'].includes(url.hostname);
+  const existing = await env.DB.prepare("SELECT id FROM shops WHERE lower(rtrim(canonical_url, '/')) = ? OR lower(rtrim(shop_url, '/')) = ? LIMIT 1").bind(canonical.toLowerCase(), canonical.toLowerCase()).first<{ id: string }>();
+  if (existing) return Response.json({ ok: true, existing: true, shopId: existing.id });
+  const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)))).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+  const id = `submitted-${digest}`;
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare("INSERT OR IGNORE INTO shops (id,shop_name,shop_url,canonical_url,adapter_type,sync_supported,sync_state,next_sync_at,updated_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM shops WHERE id LIKE 'submitted-%' AND updated_at >= ?) < 30")
+    .bind(id, token ? `店铺 ${token}` : url.hostname, canonical, canonical, browserSupported ? 'push_ingest' : 'manual', browserSupported ? 1 : 0, browserSupported ? 'pending' : 'manual', now, now, dayStart.toISOString()).run();
+  if (!result.meta.changes) {
+    const duplicate = await env.DB.prepare("SELECT id FROM shops WHERE id = ? OR lower(rtrim(canonical_url, '/')) = ? LIMIT 1").bind(id, canonical.toLowerCase()).first<{id: string}>();
+    return duplicate ? Response.json({ ok: true, existing: true, shopId: duplicate.id }) : Response.json({ error: "今日提交数量已满，请稍后再试" }, { status: 429 });
+  }
+  return Response.json({ ok: true, existing: false, shopId: id }, { status: 201 });
+}
+
+const browserSyncInFlight = new Set<string>();
+
+/** 浏览器提交为不可信输入；仅更新支持的平台，不因缺项删除已有报价。 */
+async function handleBrowserShopSync(request: Request, env: Env): Promise<Response> {
+  const origin = request.headers.get('Origin');
+  if (!origin || origin !== new URL(request.url).origin) return Response.json({ error: '请求来源不匹配' }, { status: 403 });
+  if (!(request.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json')) return Response.json({ error: '请使用 JSON' }, { status: 415 });
+  if (Number(request.headers.get('Content-Length') || 0) > 1024 * 1024) return Response.json({ error: '数据过大' }, { status: 413 });
+  const raw = await request.text();
+  if (raw.length > 1024 * 1024) return Response.json({ error: '数据过大' }, { status: 413 });
+  let body: { shopId?: unknown; shopName?: unknown; items?: unknown };
+  try { body = JSON.parse(raw); } catch { return Response.json({ error: '请求格式不正确' }, { status: 400 }); }
+  const id = typeof body?.shopId === 'string' ? body.shopId.trim() : '';
+  if (!id || id.length > 200 || !Array.isArray(body.items) || body.items.length === 0 || body.items.length > 2000) return Response.json({ error: '店铺或商品数据无效' }, { status: 400 });
+  if (browserSyncInFlight.has(id)) return Response.json({ error: '店铺正在同步，请稍后再试' }, { status: 429 });
+  browserSyncInFlight.add(id);
+  try {
+    const shop = await env.DB.prepare('SELECT * FROM shops WHERE id = ? LIMIT 1').bind(id).first<ShopRecord>();
+    if (!shop) return Response.json({ error: '店铺不存在' }, { status: 404 });
+    let source: URL;
+    try { source = new URL(shop.shop_url); } catch { return Response.json({ error: '店铺地址无效' }, { status: 400 }); }
+    if (!['wzyp.cn', 'pay.ldxp.cn', 'catfk.com', 'www.catfk.com'].includes(source.hostname.toLowerCase()) || !/^\/shop\/[a-zA-Z0-9_-]+\/?$/.test(source.pathname)) return Response.json({ error: '该店铺暂不支持浏览器同步' }, { status: 400 });
+    const last = Date.parse(shop.last_synced_at || '');
+    if (Number.isFinite(last) && Date.now() - last >= 0 && Date.now() - last < 5 * 60_000) return Response.json({ error: '店铺最近已同步，请 5 分钟后再试' }, { status: 429 });
+    const allowedHost = source.hostname.toLowerCase().includes('catfk.com') ? 'catfk.com' : 'wzyp.cn';
+    const input = body.items as Array<Record<string, unknown>>;
+    const items: import('../types').RawOfferItem[] = [];
+    const keys = new Set<string>();
+    for (const item of input) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return Response.json({ error: '商品数据无效' }, { status: 400 });
+      const key = typeof item.itemKey === 'string' ? item.itemKey.trim() : '';
+      const name = typeof item.rawName === 'string' ? item.rawName.trim() : '';
+      const price = item.price;
+      if (!key || key.length > 180 || !name || name.length > 500 || typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price >= 99999 || keys.has(key)) return Response.json({ error: '商品字段无效或重复' }, { status: 400 });
+      keys.add(key);
+      const stock = typeof item.stockCount === 'number' && Number.isSafeInteger(item.stockCount) && item.stockCount >= 0 ? item.stockCount : null;
+      let itemUrl = `https://${allowedHost}/item/${encodeURIComponent(key)}`;
+      if (typeof item.itemUrl === 'string' && item.itemUrl) {
+        try { const u = new URL(item.itemUrl); if (u.protocol !== 'https:' || ![allowedHost, ...(allowedHost === 'catfk.com' ? ['www.catfk.com'] : ['pay.ldxp.cn'])].includes(u.hostname.toLowerCase()) || u.port || u.username || u.password) return Response.json({ error: '商品链接域名不匹配' }, { status: 400 }); itemUrl = u.href; } catch { return Response.json({ error: '商品链接无效' }, { status: 400 }); }
+      }
+      items.push({ itemKey: key, rawName: name, shopCategory: typeof item.shopCategory === 'string' ? item.shopCategory.slice(0, 200) : '', price, stockCount: stock, stockStatus: stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient', itemUrl });
+    }
+    const previous = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
+    for (const row of previous.results || []) {
+      const key = row.id.startsWith(`${id}:`) ? row.id.slice(id.length + 1) : '';
+      if (!key || keys.has(key)) continue;
+      items.push({ itemKey:key, rawName:row.raw_name, shopCategory:row.shop_category, price:Number(row.price), stockCount:row.stock_count, stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient', itemUrl:row.item_url });
+    }
+    if (items.length > 2000) return Response.json({ error: '合并后商品超过 2000 件，请使用管理员同步' }, { status: 400 });
+    const incomingName = typeof body.shopName === 'string' ? hideTelegramContacts(body.shopName.trim()).slice(0, 120) : '';
+    const displayName = shop.id.startsWith('submitted-') && shop.sync_state === 'pending' && incomingName ? incomingName : shop.shop_name;
+    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, new Date().toISOString());
+    return Response.json({ ok:true, status:result.status, itemCount:result.itemCount });
+  } finally { browserSyncInFlight.delete(id); }
+}
+
 /**
  * DELETE /api/admin/shops/:id - 管理员下架指定店铺并级联清理商品组
  */
@@ -1361,6 +1450,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       return Response.json({ error: "非法的店铺路径参数" }, { status: 400 });
     }
     return handleGetShopIntro(shopId, env);
+  }
+
+  if (request.method === "POST" && pathname === "/api/shops/browser-sync") {
+    return handleBrowserShopSync(request, env);
+  }
+
+  if (request.method === "POST" && pathname === "/api/shops/submit") {
+    return handlePublicShopSubmission(request, env);
   }
 
   if (request.method === "POST" && pathname === "/api/admin/shops") {
