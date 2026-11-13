@@ -279,6 +279,7 @@ async function postJson(url, body, retries = 1, options = {}) {
       return data;
     } catch (err) {
       if (err?.isRateLimited) {
+        if (options.skipRiskRetry) throw err;
         if (options.requestGate && riskRetries < 2) {
           const delay = Math.max(60000 * (2 ** riskRetries), err.retryAfterMs || 0);
           if (delay <= 900000) {

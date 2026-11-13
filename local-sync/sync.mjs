@@ -125,7 +125,7 @@ export async function runSync(options, deps = {}) {
   const minInterval = options.intervalMs ?? options.intervalMinMs ?? 1000;
   const maxInterval = options.intervalMs != null ? options.intervalMs + 1000 : options.intervalMaxMs ?? 2000;
   const gate = deps.gate || createRequestGate(minInterval, { maxIntervalMs: maxInterval });
-  const collect = deps.collect || ((shop) => fetchShopApiSnapshot(shop, { requestGate: gate, allowChallengeSolve: false }));
+  const collect = deps.collect || ((shop) => fetchShopApiSnapshot(shop, { requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true }));
   const remove = deps.remove || ((shop) => jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${options.secret}` } }));
   const push = deps.push || ((entry) => jsonFetch(`${base}/api/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` }, body: JSON.stringify({ shops: [entry] }) }));
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
@@ -147,18 +147,14 @@ export async function runSync(options, deps = {}) {
     state = JSON.parse(fs.readFileSync(options.checkpoint, 'utf8'));
     if (state.version !== 2 || state.apiBase !== base || JSON.stringify(state.scope) !== JSON.stringify(scope) || !state.completed || Array.isArray(state.completed) || typeof state.completed !== 'object') throw new Error('续跑记录无效或目标地址不匹配');
   } else if (options.apply) saveCheckpoint(options.checkpoint, state);
-  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, unprocessed: 0 };
+  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, riskSkipped: 0, unprocessed: 0 };
   let cursor = 0;
-  const blocked = new Set();
   console.log(`[local-sync] ${options.apply ? '执行推送' : '预览（不会写入）'}：${targets.length} 家，分片 ${shardIndex}/${shardCount}，并发 ${options.concurrency}，请求间隔 ${minInterval}～${maxInterval}ms，目标 ${base}`);
   async function worker() {
     while (cursor < targets.length && !gate.isBlocked()) {
       const shop = targets[cursor++];
       if (options.resume && state.completed[shop.id] === shop.shopUrl) { stats.resumed++; continue; }
-      let origin;
       try {
-        origin = new URL(shop.shopUrl).origin;
-        if (blocked.has(origin)) throw new Error('源站已限流，本轮跳过');
         const snapshot = await collect(shop);
         if (snapshot.items.length === 0) {
           if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
@@ -194,14 +190,19 @@ export async function runSync(options, deps = {}) {
             stats.failed++; console.warn(`[local-sync] ${shop.id}: 删除失败：${deleteError instanceof Error ? deleteError.message : String(deleteError)}`); continue;
           }
         }
-        if (error?.isRateLimited || [401, 403, 429].includes(error?.status)) { if (origin) blocked.add(origin); gate.block(); }
+        if (error?.isRateLimited) {
+          stats.riskSkipped++; stats.failed++;
+          console.warn(`[local-sync] ${shop.id}: 源站风控，跳过该店：${error.message}`);
+          continue;
+        }
+        if ([401, 403, 429].includes(error?.status)) gate.block();
         stats.failed++;
         console.warn(`[local-sync] ${shop.id}: 失败，未覆盖原数据：${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(options.concurrency, targets.length) }, worker));
-  if (gate.isBlocked()) { stats.unprocessed = targets.length - cursor; console.warn(`[local-sync] 触发风控，已停止本轮；未处理 ${targets.length - cursor} 家，请勿自动重试`); }
+  if (gate.isBlocked()) { stats.unprocessed = targets.length - cursor; console.warn(`[local-sync] 目标站鉴权或限流导致停止；未处理 ${targets.length - cursor} 家，请勿自动重试`); }
   console.log(`[local-sync] 结果 ${JSON.stringify(stats)}`);
   return stats;
 }
@@ -218,7 +219,7 @@ export function describeWorkflow() {
       delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },
     deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；判断来自源站单次响应，可能误判。封禁和普通网络失败不删除。',
-    rate: '默认单并发、随机间隔 1～2 秒；风控最多重试 2 次，遵守 Retry-After，持续受限则停止。多进程不共享限速。',
+    rate: '默认单并发、随机间隔 1～2 秒；单店触发风控立即跳过并继续下一家，目标站鉴权失败或限流则停止。多进程不共享限速。',
     defaults: '默认只预览，不写入；仅显式 --apply 才会写入或删除。脚本不会自行设置定时任务。',
     audit: '开源代码和凭据均需使用者自行确认；不要将密钥写入仓库、日志或提示词。',
   };

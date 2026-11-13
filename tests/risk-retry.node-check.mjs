@@ -17,3 +17,8 @@ test('等待超出上限时停止，支持 HTTP 日期', async () => {
   const orig=globalThis.fetch;const g=gate();let calls=0;globalThis.fetch=async()=>{calls++;return new Response('busy',{status:429,headers:{'retry-after':'1800'}});};
   try { await assert.rejects(fetchShopApiSnapshot(shop,{requestGate:g,allowChallengeSolve:false}),e=>e.isRateLimited);assert.equal(calls,1);assert.equal(g.blocked,true);assert.equal(parseRetryAfter('Thu, 01 Jan 1970 00:01:00 GMT',0),60000); } finally {globalThis.fetch=orig;}
 });
+
+test('启用单店跳过时遇风控只请求一次且不封锁全局', async () => {
+  const orig=globalThis.fetch;let calls=0;const g=gate();globalThis.fetch=async()=>{calls++;return new Response('busy',{status:429});};
+  try { await assert.rejects(fetchShopApiSnapshot(shop,{requestGate:g,allowChallengeSolve:false,skipRiskRetry:true}),e=>e.isRateLimited);assert.equal(calls,1);assert.equal(g.blocked,false);assert.deepEqual(g.delays,[]); } finally {globalThis.fetch=orig;}
+});

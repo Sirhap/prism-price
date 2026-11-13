@@ -83,16 +83,13 @@ test('稳定分片覆盖每家店且不会重叠，参数防止过快请求', ()
   assert.notEqual(parseArgs(['--shard=1/2']).checkpoint, parseArgs(['--shard=2/2']).checkpoint);
 });
 
-test('请求间隔全局串行且风控时停止后续店铺', async () => {
-  let clock = 0;
-  const gate = createRequestGate(3000, { maxIntervalMs: 5000, now: () => clock, random: () => 0, sleep: async (ms) => { clock += ms; } });
-  await Promise.all([gate.before(), gate.before(), gate.before()]);
-  assert.equal(clock, 6000);
+test('单店风控时跳过并继续同一源站后续店铺', async () => {
   const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-stop-')), 'state.json');
-  let collected = 0;
-  const stats = await runSync(options(checkpoint, { apply: true }), { load, gate, collect: async () => { collected++; const e = new Error('风控'); e.isRateLimited = true; throw e; }, push: async () => { throw new Error('不应推送'); } });
-  assert.equal(collected, 1); assert.equal(stats.failed, 1); assert.equal(stats.unprocessed, 2); assert.equal(gate.isBlocked(), true);
-  await assert.rejects(gate.before(), /停止本轮/);
+  const collected=[]; const pushed=[];
+  const stats=await runSync(options(checkpoint,{apply:true}), {load, collect:async s=>{collected.push(s.id);if(s.id==='a'){const e=new Error('验证码');e.isRateLimited=true;throw e;}return snapshot;},push:async e=>{pushed.push(e.shopId);return result(e.shopId);}});
+  assert.deepEqual(collected,['a','b','c']);assert.deepEqual(pushed,['b','c']);
+  assert.equal(stats.riskSkipped,1);assert.equal(stats.failed,1);assert.equal(stats.unprocessed,0);
+  assert.equal(JSON.parse(fs.readFileSync(checkpoint)).completed.a,undefined);
 });
 
 test('源站忽略请求 limit 时仍读取全部分页', async () => {
