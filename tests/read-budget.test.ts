@@ -39,7 +39,7 @@ it("6000商品组冷查询扫描预算与原实现对照", async () => {
     const oldBody: Record<string, unknown> = structuredClone(reference.body);
     // 旧基准没有新增分类；该固定数据集不包含这些分类，计数应为 0。
     const oldFacets = oldBody.facets as { groups: Record<string, number> };
-    for (const group of ["Muse", "千问", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品"]) oldFacets.groups[group] = 0;
+    for (const group of ["Muse", "智谱", "Augment", "Perplexity", "千问", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "影音会员", "网盘服务", "生活优惠"]) oldFacets.groups[group] = 0;
     const newBody = await response.json() as Record<string, unknown>;
     for (const key of ["items","total","offerTotal","shopCount","page","pageSize","totalPages","appliedFilters","appliedPriceRange","facets"]) {
       expect(newBody[key], key).toEqual(oldBody[key]);

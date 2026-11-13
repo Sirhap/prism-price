@@ -26,6 +26,9 @@ export const NON_PLAN_GROUPS: ReadonlySet<string> = new Set([
   "AI视频",
   "AI绘图",
   "AI音乐",
+  "影音会员",
+  "网盘服务",
+  "生活优惠",
   "手机卡",
   "游戏商品",
   "AI创作",
@@ -40,6 +43,7 @@ export const NON_PLAN_GROUPS: ReadonlySet<string> = new Set([
 
 /** 不存在套餐周期概念的品牌分组（切换至这些分组时清除 duration） */
 export const NON_DURATION_GROUPS: ReadonlySet<string> = new Set([
+  "生活优惠",
   "手机卡",
   "游戏商品",
   "虚拟卡",

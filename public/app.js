@@ -12,6 +12,9 @@ const BRAND_GROUP_ORDER = [
   "Antigravity",
   "DeepSeek",
   "Muse",
+  "智谱",
+  "Augment",
+  "Perplexity",
   "千问",
   "AI视频",
   "AI绘图",
@@ -25,6 +28,9 @@ const BRAND_GROUP_ORDER = [
   "工具教程",
   "手机卡",
   "游戏商品",
+  "影音会员",
+  "网盘服务",
+  "生活优惠",
   "其它",
 ];
 
@@ -46,10 +52,10 @@ const GROUP_CANONICAL_MAP = new Map([
 ]);
 
 /** 不存在订阅套餐概念的品牌分组 */
-const NON_PLAN_GROUPS = new Set(["Muse", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "AI创作", "DeepSeek", "中转", "虚拟卡", "代理IP", "邮箱账号", "平台账号", "工具教程"]);
+const NON_PLAN_GROUPS = new Set(["Muse", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "影音会员", "网盘服务", "生活优惠", "AI创作", "DeepSeek", "中转", "虚拟卡", "代理IP", "邮箱账号", "平台账号", "工具教程"]);
 
 /** 不存在套餐周期概念的品牌分组 */
-const NON_DURATION_GROUPS = new Set(["手机卡", "游戏商品", "虚拟卡", "邮箱账号", "平台账号", "中转", "工具教程"]);
+const NON_DURATION_GROUPS = new Set(["手机卡", "游戏商品", "生活优惠", "虚拟卡", "邮箱账号", "平台账号", "中转", "工具教程"]);
 
 /** 保留的商品筛选维度（已移除低覆盖/失真维度及“未标注”选项） */
 const FILTER_DIMENSIONS = [
@@ -139,6 +145,12 @@ const GROUP_VISUAL_META = {
   Kiro: { color: "#9333ea", bg: "rgba(147, 51, 234, 0.13)" },
   Antigravity: { color: "#0891b2", bg: "rgba(8, 145, 178, 0.13)" },
   DeepSeek: { color: "#0284c7", bg: "rgba(2, 132, 199, 0.13)" },
+  Augment: { color: "#4f46e5", bg: "rgba(79, 70, 229, 0.13)" },
+  Perplexity: { color: "#0d9488", bg: "rgba(13, 148, 136, 0.13)" },
+  智谱: { color: "#0f766e", bg: "rgba(15, 118, 110, 0.13)" },
+  影音会员: { color: "#c026d3", bg: "rgba(192, 38, 211, 0.13)" },
+  网盘服务: { color: "#0284c7", bg: "rgba(2, 132, 199, 0.13)" },
+  生活优惠: { color: "#ea580c", bg: "rgba(234, 88, 12, 0.13)" },
   Muse: { color: "#7c3aed", bg: "rgba(124, 58, 237, 0.13)" },
   千问: { color: "#2563eb", bg: "rgba(37, 99, 235, 0.13)" },
   AI视频: { color: "#db2777", bg: "rgba(219, 39, 119, 0.13)" },
@@ -1748,9 +1760,9 @@ function renderBrandChips() {
   const baseline = state.catalogGroupCounts;
   const totalAll = Object.values(facets).reduce((sum, n) => sum + Number(n || 0), 0);
   const sections = [
-    ["AI 对话与编程", BRAND_GROUP_ORDER.slice(0, 11)],
-    ["AI 视频与创作", BRAND_GROUP_ORDER.slice(11, 15)],
-    ["数字账号与基建", BRAND_GROUP_ORDER.slice(15)],
+    ["AI 对话与编程", BRAND_GROUP_ORDER.slice(0, 14)],
+    ["AI 视频与创作", BRAND_GROUP_ORDER.slice(14, 18)],
+    ["数字账号与基建", BRAND_GROUP_ORDER.slice(18)],
   ];
   const hasNonQueryFilters =
     state.type !== "all" ||

@@ -12,6 +12,9 @@ export const PRODUCT_GROUPS = [
   "Antigravity",
   "DeepSeek",
   "Muse",
+  "智谱",
+  "Augment",
+  "Perplexity",
   "千问",
   "AI视频",
   "AI绘图",
@@ -25,6 +28,9 @@ export const PRODUCT_GROUPS = [
   "工具教程",
   "手机卡",
   "游戏商品",
+  "影音会员",
+  "网盘服务",
+  "生活优惠",
   "其它",
 ] as const;
 
