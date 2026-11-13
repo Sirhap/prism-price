@@ -25,7 +25,7 @@ test('推送只记录已确认完成的店铺，续跑失败店铺且拒绝不�
   const sent = [];
   const push = async (entry) => { sent.push(entry.shopId); if (entry.shopId === 'b') throw new Error('network'); return result(entry.shopId); };
   const first = await runSync(options(checkpoint, { apply: true }), { load, collect: async () => snapshot, push });
-  assert.equal(first.failed, 1); assert.deepEqual(sent, ['a', 'b', 'c']);
+  assert.equal(first.failed, 1); assert.deepEqual([...sent].sort(), ['a', 'b', 'c']);
   const resumed = [];
   const second = await runSync(options(checkpoint, { apply: true, resume: true }), { load, collect: async (s) => { resumed.push(s.id); return snapshot; }, push: async (e) => result(e.shopId) });
   assert.deepEqual(resumed, ['b']); assert.equal(second.resumed, 2); assert.equal(second.failed, 0);
@@ -86,7 +86,7 @@ test('稳定分片覆盖每家店且不会重叠，参数防止过快请求', ()
 test('单店风控时跳过并继续同一源站后续店铺', async () => {
   const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-stop-')), 'state.json');
   const collected=[]; const pushed=[];
-  const stats=await runSync(options(checkpoint,{apply:true}), {load, collect:async s=>{collected.push(s.id);if(s.id==='a'){const e=new Error('验证码');e.isRateLimited=true;throw e;}return snapshot;},push:async e=>{pushed.push(e.shopId);return result(e.shopId);}});
+  const stats=await runSync(options(checkpoint,{apply:true}), {load, chooseStart:()=>0, collect:async s=>{collected.push(s.id);if(s.id==='a'){const e=new Error('验证码');e.isRateLimited=true;throw e;}return snapshot;},push:async e=>{pushed.push(e.shopId);return result(e.shopId);}});
   assert.deepEqual(collected,['a','b','c']);assert.deepEqual(pushed,['b','c']);
   assert.equal(stats.riskSkipped,1);assert.equal(stats.failed,1);assert.equal(stats.unprocessed,0);
   assert.equal(JSON.parse(fs.readFileSync(checkpoint)).completed.a,undefined);
@@ -231,4 +231,15 @@ test('100ms 下限适用于配置范围和命令行', async () => {
   assert.throws(() => createRequestGate(99, {maxIntervalMs: 200}), /100/);
   let clock=0; const gate=createRequestGate(100,{maxIntervalMs:100,now:()=>clock,random:()=>0,sleep:async ms=>{clock+=ms;}});
   await gate.before(); await gate.before(); assert.equal(clock,100);
+});
+
+
+test('新轮次随机起点，断点续跑保留起点且覆盖另一半', async () => {
+  const checkpoint=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-order-')),'state.json');
+  const first=[];const dependencies={load,chooseStart:()=>1,collect:async s=>{first.push(s.id);if(s.id==='c')throw Error('temporary');return snapshot;},push:async e=>result(e.shopId)};
+  const one=await runSync(options(checkpoint,{apply:true}),dependencies);
+  assert.deepEqual(first,['b','c','a']);assert.equal(one.failed,1);
+  assert.equal(JSON.parse(fs.readFileSync(checkpoint)).startShopId,'b');
+  const next=[];const two=await runSync(options(checkpoint,{apply:true,resume:true}),{...dependencies,chooseStart:()=>0,collect:async s=>{next.push(s.id);return snapshot;}});
+  assert.deepEqual(next,['c']);assert.equal(two.resumed,2);
 });

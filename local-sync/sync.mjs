@@ -140,13 +140,20 @@ export async function runSync(options, deps = {}) {
   const shardCount = options.shardCount ?? 1;
   const shardIndex = options.shardIndex ?? 1;
   targets = targets.filter((shop) => shardForShop(shop.id, shardCount) === shardIndex);
-  if (options.limit) targets = targets.slice(0, options.limit);
   const scope = { shardIndex, shardCount, shops: [...options.shops].sort(), limit: options.limit };
-  let state = { version: 2, apiBase: base, scope, completed: {} };
+  let state = { version: 2, apiBase: base, scope, completed: {}, startShopId: targets.length ? targets[(deps.chooseStart || crypto.randomInt)(targets.length)].id : null };
   if (options.resume) {
     state = JSON.parse(fs.readFileSync(options.checkpoint, 'utf8'));
     if (state.version !== 2 || state.apiBase !== base || JSON.stringify(state.scope) !== JSON.stringify(scope) || !state.completed || Array.isArray(state.completed) || typeof state.completed !== 'object') throw new Error('续跑记录无效或目标地址不匹配');
-  } else if (options.apply) saveCheckpoint(options.checkpoint, state);
+  }
+  // 固定按 ID 排序，并按本轮保存的起点轮转；续跑和清单顺序变化仍保持同一入口。
+  targets.sort((a, b) => String(a.id).localeCompare(String(b.id), 'en'));
+  if (state.startShopId && targets.length) {
+    const start = targets.findIndex(shop => String(shop.id).localeCompare(String(state.startShopId), 'en') >= 0);
+    if (start > 0) targets = [...targets.slice(start), ...targets.slice(0, start)];
+  }
+  if (options.limit) targets = targets.slice(0, options.limit);
+  if (!options.resume && options.apply) saveCheckpoint(options.checkpoint, state);
   const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, riskSkipped: 0, unprocessed: 0 };
   let cursor = 0;
   console.log(`[local-sync] ${options.apply ? '执行推送' : '预览（不会写入）'}：${targets.length} 家，分片 ${shardIndex}/${shardCount}，并发 ${options.concurrency}，请求间隔 ${minInterval}～${maxInterval}ms，目标 ${base}`);
