@@ -252,3 +252,15 @@ test('超限时仅向支持部分同步的服务推送前 2000 件并保留标�
   large.items.push({...snapshot.items[0],itemKey:'extra'}); entry=null;
   const old=await runSync(options(checkpoint,{apply:true}),{...deps,load:async()=>({shops:[shops[0]]})});assert.equal(old.failed,1);assert.equal(entry,null);
 });
+
+test('续跑允许已删除且已完成的指定店铺缺席，未完成的缺失仍报错', async () => {
+  const checkpoint=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'sync-missing-')),'state.json');
+  const opts=options(checkpoint,{apply:true,shops:['a','b']});
+  const collect=async s=>{if(s.id==='a'){const e=new Error('店铺不存在');e.shopUnavailable='not_found';throw e;}throw new Error('temporary');};
+  await runSync(opts,{load:async()=>({shops:shops.slice(0,2)}),collect,remove:async s=>({deleted:true,shopId:s.id}),push:async e=>result(e.shopId),chooseStart:()=>0});
+  let retried=[];
+  const resumed=await runSync({...opts,resume:true},{load:async()=>({shops:[shops[1]]}),collect:async s=>{retried.push(s.id);return snapshot;},push:async e=>result(e.shopId)});
+  assert.deepEqual(retried,['b']);assert.equal(resumed.failed,0);
+  const state=JSON.parse(fs.readFileSync(checkpoint));delete state.completed.a;fs.writeFileSync(checkpoint,JSON.stringify(state));
+  await assert.rejects(runSync({...opts,resume:true},{load:async()=>({shops:[shops[1]]}),push:async e=>result(e.shopId)}),/没有找到支持同步的店铺: a/);
+});

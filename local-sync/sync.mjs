@@ -135,7 +135,6 @@ export async function runSync(options, deps = {}) {
   if (options.shops.length) {
     const wanted = new Set(options.shops);
     targets = targets.filter((s) => wanted.has(s.id) || wanted.has(s.shopUrl) || wanted.has(new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1)));
-    for (const term of wanted) if (!targets.some((s) => s.id === term || s.shopUrl === term || new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1) === term)) throw new Error(`没有找到支持同步的店铺: ${term}`);
   }
   const shardCount = options.shardCount ?? 1;
   const shardIndex = options.shardIndex ?? 1;
@@ -145,6 +144,15 @@ export async function runSync(options, deps = {}) {
   if (options.resume) {
     state = JSON.parse(fs.readFileSync(options.checkpoint, 'utf8'));
     if (state.version !== 2 || state.apiBase !== base || JSON.stringify(state.scope) !== JSON.stringify(scope) || !state.completed || Array.isArray(state.completed) || typeof state.completed !== 'object') throw new Error('续跑记录无效或目标地址不匹配');
+  }
+  // 续跑时已处理的店铺可能已删除，不应因清单缺失而阻断其他店铺。
+  for (const term of options.shops) {
+    const present = targets.some((shop) => shop.id === term || shop.shopUrl === term || new URL(shop.shopUrl).pathname.split('/').filter(Boolean).at(-1) === term);
+    const completed = options.resume && Object.entries(state.completed).some(([id, value]) => {
+      if (id === term || value === term) return true;
+      try { return new URL(String(value)).pathname.split('/').filter(Boolean).at(-1) === term; } catch { return false; }
+    });
+    if (!present && !completed) throw new Error(`没有找到支持同步的店铺: ${term}`);
   }
   // 固定按 ID 排序，并按本轮保存的起点轮转；续跑和清单顺序变化仍保持同一入口。
   targets.sort((a, b) => String(a.id).localeCompare(String(b.id), 'en'));
