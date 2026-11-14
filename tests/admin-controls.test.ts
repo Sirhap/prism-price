@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { applyD1Migrations, env, SELF, type D1Migration } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { resolveVisitorGeo } from '../src/routes/admin';
 declare global { namespace Cloudflare { interface Env { TEST_MIGRATIONS: D1Migration[] } } }
 const origin = 'http://localhost';
 const testPassword = 'only-for-isolated-test';
@@ -164,4 +165,44 @@ describe('后台和店铺排名', () => {
   expect((await post('/api/control/password',{oldPassword:testPassword,newPassword:'new-isolated-password'},true)).status).toBe(200);
   expect((await SELF.fetch(origin+'/api/control/settings',{headers:{cookie}})).status).toBe(401);
  });
+ it('屏蔽 Miniflare 模拟 cf 并通过公网 IP 正确解析省市及国家码', async () => {
+  const buildReq = (extraHeaders: Record<string, string>, cfData?: Record<string, unknown>) => {
+   const req = new Request(origin + '/api/visit', { method: 'POST', headers: extraHeaders });
+   if (cfData) Object.defineProperty(req, 'cf', { value: cfData });
+   return req;
+  };
+  const miniflareCf = { country: 'US', region: 'Texas', city: 'Austin', postalCode: '78701', colo: 'DFW' };
+
+  // 1. 仅存在 Miniflare 默认 US/Texas/Austin 时走公网查询，且合并“上海市 + 上海”冗余
+  let calls = 0;
+  const shanghaiFetch = (async () => {
+   calls += 1;
+   return new Response(JSON.stringify({ status: 'success', country: '中国', countryCode: 'CN', regionName: '上海市', city: '上海' }), { status: 200 });
+  }) as typeof fetch;
+  const sh1 = await resolveVisitorGeo(buildReq({ 'CF-Connecting-IP': '114.87.128.240', 'CF-IPCountry': 'CN' }, miniflareCf), '114.87.128.240', shanghaiFetch);
+  expect(sh1).toMatchObject({ country: '中国', region: '上海市', city: '上海', location: '中国 · 上海市' });
+  const sh2 = await resolveVisitorGeo(buildReq({ 'CF-Connecting-IP': '114.87.128.240', 'CF-IPCountry': 'CN' }, miniflareCf), '114.87.128.240', shanghaiFetch);
+  expect(sh2.location).toBe('中国 · 上海市');
+  expect(calls).toBe(1);
+
+  // 2. 主源失败时降级备选源，且非保留国家码能正确转中文
+  const zambiaFetch = (async (input: RequestInfo | URL) => {
+   const url = String(input);
+   if (url.includes('ip-api.com')) return new Response('rate limited', { status: 429 });
+   return new Response(JSON.stringify({ success: true, country_code: 'ZM', region: '卢萨卡省', city: '路沙卡' }), { status: 200 });
+  }) as typeof fetch;
+  const zm = await resolveVisitorGeo(buildReq({ 'CF-Connecting-IP': '102.212.183.110', 'CF-IPCountry': 'ZM' }, miniflareCf), '102.212.183.110', zambiaFetch);
+  expect(zm.location).toBe('赞比亚 · 卢萨卡省 · 路沙卡');
+
+  // 3. 外网不可达且仅收到国家码时，忽略 Miniflare Austin 并回退为中文国家名
+  const failingFetch = (async () => { throw new Error('network down'); }) as typeof fetch;
+  const fallback = await resolveVisitorGeo(buildReq({ 'CF-Connecting-IP': '175.24.211.63', 'CF-IPCountry': 'KR' }, miniflareCf), '175.24.211.63', failingFetch);
+  expect(fallback.location).toBe('韩国');
+
+  // 4. 真实 Cloudflare Edge（非 DFW/78701）保留 cf 精确城市
+  const realEdgeCf = { country: 'JP', region: 'Tokyo', city: 'Shinjuku', postalCode: '160-0022', colo: 'NRT' };
+  const jp = await resolveVisitorGeo(buildReq({ 'CF-Connecting-IP': '203.0.113.99' }, realEdgeCf), '203.0.113.99', failingFetch);
+  expect(jp.location).toBe('日本 · Tokyo · Shinjuku');
+ });
 });
+

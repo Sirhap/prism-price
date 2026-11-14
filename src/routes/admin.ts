@@ -55,6 +55,39 @@ const COUNTRY_NAMES: Record<string, string> = {
   SE: '瑞典', CH: '瑞士', AE: '阿联酋', T1: 'Tor 网络', XX: '未知地区',
 };
 
+const regionDisplay = typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function'
+  ? new Intl.DisplayNames(['zh-Hans'], { type: 'region' })
+  : null;
+
+export interface VisitorGeo {
+  country: string;
+  region: string;
+  city: string;
+  location: string;
+}
+
+const IP_GEO_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const IP_GEO_CACHE_MAX = 512;
+const ipGeoCache = new Map<string, { value: VisitorGeo; expiresAt: number }>();
+
+/** 将国家/地区码或原始名称解析为规范中文国家名。 */
+function resolveCountryLabel(rawCountry: string): string {
+  const clean = rawCountry.trim();
+  if (!clean) return '';
+  const upper = clean.toUpperCase();
+  if (upper === 'XX' || upper === 'UNKNOWN') return '';
+  if (COUNTRY_NAMES[upper]) return COUNTRY_NAMES[upper];
+  if (/^[A-Z]{2}$/.test(upper) && regionDisplay) {
+    try {
+      const translated = regionDisplay.of(upper);
+      if (translated && translated.toUpperCase() !== upper) return translated;
+    } catch {
+      // 忽略非常规两位字母代码错误
+    }
+  }
+  return clean;
+}
+
 /** 按代理可信优先级提取客户端 IP。 */
 function extractClientIp(req: Request): string {
   const candidates = [
@@ -89,46 +122,177 @@ function isLocalOrPrivateIp(ip: string): boolean {
   return false;
 }
 
-/** 结合 Cloudflare cf 对象及标准地理请求头提取地区展示文案。 */
-function extractVisitorGeo(req: Request, ip: string): { country: string; region: string; city: string; location: string } {
-  const cf = (req as Request & { cf?: Record<string, unknown> }).cf;
-  const rawCountry = String(
-    cf?.country ||
-    req.headers.get('CF-IPCountry') ||
-    req.headers.get('X-Vercel-IP-Country') ||
-    req.headers.get('X-Geo-Country') ||
-    ''
-  ).trim().slice(0, 64);
-  const rawRegion = String(
-    cf?.region ||
-    req.headers.get('CF-Region') ||
-    req.headers.get('X-Vercel-IP-Country-Region') ||
-    req.headers.get('X-Geo-Region') ||
-    ''
-  ).trim().slice(0, 64);
-  const rawCity = String(
-    cf?.city ||
-    req.headers.get('CF-IPCity') ||
-    req.headers.get('X-Vercel-IP-City') ||
-    req.headers.get('X-Geo-City') ||
-    ''
-  ).trim().slice(0, 64);
+/** 识别文档/测试保留段与链路本地地址，避免对外发起无效查询。 */
+function isNonPublicLookupIp(ip: string): boolean {
+  if (!ip || ip === 'unknown' || isLocalOrPrivateIp(ip)) return true;
+  const normalized = ip.replace(/^::ffff:/i, '').toLowerCase();
+  if (
+    normalized.startsWith('169.254.') ||
+    normalized.startsWith('192.0.2.') ||
+    normalized.startsWith('198.51.100.') ||
+    normalized.startsWith('203.0.113.') ||
+    normalized.startsWith('0.')
+  ) {
+    return true;
+  }
+  const cgnat = /^100\.(\d+)\./.exec(normalized);
+  if (cgnat) {
+    const second = Number(cgnat[1]);
+    if (second >= 64 && second <= 127) return true;
+  }
+  return false;
+}
 
-  const upperCode = rawCountry.toUpperCase();
-  const countryLabel = upperCode === 'XX' ? '' : (COUNTRY_NAMES[upperCode] || rawCountry);
+/** 识别 Miniflare/workerd 本地运行时注入的默认模拟 cf 对象。 */
+function isMiniflareMockCf(cf: Record<string, unknown> | undefined, headerCountry: string): boolean {
+  if (!cf) return false;
+  const cfCountry = String(cf.country || '').trim().toUpperCase();
+  const cleanHeaderCountry = headerCountry.trim().toUpperCase();
+  if (cleanHeaderCountry && cleanHeaderCountry !== 'XX' && cfCountry && cleanHeaderCountry !== cfCountry) {
+    return true;
+  }
+  return cfCountry === 'US'
+    && String(cf.region || '') === 'Texas'
+    && String(cf.city || '') === 'Austin'
+    && (String(cf.postalCode || '') === '78701' || String(cf.colo || '') === 'DFW');
+}
+
+function normalizeGeoPlaceKey(name: string): string {
+  return name.trim().replace(/(省|市|自治区|特别行政区|地区)$/u, '').toLowerCase();
+}
+
+function buildVisitorGeo(rawCountry: string, rawRegion: string, rawCity: string, ip: string): VisitorGeo {
+  const countryLabel = resolveCountryLabel(rawCountry);
+  const region = rawRegion.trim().slice(0, 64);
+  const city = rawCity.trim().slice(0, 64);
+
   const parts: string[] = [];
-  for (const seg of [countryLabel, rawRegion, rawCity]) {
+  const seenKeys = new Set<string>();
+  for (const seg of [countryLabel, region, city]) {
     const clean = seg.trim();
-    if (clean && !parts.includes(clean)) parts.push(clean);
+    if (!clean) continue;
+    const key = normalizeGeoPlaceKey(clean);
+    if (seenKeys.has(clean) || (key && seenKeys.has(key))) continue;
+    seenKeys.add(clean);
+    if (key) seenKeys.add(key);
+    parts.push(clean);
   }
   if (parts.length > 0) {
-    return { country: countryLabel || upperCode, region: rawRegion, city: rawCity, location: parts.join(' · ') };
+    return { country: countryLabel || rawCountry.trim().toUpperCase(), region, city, location: parts.join(' · ') };
   }
   if (isLocalOrPrivateIp(ip)) {
     return { country: 'LOCAL', region: '', city: '', location: '本地 / 内网' };
   }
   return { country: '', region: '', city: '', location: '未知地区' };
 }
+
+/** 优先从可信代理请求头提取地区；仅在非 Miniflare 模拟环境下补充 request.cf。 */
+function extractVisitorGeo(req: Request, ip: string): VisitorGeo {
+  const cf = (req as Request & { cf?: Record<string, unknown> }).cf;
+  const headerCountry = String(
+    req.headers.get('CF-IPCountry') ||
+    req.headers.get('X-Vercel-IP-Country') ||
+    req.headers.get('X-Geo-Country') ||
+    ''
+  ).trim().slice(0, 64);
+  const headerRegion = String(
+    req.headers.get('CF-Region') ||
+    req.headers.get('X-Vercel-IP-Country-Region') ||
+    req.headers.get('X-Geo-Region') ||
+    ''
+  ).trim().slice(0, 64);
+  const headerCity = String(
+    req.headers.get('CF-IPCity') ||
+    req.headers.get('X-Vercel-IP-City') ||
+    req.headers.get('X-Geo-City') ||
+    ''
+  ).trim().slice(0, 64);
+
+  const allowCf = !isMiniflareMockCf(cf, headerCountry);
+  const rawCountry = headerCountry || (allowCf ? String(cf?.country || '').trim().slice(0, 64) : '');
+  const rawRegion = headerRegion || (allowCf ? String(cf?.region || '').trim().slice(0, 64) : '');
+  const rawCity = headerCity || (allowCf ? String(cf?.city || '').trim().slice(0, 64) : '');
+
+  return buildVisitorGeo(rawCountry, rawRegion, rawCity, ip);
+}
+
+/** 查询公网 IP 所属国家、省州与城市，支持短超时多源降级与内存缓存。 */
+async function lookupPublicIpGeo(ip: string, fetchImpl: typeof fetch = fetch): Promise<VisitorGeo | null> {
+  const now = Date.now();
+  const cached = ipGeoCache.get(ip);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  let resolved: VisitorGeo | null = null;
+  try {
+    const res = await fetchImpl(
+      `http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,country,countryCode,regionName,city`,
+      { signal: AbortSignal.timeout(1200) },
+    );
+    if (res.ok) {
+      const payload = await res.json() as { status?: string; country?: string; countryCode?: string; regionName?: string; city?: string };
+      if (payload.status === 'success') {
+        const candidate = buildVisitorGeo(
+          payload.countryCode || payload.country || '',
+          payload.regionName || '',
+          payload.city || '',
+          ip,
+        );
+        if (candidate.location && candidate.location !== '未知地区') resolved = candidate;
+      }
+    }
+  } catch {
+    // 主归属地接口超时或异常时平滑降级到备选源
+  }
+
+  if (!resolved) {
+    try {
+      const res = await fetchImpl(
+        `https://ipwho.is/${encodeURIComponent(ip)}?lang=zh-CN`,
+        { signal: AbortSignal.timeout(1200) },
+      );
+      if (res.ok) {
+        const payload = await res.json() as { success?: boolean; country?: string; country_code?: string; region?: string; city?: string };
+        if (payload.success) {
+          const candidate = buildVisitorGeo(
+            payload.country_code || payload.country || '',
+            payload.region || '',
+            payload.city || '',
+            ip,
+          );
+          if (candidate.location && candidate.location !== '未知地区') resolved = candidate;
+        }
+      }
+    } catch {
+      // 备选接口失败时忽略，退回代理头提取的国家信息
+    }
+  }
+
+  if (resolved) {
+    if (ipGeoCache.size >= IP_GEO_CACHE_MAX) {
+      const oldestKey = ipGeoCache.keys().next().value;
+      if (oldestKey) ipGeoCache.delete(oldestKey);
+    }
+    ipGeoCache.set(ip, { value: resolved, expiresAt: now + IP_GEO_CACHE_TTL_MS });
+  }
+  return resolved;
+}
+
+/** 结合可信代理头与公网 IP 实时归属地补全访客地区。 */
+export async function resolveVisitorGeo(req: Request, ip: string, fetchImpl: typeof fetch = fetch): Promise<VisitorGeo> {
+  const base = extractVisitorGeo(req, ip);
+  if (base.region || base.city || isNonPublicLookupIp(ip)) {
+    return base;
+  }
+  const lookedUp = await lookupPublicIpGeo(ip, fetchImpl);
+  if (!lookedUp) return base;
+  if (!lookedUp.country && base.country) {
+    return buildVisitorGeo(base.country, lookedUp.region, lookedUp.city, ip);
+  }
+  return lookedUp;
+}
+
 
 /** 从 User-Agent 及 Client Hints 识别设备形态、操作系统与浏览器。 */
 function parseVisitorDevice(req: Request): { device: string; os: string; browser: string; userAgent: string } {
@@ -199,7 +363,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     const nowIso = new Date().toISOString();
     const day = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0,10);
     const ip = extractClientIp(req);
-    const geo = extractVisitorGeo(req, ip);
+    const geo = await resolveVisitorGeo(req, ip);
     const dev = parseVisitorDevice(req);
     const writeDaily = db.prepare('INSERT INTO daily_page_visits(day,page_views) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET page_views=page_views+1').bind(day);
     const writeLog = db.prepare('INSERT INTO visit_logs(day,ip,country,region,city,location,device,os,browser,user_agent,visited_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
