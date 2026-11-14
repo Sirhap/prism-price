@@ -85,6 +85,18 @@ describe('后台和店铺排名', () => {
   await env.DB.prepare("UPDATE shops SET sync_state='ready',product_count=8,shop_url='https://example.com/b' WHERE id='admin-test-b'").run();
   const synced=await (await SELF.fetch(origin+'/api/control/rank-shops?q=管理测试&sort=synced',{headers:{cookie}})).json() as {shops:Array<{id:string;lastSyncedAt:string;syncState:string}>};
   expect(synced.shops[0]).toMatchObject({id:'admin-test-a',lastSyncedAt:'2026-03-01'});
+  await env.DB.prepare("UPDATE shops SET shop_sell_count=CASE id WHEN 'admin-test-b' THEN 320 WHEN 'admin-test-a' THEN 88 ELSE 12 END,deposit_money=CASE id WHEN 'admin-test-b' THEN '1000' ELSE NULL END,consecutive_failures=CASE id WHEN 'admin-test-c' THEN 4 ELSE 0 END,last_error=CASE id WHEN 'admin-test-c' THEN 'upstream 502' ELSE '' END,stale_days=CASE id WHEN 'admin-test-c' THEN 6 ELSE 0 END,created_at=CASE id WHEN 'admin-test-b' THEN '2026-03-10' WHEN 'admin-test-c' THEN '2026-03-05' ELSE '2026-01-05' END WHERE id LIKE 'admin-test-%'").run();
+  await env.DB.prepare("INSERT INTO offers(id,shop_id,group_key,raw_name,clean_name,brand_group,price,stock_count,stock_status,item_url,updated_at) VALUES('admin-offer-1','admin-test-a','g-a1','测试号1','测试号1','ChatGPT',9.5,3,'low','https://example.com/a/1','2026-03-01'),('admin-offer-2','admin-test-a','g-a2','测试号2','测试号2','Claude',19.5,12,'normal','https://example.com/a/2','2026-03-01')").run();
+  const bySales=await (await SELF.fetch(origin+'/api/control/rank-shops?q=管理测试&sort=sales',{headers:{cookie}})).json() as {summary:{total:number;inStockCount:number;emptyCount:number;totalProducts:number;withCodeCount:number;manualRankedCount:number;errorCount:number;totalFavorites:number;totalSales:number};shops:Array<{id:string;salesCount?:number|null;depositMoney?:number|null;consecutiveFailures?:number;lastError?:string|null;staleDays?:number;offerStats?:{offerCount:number;brandCount:number;minPrice:number|null;maxPrice:number|null;avgPrice:number|null;lowStockCount:number}}>};
+  expect(bySales.summary).toMatchObject({total:3,inStockCount:3,emptyCount:0,totalProducts:15,withCodeCount:1,manualRankedCount:1,errorCount:0,totalSales:420});
+  expect(bySales.shops[0]).toMatchObject({id:'admin-test-b',salesCount:320,depositMoney:1000});
+  expect(bySales.shops[1]).toMatchObject({id:'admin-test-a',salesCount:88,offerStats:{offerCount:2,brandCount:2,minPrice:9.5,maxPrice:19.5,avgPrice:14.5,lowStockCount:1}});
+  const byNewest=await (await SELF.fetch(origin+'/api/control/rank-shops?q=管理测试&sort=newest',{headers:{cookie}})).json() as {shops:Array<{id:string}>};
+  expect(byNewest.shops.map(s=>s.id)).toEqual(['admin-test-b','admin-test-c','admin-test-a']);
+  const byFailures=await (await SELF.fetch(origin+'/api/control/rank-shops?q=管理测试&sort=failures',{headers:{cookie}})).json() as {shops:Array<{id:string;consecutiveFailures?:number;lastError?:string|null;staleDays?:number}>};
+  expect(byFailures.shops[0]).toMatchObject({id:'admin-test-c',consecutiveFailures:4,lastError:'upstream 502',staleDays:6});
+  await env.DB.prepare("DELETE FROM offers WHERE id LIKE 'admin-offer-%'").run();
+  await env.DB.prepare("UPDATE shops SET shop_sell_count=NULL,deposit_money=NULL,consecutive_failures=0,last_error='',stale_days=0 WHERE id LIKE 'admin-test-%'").run();
   expect((await SELF.fetch(origin+'/api/control/rank-shops')).status).toBe(401);
   expect((await SELF.fetch(origin+'/api/control/rank-shops?sort=unexpected',{headers:{cookie}})).status).toBe(400);
   expect((await SELF.fetch(origin+'/api/control/rank-shops?filter=bad',{headers:{cookie}})).status).toBe(400);

@@ -7,8 +7,8 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.6ed3c90d8a99.css">
-  <script type="module" src="/admin/admin.28372b00c7ee.js"></script>
+  <link rel="stylesheet" href="/admin/admin.1bcf46364e9f.css">
+  <script type="module" src="/admin/admin.3933cc81b8f9.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -221,13 +221,14 @@
           <button class="btn btn-secondary" type="submit">搜索</button>
         </form>
         <div class="rank-filters">
-          <label class="rank-sort">查看顺序<select id="rankSort"><option value="manual">已设置人工排名优先</option><option value="current">前台当前排名</option><option value="synced">最近同步优先</option><option value="stale">最久未同步优先</option><option value="favorites">收藏数从高到低</option><option value="products">收录商品从多到少</option><option value="products-asc">收录商品从少到多</option></select></label>
+          <label class="rank-sort">查看顺序<select id="rankSort"><option value="manual">已设置人工排名优先</option><option value="current">前台当前排名</option><option value="synced">最近同步优先</option><option value="stale">最久未同步优先</option><option value="favorites">收藏数从高到低</option><option value="sales">店铺销量从高到低</option><option value="products">收录商品从多到少</option><option value="products-asc">收录商品从少到多</option><option value="newest">最新收录优先</option><option value="failures">同步失败优先</option></select></label>
           <label class="rank-sort">排名 / 对接码<select id="rankFilter"><option value="all">全部状态</option><option value="manual-ranked">已设人工排名</option><option value="unranked">未设人工排名</option><option value="has-code">已填对接码</option><option value="no-code">未填对接码</option></select></label>
           <label class="rank-sort">同步状态<select id="rankSyncFilter"><option value="all">全部同步状态</option><option value="ready">同步正常</option><option value="pending">待同步</option><option value="error">同步异常</option><option value="manual">待适配</option><option value="never">尚未同步</option></select></label>
           <label class="rank-sort">商品状态<select id="rankStockFilter"><option value="all">全部商品状态</option><option value="in-stock">有收录商品</option><option value="empty">0 件商品（空店）</option></select></label>
           <label class="rank-sort">店铺平台<select id="rankSystemFilter"><option value="all">全部平台</option><option value="ldxp">联动小铺</option><option value="catfk">云猫寄售</option><option value="16688">16688交易平台</option><option value="acg-faka">二次元发卡</option><option value="dujiaoka">独角数卡</option><option value="other">其它平台</option><option value="unknown">第三方自建站</option></select></label>
           <button id="rankResetFilters" class="btn btn-secondary rank-reset-btn" type="button" hidden>重置筛选</button>
         </div>
+        <div id="rankSummaryStats" class="mini-stat-row rank-kpi-row" aria-live="polite"></div>
         <div id="shopResults" class="rank-results" aria-live="polite"></div>
         <div class="rank-pagination">
           <button id="previousPage" class="btn btn-secondary" type="button">上一页</button>

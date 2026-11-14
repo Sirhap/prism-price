@@ -468,6 +468,15 @@ function updateMetrics(data) {
 }
 $('#settingsForm').addEventListener('input',()=>setDirty(true));
 window.addEventListener('beforeunload',e=>{if(settingsDirty){e.preventDefault();e.returnValue='';}});
+function formatPriceNum(value) {
+ const num = Number(value);
+ return Number.isFinite(num) ? num.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') : '0';
+}
+function formatMoneyText(value) {
+ const text = String(value ?? '').trim();
+ if (!text) return '—';
+ return /^\d+(\.\d+)?$/.test(text) ? `￥${Number(text).toLocaleString()}` : text;
+}
 function shopRow(shop) {
  const row=document.createElement('article'); row.className='rank-row';
  const main=document.createElement('div'); main.className='shop-manage-main';
@@ -477,15 +486,44 @@ function shopRow(shop) {
  const name=document.createElement('strong'); name.textContent=shop.shopName;
  const stats=document.createElement('div'); stats.className='shop-manage-stats';
  const sysLabel=({ldxp:'联动小铺',catfk:'云猫寄售','16688':'16688','acg-faka':'二次元发卡',dujiaoka:'独角数卡',other:'其它平台',unknown:'自建站'})[shop.systemType];
- const chips=[`前台 #${shop.rank||'—'}`,...(shop.manualRank?[`人工 #${shop.manualRank}`]:[]),`★ ${shop.favoriteCount||0} 收藏`,`${shop.productCount||0} 件商品`,...(shop.integrationCode?[`对接码 ${shop.integrationCode}`]:[]),...(sysLabel?[sysLabel]:[])];
- for(const text of chips){const item=document.createElement('span');item.textContent=text;stats.append(item);}
+ const offerStats=shop.offerStats || {};
+ const chips=[
+  {text:`前台 #${shop.rank||'—'}`},
+  ...(shop.manualRank?[{text:`人工 #${shop.manualRank}`,tone:'accent'}]:[]),
+  {text:`★ ${Number(shop.favoriteCount||0).toLocaleString()} 收藏`},
+  {text:`${Number(shop.productCount||0).toLocaleString()} 件商品`},
+  ...(shop.salesCount!=null&&Number(shop.salesCount)>0?[{text:`销量 ${Number(shop.salesCount).toLocaleString()}`,tone:'good'}]:[]),
+  ...(shop.depositMoney!=null&&String(shop.depositMoney).trim()&&String(shop.depositMoney).trim()!=='0'?[{text:`保证金 ${formatMoneyText(shop.depositMoney)}`}]:[]),
+  ...(offerStats.minPrice!=null?[{text:`最低 ￥${formatPriceNum(offerStats.minPrice)}`,tone:'price'}]:[]),
+  ...(Number(offerStats.brandCount||0)>0?[{text:`${offerStats.brandCount} 个品牌`}]:[]),
+  ...(shop.integrationCode?[{text:`对接码 ${shop.integrationCode}`}]:[]),
+  ...(sysLabel?[{text:sysLabel}]:[]),
+  ...(Number(shop.consecutiveFailures||0)>0?[{text:`连续失败 ${shop.consecutiveFailures} 次`,tone:'danger'}]:[]),
+  ...(Number(shop.staleDays||0)>0?[{text:`连续无货 ${shop.staleDays} 天`,tone:'warn'}]:[]),
+ ];
+ for(const chip of chips){const item=document.createElement('span');item.textContent=chip.text;if(chip.tone)item.className=`stat-chip-${chip.tone}`;stats.append(item);}
  const date=shop.lastSyncedAt?new Date(shop.lastSyncedAt):null;const sync=document.createElement('small');sync.textContent=`最近同步 ${date&&!Number.isNaN(date.getTime())?date.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'尚未同步'} · ${({ready:'正常',pending:'待同步',error:'同步异常',manual:'待适配'})[shop.syncState]||'未知'}`;
  info.append(name,stats,sync);identity.append(avatar,info);
  const actions=document.createElement('div');actions.className='shop-manage-actions';
  const open=document.createElement('a');try{const u=new URL(shop.shopUrl);if(['http:','https:'].includes(u.protocol)){open.href=u.href;open.target='_blank';open.rel='noopener noreferrer';open.textContent='访问店铺 ↗';actions.append(open);}}catch{}
  const edit=document.createElement('button');edit.type='button';edit.className='shop-edit-trigger';edit.textContent='管理';edit.setAttribute('aria-label',`管理${shop.shopName}`);actions.append(edit);
  const panel=document.createElement('div');panel.className='shop-editor';panel.hidden=true;
- const title=document.createElement('div');title.className='shop-editor-title';title.textContent='店铺设置';
+ const title=document.createElement('div');title.className='shop-editor-title';title.textContent='店铺运行档案与设置';
+ const detailGrid=document.createElement('div');detailGrid.className='shop-detail-grid';
+ const offerText=Number(offerStats.offerCount||0)>0?`${Number(offerStats.offerCount).toLocaleString()} 条报价 · ${Number(offerStats.brandCount||0)} 品牌 · 低库存 ${Number(offerStats.lowStockCount||0)}`:'暂无在售报价';
+ const priceText=offerStats.minPrice!=null?`￥${formatPriceNum(offerStats.minPrice)} ~ ￥${formatPriceNum(offerStats.maxPrice)}（均价 ￥${formatPriceNum(offerStats.avgPrice)}）`:'暂无报价区间';
+ const visibilityText=`销量 ${shop.salesVisible===false?'隐藏':(shop.salesCount!=null?Number(shop.salesCount).toLocaleString():'未披露')} · 保证金 ${shop.depositVisible===false?'隐藏':(shop.depositMoney!=null&&String(shop.depositMoney).trim()?formatMoneyText(shop.depositMoney):'未披露')}`;
+ const detailItems=[
+  ['收录时间',formatBjTime(shop.createdAt)],
+  ['下次计划同步',shop.nextSyncAt?formatBjTime(shop.nextSyncAt):'随定时批次调度'],
+  ['销量与保证金',visibilityText],
+  ['在售报价概览',offerText],
+  ['价格区间与均价',priceText],
+  ['健康状态与 ID',`失败 ${Number(shop.consecutiveFailures||0)} 次 · 无货 ${Number(shop.staleDays||0)} 天 · ID ${shop.id}`],
+ ];
+ for(const [k,v] of detailItems){const cell=document.createElement('div');cell.className='shop-detail-item';const label=document.createElement('small');label.textContent=k;const val=document.createElement('span');val.textContent=v;cell.append(label,val);detailGrid.append(cell);}
+ let errorBanner=null;
+ if(shop.lastError){errorBanner=document.createElement('div');errorBanner.className='shop-error-banner';errorBanner.textContent=`最近同步报错：${shop.lastError}`;}
  const form=document.createElement('form');form.className='shop-editor-form';
  function field(label,type,value,placeholder){const wrap=document.createElement('label');wrap.textContent=label;const input=document.createElement('input');input.type=type;input.value=value;input.placeholder=placeholder||'';wrap.append(input);return [wrap,input];}
  const [rankLabel,rank]=field('人工排名','number',shop.manualRank??'','自然排名');rank.min='1';rank.max='1000000';
@@ -493,7 +531,8 @@ function shopRow(shop) {
  const [countLabel,count]=field('收藏数量','number',shop.favoriteCount??0,'');count.min='0';count.max='1000000000';count.required=true;
  const help=document.createElement('p');help.className='shop-editor-help';help.textContent='排名数字越小越靠前；店名或简介公开标注的对接码优先。';
  const buttons=document.createElement('div');buttons.className='shop-editor-footer';const cancel=document.createElement('button');cancel.type='button';cancel.className='btn btn-secondary';cancel.textContent='取消';const save=document.createElement('button');save.type='submit';save.className='btn btn-primary';save.textContent='保存修改';buttons.append(cancel,save);
- form.append(rankLabel,codeLabel,countLabel,help,buttons);panel.append(title,form);
+ form.append(rankLabel,codeLabel,countLabel,help,buttons);
+ if(errorBanner)panel.append(title,detailGrid,errorBanner,form);else panel.append(title,detailGrid,form);
  edit.addEventListener('click',()=>{panel.hidden=!panel.hidden;edit.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)rank.focus();});edit.setAttribute('aria-expanded','false');
  cancel.addEventListener('click',()=>{rank.value=shop.manualRank??'';code.value=shop.integrationCode||'';count.value=shop.favoriteCount??0;panel.hidden=true;edit.setAttribute('aria-expanded','false');edit.focus();});
  form.addEventListener('submit',async e=>{e.preventDefault();save.disabled=true;save.textContent='保存中…';try{await api('/api/control/shop-details',{shopId:shop.id,integrationCode:code.value.trim(),favoriteCount:Number(count.value),manualRank:rank.value?Number(rank.value):null});message('店铺设置已保存');await loadShops();}catch(err){message(`保存未完成：${err.message}，请重试`,true);save.disabled=false;save.textContent='重试保存';}});
@@ -508,7 +547,7 @@ async function loadShops() {
  const filter=$('#rankFilter')?.value||'all',sync=$('#rankSyncFilter')?.value||'all',stock=$('#rankStockFilter')?.value||'all',system=$('#rankSystemFilter')?.value||'all';
  const filtered=Boolean(query||filter!=='all'||sync!=='all'||stock!=='all'||system!=='all');
  if($('#rankResetFilters'))$('#rankResetFilters').hidden=!filtered;
- try{const data=await api(`/api/control/rank-shops?${new URLSearchParams({q:query,page:String(page),sort:$('#rankSort').value,filter,sync,stock,system})}`);if(ticket!==listRequest)return;pages=data.totalPages||1;list.replaceChildren();for(const shop of data.shops)list.append(shopRow(shop));if(!data.shops.length)list.textContent='没有找到符合条件的店铺，试试调整筛选项或关键词';$('#pageInfo').textContent=`第 ${page} / ${pages} 页 · ${data.total} 家店铺`;$('#previousPage').disabled=page<=1;$('#nextPage').disabled=page>=pages;if(!filtered)$('#metricShops').textContent=data.total.toLocaleString();}
+ try{const data=await api(`/api/control/rank-shops?${new URLSearchParams({q:query,page:String(page),sort:$('#rankSort').value,filter,sync,stock,system})}`);if(ticket!==listRequest)return;const s=data.summary||{};renderMiniStats($('#rankSummaryStats'),[['匹配店铺',`${Number(s.total??data.total??0).toLocaleString()} 家`],['有货 / 空店',`${Number(s.inStockCount||0).toLocaleString()} / ${Number(s.emptyCount||0).toLocaleString()}`],['累计商品 / 销量',`${Number(s.totalProducts||0).toLocaleString()} 件 · ${Number(s.totalSales||0).toLocaleString()} 销`],['对接码 / 人工置顶',`${Number(s.withCodeCount||0).toLocaleString()} / ${Number(s.manualRankedCount||0).toLocaleString()}`],['同步异常 / 收藏',`${Number(s.errorCount||0).toLocaleString()} 异常 · ${Number(s.totalFavorites||0).toLocaleString()} 藏`]]);pages=data.totalPages||1;list.replaceChildren();for(const shop of data.shops)list.append(shopRow(shop));if(!data.shops.length)list.textContent='没有找到符合条件的店铺，试试调整筛选项或关键词';$('#pageInfo').textContent=`第 ${page} / ${pages} 页 · ${data.total} 家店铺`;$('#previousPage').disabled=page<=1;$('#nextPage').disabled=page>=pages;if(!filtered)$('#metricShops').textContent=data.total.toLocaleString();}
  finally{if(ticket===listRequest){list.removeAttribute('aria-busy');list.style.opacity='1';}}
 }
 async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;selectPanel(location.hash.slice(1));try{await Promise.all([loadSettings(),loadShops(),loadOverview()]);}catch(err){message(err.message,true);}}

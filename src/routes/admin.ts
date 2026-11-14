@@ -713,6 +713,9 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
       favorites: 'favorite_count DESC, CASE WHEN favorite_count=0 THEN last_synced_at END DESC, product_count DESC, id ASC',
       products: 'product_count DESC, favorite_count DESC, id ASC',
       'products-asc': 'product_count ASC, favorite_count DESC, id ASC',
+      sales: 'COALESCE(shop_sell_count, -1) DESC, favorite_count DESC, product_count DESC, id ASC',
+      newest: 'created_at IS NULL, created_at DESC, id ASC',
+      failures: "consecutive_failures DESC, CASE WHEN sync_state='error' THEN 0 ELSE 1 END, last_synced_at ASC, id ASC",
       current: 'global_rank ASC',
       synced: 'last_synced_at IS NULL, last_synced_at DESC, id ASC',
       stale: 'last_synced_at IS NOT NULL, last_synced_at ASC, id ASC',
@@ -722,19 +725,100 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     const stockFilters: Record<string,string> = { all:'1=1', 'in-stock':'product_count>0', empty:'product_count=0' };
     if (!Object.hasOwn(order,sort)) return json({error:'排序方式无效'},400);
     if (!Object.hasOwn(rankFilters,filter) || !Object.hasOwn(syncFilters,sync) || !Object.hasOwn(stockFilters,stock) || (system !== 'all' && !storeTypes.includes(system as typeof storeTypes[number]))) return json({error:'筛选条件无效'},400);
-    const cfg=await settings(db), src=shopReadSource({systemType:true,description:true,createdAt:true,submittedIntegrationCode:true});
-    const cte=`WITH ranked AS (SELECT shops_read.id,shops_read.shop_name,shops_read.shop_url,shops_read.product_count,shops_read.last_synced_at,shops_read.sync_state,shops_read.sync_supported,shops_read.adapter_type,shops_read.submitted_integration_code,shops_read.effective_system_type,COALESCE(r.favorite_count,0) favorite_count,r.manual_rank,
+    const cfg=await settings(db), caps=await getShopColumnCapabilities(db), src=shopReadSource(caps);
+    const cte=`WITH ranked AS (SELECT shops_read.id,shops_read.shop_name,shops_read.shop_url,shops_read.product_count,shops_read.last_synced_at,shops_read.next_sync_at,shops_read.sync_state,shops_read.sync_supported,shops_read.adapter_type,shops_read.submitted_integration_code,shops_read.effective_system_type,shops_read.consecutive_failures,shops_read.last_error,shops_read.stale_days,shops_read.shop_sell_count,shops_read.sales_visible,shops_read.deposit_visible,shops_read.deposit_money,shops_read.created_at,COALESCE(r.favorite_count,0) favorite_count,r.manual_rank,
       ROW_NUMBER() OVER (ORDER BY CASE WHEN ?=1 AND r.manual_rank IS NOT NULL THEN 0 ELSE 1 END,
       CASE WHEN ?=1 THEN r.manual_rank END ASC, COALESCE(r.favorite_count,0) DESC,CASE WHEN COALESCE(r.favorite_count,0)=0 THEN shops_read.last_synced_at END DESC,shops_read.product_count DESC,shops_read.id ASC) global_rank
       FROM ${src} LEFT JOIN shop_rank_settings r ON r.shop_id=shops_read.id),
       matched AS (SELECT * FROM ranked WHERE (?='' OR instr(lower(shop_name),?)>0 OR instr(lower(shop_url),?)>0 OR instr(lower(submitted_integration_code),?)>0) AND ${rankFilters[filter]} AND ${syncFilters[sync]} AND ${stockFilters[stock]} AND (?='all' OR effective_system_type=?))`;
     const params=[cfg.manual_rank_enabled,cfg.manual_rank_enabled,q,q,q,q,system,system];
-    const [count, result] = await Promise.all([
-      db.prepare(`${cte} SELECT COUNT(*) total FROM matched`).bind(...params).first<{total:number}>(),
-      db.prepare(`${cte} SELECT * FROM matched ORDER BY ${order[sort]} LIMIT ? OFFSET ?`).bind(...params,20,(page-1)*20).all<{id:string;shop_name:string;shop_url:string;product_count:number;favorite_count:number;manual_rank:number|null;global_rank:number;last_synced_at:string|null;sync_state:string;sync_supported:number;adapter_type:string;submitted_integration_code:string;effective_system_type:string}>(),
+    type RankShopRow = {
+      id:string;shop_name:string;shop_url:string;product_count:number;favorite_count:number;manual_rank:number|null;global_rank:number;
+      last_synced_at:string|null;next_sync_at:string|null;sync_state:string;sync_supported:number;adapter_type:string;submitted_integration_code:string;
+      effective_system_type:string;consecutive_failures:number;last_error:string;stale_days:number;shop_sell_count:number|null;sales_visible:number;
+      deposit_visible:number;deposit_money:number|null;created_at:string|null;
+    };
+    const [summaryRow, result] = await Promise.all([
+      db.prepare(`${cte} SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock_count,
+        COALESCE(SUM(CASE WHEN product_count = 0 THEN 1 ELSE 0 END), 0) AS empty_count,
+        COALESCE(SUM(product_count), 0) AS total_products,
+        COALESCE(SUM(CASE WHEN trim(submitted_integration_code) != '' THEN 1 ELSE 0 END), 0) AS with_code_count,
+        COALESCE(SUM(CASE WHEN manual_rank IS NOT NULL THEN 1 ELSE 0 END), 0) AS manual_ranked_count,
+        COALESCE(SUM(CASE WHEN sync_state = 'error' THEN 1 ELSE 0 END), 0) AS error_count,
+        COALESCE(SUM(favorite_count), 0) AS total_favorites,
+        COALESCE(SUM(CASE WHEN shop_sell_count IS NOT NULL THEN shop_sell_count ELSE 0 END), 0) AS total_sales
+        FROM matched`).bind(...params).first<Record<string, number>>(),
+      db.prepare(`${cte} SELECT * FROM matched ORDER BY ${order[sort]} LIMIT ? OFFSET ?`).bind(...params,20,(page-1)*20).all<RankShopRow>(),
     ]);
-    const total=Number(count?.total || 0);
-    return json({shops:result.results.map(s=>({id:s.id,shopName:hideTelegramContacts(s.shop_name),shopUrl:s.shop_url,productCount:s.product_count,favoriteCount:s.favorite_count,integrationCode:s.submitted_integration_code || '',manualRank:s.manual_rank,rank:s.global_rank,lastSyncedAt:s.last_synced_at,syncState:s.sync_state,syncSupported:!!s.sync_supported,adapterType:s.adapter_type,systemType:s.effective_system_type})),total,totalPages:Math.max(1,Math.ceil(total/20)),page});
+    const rows = result.results || [];
+    const offerStatsMap = new Map<string, { offerCount: number; brandCount: number; minPrice: number | null; maxPrice: number | null; avgPrice: number | null; lowStockCount: number }>();
+    if (rows.length > 0) {
+      const placeholders = rows.map(() => '?').join(',');
+      const offerRes = await db.prepare(`SELECT
+        shop_id,
+        COUNT(*) AS offer_count,
+        COUNT(DISTINCT brand_group) AS brand_count,
+        MIN(price) AS min_price,
+        MAX(price) AS max_price,
+        AVG(price) AS avg_price,
+        COALESCE(SUM(CASE WHEN stock_status = 'low' THEN 1 ELSE 0 END), 0) AS low_stock_count
+        FROM offers WHERE shop_id IN (${placeholders}) GROUP BY shop_id`)
+        .bind(...rows.map(r => r.id)).all<{ shop_id: string; offer_count: number; brand_count: number; min_price: number | null; max_price: number | null; avg_price: number | null; low_stock_count: number }>();
+      for (const item of offerRes.results || []) {
+        offerStatsMap.set(item.shop_id, {
+          offerCount: Number(item.offer_count || 0),
+          brandCount: Number(item.brand_count || 0),
+          minPrice: item.min_price != null ? Number(item.min_price) : null,
+          maxPrice: item.max_price != null ? Number(item.max_price) : null,
+          avgPrice: item.avg_price != null ? Math.round(Number(item.avg_price) * 100) / 100 : null,
+          lowStockCount: Number(item.low_stock_count || 0),
+        });
+      }
+    }
+    const total=Number(summaryRow?.total || 0);
+    return json({
+      summary: {
+        total,
+        inStockCount: Number(summaryRow?.in_stock_count || 0),
+        emptyCount: Number(summaryRow?.empty_count || 0),
+        totalProducts: Number(summaryRow?.total_products || 0),
+        withCodeCount: Number(summaryRow?.with_code_count || 0),
+        manualRankedCount: Number(summaryRow?.manual_ranked_count || 0),
+        errorCount: Number(summaryRow?.error_count || 0),
+        totalFavorites: Number(summaryRow?.total_favorites || 0),
+        totalSales: Number(summaryRow?.total_sales || 0),
+      },
+      shops: rows.map(s=>({
+        id:s.id,
+        shopName:hideTelegramContacts(s.shop_name),
+        shopUrl:s.shop_url,
+        productCount:s.product_count,
+        favoriteCount:s.favorite_count,
+        integrationCode:s.submitted_integration_code || '',
+        manualRank:s.manual_rank,
+        rank:s.global_rank,
+        lastSyncedAt:s.last_synced_at,
+        nextSyncAt:s.next_sync_at || null,
+        syncState:s.sync_state,
+        syncSupported:!!s.sync_supported,
+        adapterType:s.adapter_type,
+        systemType:s.effective_system_type,
+        consecutiveFailures:Number(s.consecutive_failures || 0),
+        lastError:s.last_error || '',
+        staleDays:Number(s.stale_days || 0),
+        salesCount:s.shop_sell_count != null ? Number(s.shop_sell_count) : null,
+        salesVisible:!!s.sales_visible,
+        depositMoney:s.deposit_money != null ? Number(s.deposit_money) : null,
+        depositVisible:!!s.deposit_visible,
+        createdAt:s.created_at || null,
+        offerStats:offerStatsMap.get(s.id) || { offerCount:0, brandCount:0, minPrice:null, maxPrice:null, avgPrice:null, lowStockCount:0 },
+      })),
+      total,
+      totalPages:Math.max(1,Math.ceil(total/20)),
+      page,
+    });
   }
   if (path === '/api/control/shop-details' && req.method === 'POST') {
     let d:Record<string,unknown>; try { d=await body(req); } catch { return json({error:'请求格式错误'},400); }
