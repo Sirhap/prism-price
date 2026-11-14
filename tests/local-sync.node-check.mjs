@@ -264,3 +264,16 @@ test('续跑允许已删除且已完成的指定店铺缺席，未完成的缺�
   const state=JSON.parse(fs.readFileSync(checkpoint));delete state.completed.a;fs.writeFileSync(checkpoint,JSON.stringify(state));
   await assert.rejects(runSync({...opts,resume:true},{load:async()=>({shops:[shops[1]]}),push:async e=>result(e.shopId)}),/没有找到支持同步的店铺: a/);
 });
+
+test('16688 只允许部分推送，空列表与不支持部分同步的目标均不可删除', async () => {
+  const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-16688-')), 'state.json');
+  const shop = {id:'16688-test',shopUrl:'https://www.16688.com.cn/shop/S447917',adapterType:'manual',syncSupported:false};
+  let sent, removals=0;
+  const deps={load:async()=>({shops:[shop],partialSnapshotSupport:true}),chooseStart:()=>0,collect:async()=>snapshot,push:async e=>{sent=e;return result(shop.id);},remove:async()=>{removals++;}};
+  const synced=await runSync(options(checkpoint,{apply:true}),deps);
+  assert.equal(synced.pushed,1);assert.equal(sent.partial,true);
+  const empty=await runSync(options(checkpoint,{apply:true}),{...deps,collect:async()=>({...snapshot,items:[]})});
+  assert.equal(empty.failed,1);assert.equal(removals,0);
+  const incompatible=await runSync(options(checkpoint,{apply:true}),{...deps,load:async()=>({shops:[shop],partialSnapshotSupport:false})});
+  assert.equal(incompatible.failed,1);assert.equal(removals,0);
+});

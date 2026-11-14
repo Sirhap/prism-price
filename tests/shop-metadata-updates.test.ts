@@ -132,7 +132,7 @@ describe("店铺元数据更新与无效推送保护", () => {
 describe("店铺简介 Hash 解耦增量更新与收录时间不变量", () => {
   it("0005 迁移列探测正确且简介更新只触发单行 UPDATE shops，不重写 offers/product_groups", async () => {
     const caps = await getShopColumnCapabilities(env.DB);
-    expect(caps).toEqual({ systemType: true, description: true, createdAt: true });
+    expect(caps).toEqual({ systemType: true, description: true, createdAt: true, submittedIntegrationCode: true });
 
     const shopId = "desc-decoupled-shop";
     const shopUrl = "https://desc-decoupled.example/";

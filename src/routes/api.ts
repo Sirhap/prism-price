@@ -1,7 +1,15 @@
 import { normalizeSubmittedShopUrl } from "../collector/submittedShopUrl";
+import { authenticated as adminAuthenticated, getIngestHash, handleAdminRoute, matchesIngestSecret, settings as adminSettings } from "./admin";
 import { cachedQuery, cachedShopCount, catalogVersion, catalogIndexes } from "../cache/queryCache";
 import { TYPE_SQL_EXPR, PLAN_SQL_EXPR, loadProductBuckets, summarizeProducts, catalogGroups } from "./productStats";
-import { resolveIntegrationCodes, integrationCodeCandidateFilter, hideTelegramContacts } from "../collector/shopPresentation";
+import {
+  extractMainCategories,
+  hideTelegramContacts,
+  integrationCodeCandidateFilter,
+  resolveIntegrationCodes,
+  type ShopMainCategory,
+} from "../collector/shopPresentation";
+export { extractMainCategories, type ShopMainCategory };
 import {
   SHOP_SYSTEMS,
   getShopColumnCapabilities,
@@ -13,7 +21,6 @@ import {
 import { resolveAdapter } from "../collector/adapters";
 import { assertSafePublicUrl, normalizeDescription } from "../collector/adapters/fetcher";
 import {
-  GROUP_DISPLAY_NAMES,
   PRODUCT_PLAN_SET,
   buildProductRelevanceOrder,
   containsMatch,
@@ -75,12 +82,6 @@ interface SnapshotRow {
   median_price: number | null;
   total_sales: number | null;
   has_stock: number;
-}
-
-export interface ShopMainCategory {
-  group: string;
-  label: string;
-  count: number;
 }
 
 const ALLOWED_ADAPTERS: ReadonlySet<AdapterType> = new Set([
@@ -147,46 +148,13 @@ function safeDecodeRouteParam(raw: string): string | null {
 }
 
 /**
- * 从 product_summary_json 提取并按数量降序排列店铺主营类别分布；
- * 对空数组、损坏 JSON 或仅含手工商品参考的扁平回退数组安全返回空数组，绝不编造分类。
- */
-export function extractMainCategories(productSummaryJson: string): ShopMainCategory[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(productSummaryJson || "[]");
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed) || parsed.length === 0) {
-    return [];
-  }
-
-  const counts = new Map<string, number>();
-  for (const entry of parsed) {
-    if (!entry || typeof entry !== "object") continue;
-    const record = entry as Record<string, unknown>;
-    if (typeof record.group !== "string") continue;
-    const group = record.group.trim();
-    const count = Number(record.count);
-    if (!group || !Number.isFinite(count) || count <= 0) continue;
-    counts.set(group, (counts.get(group) || 0) + Math.floor(count));
-  }
-
-  return [...counts.entries()]
-    .map(([group, count]) => ({
-      group,
-      label: GROUP_DISPLAY_NAMES[group] || group,
-      count,
-    }))
-    .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, "zh-Hans-CN"));
-}
-
-/**
  * 使用 SHA-256 + timingSafeEqual 校验管理员/推送密钥，防止时序泄露与未授权写入
  */
 async function verifyAdminSecret(request: Request, env: Env): Promise<{ ok: boolean; status: number; message: string }> {
   const expected = env.INGEST_SECRET;
-  if (!expected) {
+  let override: string | null = null;
+  try { override = await getIngestHash(env.DB); } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
+  if (!expected && !override) {
     return { ok: false, status: 503, message: "服务端尚未配置 INGEST_SECRET" };
   }
 
@@ -196,6 +164,9 @@ async function verifyAdminSecret(request: Request, env: Env): Promise<{ ok: bool
   if (!provided) {
     return { ok: false, status: 401, message: "缺少 Bearer 授权凭据" };
   }
+
+  if (override) return await matchesIngestSecret(provided, override)
+    ? {ok:true,status:200,message:'ok'} : {ok:false,status:401,message:'授权密钥校验失败'};
 
   const encoder = new TextEncoder();
   const [providedHash, expectedHash] = await Promise.all([
@@ -213,7 +184,7 @@ async function verifyAdminSecret(request: Request, env: Env): Promise<{ ok: bool
 /**
  * GET /api/products - 从预聚合表直接检索商品并统计分面计数
  */
-async function handleGetProducts(url: URL, env: Env): Promise<Response> {
+async function handleGetProducts(url: URL, env: Env, enableRecommendation = true): Promise<Response> {
   await ensureSeedShops(env.DB);
 
   // 同款商品展开剩余报价的按需查询分支
@@ -332,6 +303,32 @@ async function handleGetProducts(url: URL, env: Env): Promise<Response> {
   const includeFacets = url.searchParams.get("facets") !== "0";
   const indexes = await catalogIndexes(env.DB, url);
   const version = await catalogVersion(env.DB, url, indexes);
+  // 文本相关度仍先排序；同相关度内对店铺数做饱和处理，叠加有上限的店铺排名分。
+  let recommendationKey = '';
+  if (sort === 'relevance' && enableRecommendation) {
+    try {
+      const config = await adminSettings(env.DB);
+      const slot = Math.floor(Date.now() / 60000);
+      const topShops = await cachedQuery(url, `product-recommended-shops:${version}:${config.revision}:${slot}`, async () => {
+        const signal = await env.DB.prepare('SELECT 1 FROM shop_rank_settings WHERE favorite_count > 0 OR (? = 1 AND manual_rank IS NOT NULL) LIMIT 1').bind(config.manual_rank_enabled).first();
+        if (!signal) return [];
+        const {results} = await env.DB.prepare(`SELECT s.id FROM shops s JOIN shop_rank_settings r ON r.shop_id=s.id
+          WHERE r.favorite_count > 0 OR (?=1 AND r.manual_rank IS NOT NULL)
+          ORDER BY CASE WHEN ?=1 AND r.manual_rank IS NOT NULL THEN 0 ELSE 1 END,
+          CASE WHEN ?=1 THEN r.manual_rank END ASC, COALESCE(r.favorite_count,0) DESC,
+          CASE WHEN COALESCE(r.favorite_count,0)=0 THEN s.last_synced_at END DESC, s.product_count DESC,s.id ASC LIMIT 20`)
+          .bind(config.manual_rank_enabled,config.manual_rank_enabled,config.manual_rank_enabled).all<{id:string}>();
+        return (results || []).map(row=>row.id);
+      },60);
+      if (topShops.length) {
+        const ids = JSON.stringify(topShops).replace(/'/g,"''");
+        const bonus = `COALESCE((SELECT MAX(4.0 / (1.0 + CAST(recommended.key AS INTEGER) * 0.1)) FROM json_each(CASE WHEN json_valid(offers_preview_json) THEN offers_preview_json ELSE '[]' END) AS preview JOIN json_each('${ids}') AS recommended ON json_extract(preview.value,'$.shopId')=recommended.value),0)`;
+        const popularity = `(10.0 * shop_count / (shop_count + 10.0))`;
+        orderSql = orderSql.replace('shop_count DESC, min_price ASC', `(${popularity} + ${bonus}) DESC, shop_count DESC, min_price ASC`);
+        recommendationKey = `${config.revision}:${slot}`;
+      }
+    } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
+  }
   const scopeKey = searchTerms(q).join(" ");
   const buckets = await cachedQuery(url, `product-stats:${version}:${scopeKey}`, () =>
     loadProductBuckets(env.DB, searchWhereSql, searchParams));
@@ -348,9 +345,9 @@ async function handleGetProducts(url: URL, env: Env): Promise<Response> {
   const listParams = useMatchedKeys ? [JSON.stringify(stats.groupKeys), ...selectedScope.params] : params;
   const readPage = async (): Promise<{ results: ProductGroupRow[] }> => {
     if (offset >= stats.total) return { results: [] };
-    if (useMatchedKeys || !indexes.popular) {
+    if (useMatchedKeys || !indexes.popular || recommendationKey) {
       // 排名只算一次，后续页按12/30个主键取行；不每翻一页就重排整个搜索结果。
-      const ordered = await cachedQuery(url, `product-order:${version}:${JSON.stringify([appliedFilters, appliedPriceRange])}`, async () => {
+      const ordered = await cachedQuery(url, `product-order:${version}:${recommendationKey}:${JSON.stringify([appliedFilters, appliedPriceRange])}`, async () => {
         const { results } = await env.DB.prepare(`SELECT group_key FROM ${listFrom} ${listWhere} ${orderSql}`)
           .bind(...listParams, ...orderParams).all<{ group_key: string }>();
         return results.map((row) => row.group_key);
@@ -646,9 +643,9 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
   const fieldsMode = (url.searchParams.get("fields") || "").trim();
   if (fieldsMode === "sync") {
     const { results } = await env.DB.prepare(
-      `SELECT id, shop_name, shop_url, canonical_url, adapter_type, effective_system_type AS system_type, description, telegram, sync_supported, sync_state, content_hash, last_synced_at, stale_days
+      `SELECT id, shop_name, shop_url, canonical_url, adapter_type, effective_system_type AS system_type, description, telegram, sync_supported, sync_state, content_hash, last_synced_at, stale_days, shop_sell_count, sales_visible, deposit_visible, deposit_money
        FROM ${shopSource}
-       WHERE sync_supported = 1
+       WHERE sync_supported = 1 OR effective_system_type = '16688'
        ORDER BY id ASC`,
     ).all<ShopRecord>();
 
@@ -674,6 +671,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
             contentHashFull: s.content_hash || "",
             lastSyncedAt: s.last_synced_at,
             staleDays: computeStaleDays(s.last_synced_at, s.stale_days),
+            shopSellCount:s.shop_sell_count, salesVisible:s.sales_visible === 1, depositVisible:s.deposit_visible === 1, depositMoney:s.deposit_money,
           };
         }),
       },
@@ -690,7 +688,24 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
   const onlyInStock = isTruthyFlag(url.searchParams.get("onlyInStock")) || isTruthyFlag(url.searchParams.get("hasProducts"));
   const hasIntegrationCode = isTruthyFlag(url.searchParams.get("hasIntegrationCode"));
   const hasDescription = isTruthyFlag(url.searchParams.get("hasDescription"));
-  const shopSort: ShopSortOption = normalizeShopSort(url.searchParams.get("sort"));
+  const shopSort: ShopSortOption = "default";
+  let ranking: Map<string, {rank:number; favoriteCount:number; manualRank:number|null; manualRecommended:boolean}> | null = null;
+  let rankingRevision = 0;
+  try {
+    const cfg = await adminSettings(env.DB);
+    rankingRevision = cfg.revision;
+    const rows = await cachedQuery(url, `shop-ranking:${version}:${cfg.revision}:${Math.floor(Date.now()/60000)}`, async () => {
+      const {results} = await env.DB.prepare(`SELECT s.id, COALESCE(r.favorite_count,0) AS favorite_count, r.manual_rank
+        FROM shops s LEFT JOIN shop_rank_settings r ON r.shop_id=s.id
+        ORDER BY CASE WHEN ?=1 AND r.manual_rank IS NOT NULL THEN 0 ELSE 1 END,
+          CASE WHEN ?=1 THEN r.manual_rank END ASC, COALESCE(r.favorite_count,0) DESC,
+          CASE WHEN COALESCE(r.favorite_count,0)=0 THEN s.last_synced_at END DESC, s.product_count DESC, s.id ASC`)
+        .bind(cfg.manual_rank_enabled,cfg.manual_rank_enabled).all<{id:string;favorite_count:number;manual_rank:number|null}>();
+      return results || [];
+    }, 60);
+    ranking = new Map(rows.map((row,index) => [row.id,{rank:index+1,favoriteCount:Number(row.favorite_count),manualRank:row.manual_rank,manualRecommended:!!cfg.manual_rank_enabled && row.manual_rank !== null}]));
+  } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
+  const rankedFormat = (row: ShopRecord) => ({...formatShopRow(row), ...(ranking?.get(row.id) || {})});
 
   const terms = searchTerms(q);
   const systemNameSql = `CASE effective_system_type ${Object.entries(SHOP_SYSTEMS).map(([key, label]) => `WHEN '${key}' THEN '${key === "ldxp" ? `${label} 店铺` : label}'`).join(" ")} END`;
@@ -713,7 +728,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
       const candidate = integrationCodeCandidateFilter();
       const candidateConditions = [...baseConditions, candidate.sql];
       const { results } = await env.DB.prepare(
-        `SELECT id, shop_name, description, shop_url, canonical_url FROM ${shopSource} WHERE ${candidateConditions.join(" AND ")}`,
+        `SELECT id, shop_name, description, shop_url, canonical_url, submitted_integration_code FROM ${shopSource} WHERE ${candidateConditions.join(" AND ")}`,
       ).bind(...baseParams, ...candidate.params).all<Pick<ShopRecord, "id" | "shop_name" | "description" | "shop_url" | "canonical_url">>();
       return (results || []).filter((row) => resolveIntegrationCodes(row).codes.length > 0).map((row) => row.id);
     });
@@ -761,11 +776,11 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
     const matchedTotal = systemType ? systemFacets[systemType] : Object.values(systemFacets).reduce((sum, count) => sum + count, 0);
     const readShopPage = async (): Promise<{ results: ShopRecord[] }> => {
       if (offset >= matchedTotal) return { results: [] };
-      const ordered = await cachedQuery(url, `shop-order:${version}:${JSON.stringify([terms, onlyInStock, hasDescription, hasIntegrationCode, systemType, shopSort])}`, async () => {
+      const ordered = await cachedQuery(url, `shop-order:${version}:${rankingRevision}:${JSON.stringify([terms, onlyInStock, hasDescription, hasIntegrationCode, systemType, shopSort])}:${Math.floor(Date.now()/60000)}`, async () => {
         const { results } = await env.DB.prepare(`SELECT id FROM ${shopSource} ${whereSql} ${orderSql}`)
           .bind(...whereParams).all<{ id: string }>();
-        return results.map((row) => row.id);
-      });
+        return results.map((row) => row.id).sort((a,b) => (ranking?.get(a)?.rank ?? 1e9) - (ranking?.get(b)?.rank ?? 1e9));
+      }, 60);
       const ids = ordered.slice(offset, offset + pageSize);
       if (!ids.length) return { results: [] };
       const { results } = await env.DB.prepare(`SELECT p.* FROM json_each(?) AS matched
@@ -782,7 +797,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
     return jsonPublic({
-      shops: (pageRes.results || []).map(formatShopRow),
+      shops: (pageRes.results || []).map(rankedFormat),
       total,
       totalAll,
       page,
@@ -798,7 +813,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
       .bind(...whereParams)
       .all<ShopRecord>(),
   ]);
-  const formatted = (shops || []).map(formatShopRow);
+  const formatted = (shops || []).map(rankedFormat).sort((a,b) => (a.rank ?? 1e9) - (b.rank ?? 1e9));
 
   return jsonPublic({
     shops: formatted,
@@ -1002,28 +1017,37 @@ async function handleAdminUpsertShops(request: Request, env: Env): Promise<Respo
 
 /** 提交店铺地址：仅入库待同步，不代表已核实商品或库存。 */
 async function handlePublicShopSubmission(request: Request, env: Env): Promise<Response> {
+  if (!(await adminSettings(env.DB)).submissions_enabled) return Response.json({error:'暂不接受新店提交'}, {status:403});
   const requestOrigin = request.headers.get("Origin");
   if (requestOrigin && requestOrigin !== new URL(request.url).origin) return Response.json({ error: "请求来源不匹配" }, { status: 403 });
   if (!(request.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")) return Response.json({ error: "请使用 JSON 提交" }, { status: 415 });
   if (Number(request.headers.get("Content-Length") || 0) > 4096) return Response.json({ error: "提交内容过长" }, { status: 413 });
   const raw = await request.text();
   if (raw.length > 4096) return Response.json({ error: "提交内容过长" }, { status: 413 });
-  let data: { shopUrl?: unknown };
-  try { data = JSON.parse(raw) as { shopUrl?: unknown }; } catch { return Response.json({ error: "请求格式不正确" }, { status: 400 }); }
+  let data: { shopUrl?: unknown; integrationCode?: unknown };
+  try { data = JSON.parse(raw) as { shopUrl?: unknown; integrationCode?: unknown }; } catch { return Response.json({ error: "请求格式不正确" }, { status: 400 }); }
   const canonical = normalizeSubmittedShopUrl(data?.shopUrl);
   if (!canonical) return Response.json({ error: "请输入有效的公网店铺网址" }, { status: 400 });
+  const integrationCode = typeof data.integrationCode === 'string' ? data.integrationCode.trim() : '';
+  if (data.integrationCode !== undefined && typeof data.integrationCode !== 'string') return Response.json({error:'对接码格式无效'}, {status:400});
+  if (integrationCode && (integrationCode.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9_-]*(?:[ \t]+[A-Za-z0-9][A-Za-z0-9_-]*)*$/.test(integrationCode))) return Response.json({error:'对接码只能包含字母、数字、空格、下划线和连字符'}, {status:400});
   const url = new URL(canonical);
   const known = ['wzyp.cn', 'catfk.com', 'www.16688.com.cn'].includes(url.hostname);
   const token = known ? url.pathname.split('/')[2] : '';
   const browserSupported = ['wzyp.cn', 'catfk.com'].includes(url.hostname);
-  const existing = await env.DB.prepare("SELECT id FROM shops WHERE lower(rtrim(canonical_url, '/')) = ? OR lower(rtrim(shop_url, '/')) = ? LIMIT 1").bind(canonical.toLowerCase(), canonical.toLowerCase()).first<{ id: string }>();
+  const aliases = new Set([canonical.toLowerCase()]);
+  const hostAliases: Record<string,string[]> = {'wzyp.cn':['pay.ldxp.cn'],'catfk.com':['www.catfk.com'],'www.16688.com.cn':['16688.com.cn']};
+  for (const host of hostAliases[url.hostname] || []) aliases.add(canonical.toLowerCase().replace(`://${url.hostname}`, `://${host}`));
+  for (const item of [...aliases]) if (item.startsWith('https://')) aliases.add(`http://${item.slice(8)}`);
+  const aliasJson = JSON.stringify([...aliases]);
+  const existing = await env.DB.prepare("SELECT id FROM shops WHERE lower(rtrim(canonical_url, '/')) IN (SELECT value FROM json_each(?)) OR lower(rtrim(shop_url, '/')) IN (SELECT value FROM json_each(?)) LIMIT 1").bind(aliasJson,aliasJson).first<{ id: string }>();
   if (existing) return Response.json({ ok: true, existing: true, shopId: existing.id });
   const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)))).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
   const id = `submitted-${digest}`;
   const now = new Date().toISOString();
-  const result = await env.DB.prepare("INSERT OR IGNORE INTO shops (id,shop_name,shop_url,canonical_url,adapter_type,sync_supported,sync_state,next_sync_at,updated_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM shops WHERE id LIKE 'submitted-%' AND updated_at >= ?) < 30")
-    .bind(id, token ? `店铺 ${token}` : url.hostname, canonical, canonical, browserSupported ? 'push_ingest' : 'manual', browserSupported ? 1 : 0, browserSupported ? 'pending' : 'manual', now, now, dayStart.toISOString()).run();
+  const result = await env.DB.prepare("INSERT OR IGNORE INTO shops (id,shop_name,shop_url,canonical_url,adapter_type,sync_supported,sync_state,next_sync_at,updated_at,submitted_integration_code) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM shops WHERE id LIKE 'submitted-%' AND updated_at >= ?) < 30")
+    .bind(id, token ? `店铺 ${token}` : url.hostname, canonical, canonical, browserSupported ? 'push_ingest' : 'manual', browserSupported ? 1 : 0, browserSupported ? 'pending' : 'manual', now, now, integrationCode, dayStart.toISOString()).run();
   if (!result.meta.changes) {
     const duplicate = await env.DB.prepare("SELECT id FROM shops WHERE id = ? OR lower(rtrim(canonical_url, '/')) = ? LIMIT 1").bind(id, canonical.toLowerCase()).first<{id: string}>();
     return duplicate ? Response.json({ ok: true, existing: true, shopId: duplicate.id }) : Response.json({ error: "今日提交数量已满，请稍后再试" }, { status: 429 });
@@ -1429,6 +1453,39 @@ async function handleGetSyncLogs(env: Env): Promise<Response> {
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const { pathname } = url;
+
+  if (request.method === 'GET' && pathname === '/api/control/product-ranking-preview') {
+    if (!await adminAuthenticated(request,env.DB)) return Response.json({error:'请先登录'},{status:401,headers:{'Cache-Control':'no-store'}});
+    const query=(url.searchParams.get('q') || '').trim();
+    if (!query || query.length>120) return Response.json({error:'请输入不超过 120 个字符的搜索词'},{status:400,headers:{'Cache-Control':'no-store'}});
+    const previewUrl=new URL('/api/products',url); previewUrl.searchParams.set('q',query); previewUrl.searchParams.set('sort','relevance'); previewUrl.searchParams.set('pageSize','30');
+    const [original,updated] = await Promise.all([handleGetProducts(previewUrl,env,false),handleGetProducts(previewUrl,env,true)]);
+    if (!original.ok || !updated.ok) return Response.json({error:'排序预览暂不可用'},{status:503,headers:{'Cache-Control':'no-store'}});
+    const baseline=await original.json() as {items:Array<{id:string;name:string;shopCount:number;minPrice:number}>};
+    const adjusted=await updated.json() as {items:Array<{id:string;name:string;shopCount:number;minPrice:number;offers:Array<{shopId?:string}>}>};
+    const positions=new Map(baseline.items.map((item,index)=>[item.id,index+1]));
+    const scoring=buildProductRelevanceOrder(query), expression=/^ORDER BY \((.*)\) DESC, /.exec(scoring.orderSql)?.[1];
+    const scores=new Map<string,number>();
+    if (expression && adjusted.items.length) {
+      const {results}=await env.DB.prepare(`SELECT group_key, (${expression}) AS score FROM product_groups WHERE group_key IN (SELECT value FROM json_each(?))`)
+        .bind(...scoring.params,JSON.stringify(adjusted.items.map(item=>item.id))).all<{group_key:string;score:number}>();
+      for(const row of results || []) scores.set(row.group_key,Number(row.score));
+    }
+    const cfg=await adminSettings(env.DB);
+    const {results:recommended}=await env.DB.prepare(`SELECT s.id FROM shops s JOIN shop_rank_settings r ON r.shop_id=s.id
+      WHERE r.favorite_count>0 OR (?=1 AND r.manual_rank IS NOT NULL)
+      ORDER BY CASE WHEN ?=1 AND r.manual_rank IS NOT NULL THEN 0 ELSE 1 END,CASE WHEN ?=1 THEN r.manual_rank END ASC,
+      r.favorite_count DESC,CASE WHEN r.favorite_count=0 THEN s.last_synced_at END DESC,s.product_count DESC,s.id ASC LIMIT 20`)
+      .bind(cfg.manual_rank_enabled,cfg.manual_rank_enabled,cfg.manual_rank_enabled).all<{id:string}>();
+    const ranks=new Map((recommended || []).map((row,index)=>[row.id,index]));
+    return Response.json({items:adjusted.items.map((item,index)=>{
+      const bonus=Math.max(0,...(item.offers || []).map(offer=>ranks.has(String(offer.shopId)) ? 4/(1+ranks.get(String(offer.shopId))!*0.1) : 0));
+      return {id:item.id,name:item.name,shopCount:item.shopCount,minPrice:item.minPrice,rank:index+1,previousRank:positions.get(item.id) ?? null,textScore:scores.get(item.id) ?? null,shopBonus:Number(bonus.toFixed(2))};
+    })},{headers:{'Cache-Control':'no-store'}});
+  }
+
+  const control = await handleAdminRoute(request, env);
+  if (control) return control;
 
   if (request.method === "GET" && pathname === "/api/products") {
     return handleGetProducts(url, env);

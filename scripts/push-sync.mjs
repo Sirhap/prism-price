@@ -216,7 +216,7 @@ async function postJson(url, body, retries = 1, options = {}) {
       const cookieHeader = originCookies.get(origin) || "";
       const res = await fetch(url, {
         method: "POST",
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
@@ -293,7 +293,12 @@ async function postJson(url, body, retries = 1, options = {}) {
         options.requestGate?.block();
         throw err;
       }
-      lastError = err;
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        lastError = new Error(`源站请求超时（${Math.round((options.timeoutMs ?? 8000)/1000)} 秒）`);
+      } else if (err instanceof TypeError && /fetch failed/i.test(err.message)) {
+        const code = /^[A-Z0-9_]{1,40}$/.test(String(err.cause?.code || '')) ? `（${err.cause.code}）` : '';
+        lastError = new Error(`源站网络连接失败${code}`);
+      } else lastError = err;
       if (attempt < retries) {
         await sleep(600);
       }
@@ -473,6 +478,60 @@ async function fetchPagedGoodsBatchLocal(apiOrigin, token, goodsType, categoryId
   }
 
   return collected;
+}
+
+/** 16688 列表未提供可信总数，调用方必须以部分快照写入。 */
+export async function fetch16688Snapshot(shop, options = {}) {
+  const url = new URL(shop.shopUrl);
+  if (!['16688.com.cn','www.16688.com.cn'].includes(url.hostname.toLowerCase())) throw new Error('不支持的 16688 域名');
+  const token = url.pathname.match(/^\/shop\/([a-zA-Z0-9_-]{1,100})\/?$/)?.[1];
+  if (!token) throw new Error('16688 店铺地址无效');
+  const slowSourceOptions = { ...options, timeoutMs: 30000 };
+  const detail = await postJson('https://www.16688.com.cn/shopApi/shop/detail', {shop_no:token}, 1, slowSourceOptions);
+  const number = detail?.data?.shop_no;
+  if (detail.code !== 1 || typeof number !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(number)) throw new Error('16688 店铺信息无效，保留原数据');
+  const categories = await postJson('https://www.16688.com.cn/shopApi/goodsCategory/list', {shop_no:number}, 1, slowSourceOptions);
+  if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效，保留原数据');
+  const categoryNames = new Map(categories.data.filter(c => c && typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name.trim()]));
+  const goods = await postJson('https://www.16688.com.cn/shopApi/goods/list', {shop_no:number,goods_category_no:'',keywords:'',sort:'default'}, 1, slowSourceOptions);
+  if (goods.code !== 1 || !Array.isArray(goods.data?.list) || !goods.data.list.length) throw new Error('16688 商品列表为空或无效，保留原数据');
+  const seen = new Set();
+  const items = goods.data.list.slice(0,2000).map(item => {
+    const key=String(item?.goods_no || '').trim(), name=String(item?.name || '').trim(), price=Number(item?.price);
+    if (!/^[a-zA-Z0-9_-]{1,180}$/.test(key) || !name || !Number.isFinite(price) || price<=0 || seen.has(key)) throw new Error('16688 商品字段不完整或重复，保留原数据');
+    seen.add(key);
+    const raw=item.stock_available_quantity;
+    const stock=item.stock_available_status==='out' ? 0 : typeof raw==='number' && Number.isFinite(raw) && raw>=0 ? raw : null;
+    return {itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock!==null && stock<=5?'low':stock!==null && stock<=20?'normal':'sufficient',itemUrl:`https://www.16688.com.cn/goods/${encodeURIComponent(key)}`};
+  });
+  return {shopName:String(detail.data.name || shop.shopName || '').trim(),canonicalUrl:shop.canonicalUrl || shop.shopUrl,telegram:shop.telegram || '',shopSellCount:shop.shopSellCount ?? null,salesVisible:!!shop.salesVisible,depositVisible:!!shop.depositVisible,depositMoney:shop.depositMoney ?? null,items};
+}
+
+/** KA123 公开目录的返回量不保证完整；结果始终作为部分更新。 */
+export async function fetchKa123Snapshot(shop, options = {}) {
+  const source = new URL(shop.shopUrl);
+  if (source.protocol !== 'https:' || source.username || source.password || source.port || !source.hostname.includes('.') || /^(?:localhost|[\d.]+)$/i.test(source.hostname) || /\.(?:local|internal|localhost)$/i.test(source.hostname)) throw new Error('KA123 店铺地址无效');
+  if (options.requestGate) await options.requestGate.before(source.origin);
+  const response = await fetch(`${source.origin}/api/catalog`, {headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});
+  if ([403,429,444].includes(response.status) || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) {
+    const error=new Error(`KA123 源站请求受限或返回非 JSON HTTP ${response.status}`);error.isRateLimited=true;throw error;
+  }
+  if (!response.ok) throw new Error(`KA123 源站异常 HTTP ${response.status}`);
+  const payload=await response.json(), data=payload?.data;
+  if (payload?.ok!==true || !data || !Array.isArray(data.products) || !data.products.length) throw new Error('KA123 商品列表为空或无效，保留原数据');
+  const rate=Number(data.exchange_rate?.rate || 6.64);
+  if (!Number.isFinite(rate) || rate<=0) throw new Error('KA123 汇率无效，保留原数据');
+  const sections=new Map((Array.isArray(data.sections)?data.sections:[]).map(s=>[String(s.id),String(s.title || '')]));
+  const items=[], seen=new Set();
+  for (const p of data.products) {
+    if (p.listed===false || p.can_issue===false || p.issue_enabled===false) continue;
+    const id=String(p.id || '').trim(),name=String(p.name || '').trim(),price=Number(p.price_micro)/1000000;
+    if (!id || !name || !Number.isFinite(price) || price<=0 || seen.has(id)) throw new Error('KA123 商品字段不完整或重复，保留原数据');
+    seen.add(id);const stock=typeof p.stock_available==='number' && Number.isFinite(p.stock_available) ? Math.max(0,p.stock_available) : null;
+    items.push({itemKey:id,rawName:`${name}（${price.toFixed(2)} USDT 折合）`,shopCategory:sections.get(String(p.section_id || '')) || '',price:Number((price*rate).toFixed(2)),stockCount:stock,stockStatus:stock!==null && stock<=5?'low':stock!==null && stock<=20?'normal':'sufficient',itemUrl:`${source.origin}/#shop`});
+  }
+  if (!items.length) throw new Error('KA123 无可用商品，保留原数据');
+  return {shopName:shop.shopName,canonicalUrl:shop.canonicalUrl || shop.shopUrl,description:shop.description,telegram:shop.telegram || '',shopSellCount:shop.shopSellCount ?? null,salesVisible:!!shop.salesVisible,depositVisible:!!shop.depositVisible,depositMoney:shop.depositMoney ?? null,items};
 }
 
 export async function fetchShopApiSnapshot(shop, options = {}) {

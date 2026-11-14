@@ -774,6 +774,52 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     ).json()) as { shop: { productItems: unknown[] } };
     expect(bDetail.shop.productItems).toHaveLength(0);
   });
+  it("接码服务优先归类，成品号仍保留品牌分类", async () => {
+    const pushed = await SELF.fetch("http://localhost/api/ingest", {
+      method: "POST", headers: ADMIN_AUTH_HEADERS,
+      body: JSON.stringify({ shops: [{
+        shopId: "sms-priority-regression", shopUrl: "https://example.com/sms-priority-regression",
+        snapshot: {
+          shopName: "接码分类回归店", canonicalUrl: "https://example.com/sms-priority-regression", telegram: "",
+          shopSellCount: null, salesVisible: false, depositVisible: false, depositMoney: null,
+          items: [
+            { itemKey: "sms", rawName: "接码回归唯一 Codex 接🐎美区服务", shopCategory: "Codex", price: 2, stockCount: 2, stockStatus: "normal", itemUrl: "https://example.com/item/sms-priority" },
+            { itemKey: "account", rawName: "账号回归唯一 Codex 已接🐎成品号", shopCategory: "Codex接码", price: 3, stockCount: 2, stockStatus: "normal", itemUrl: "https://example.com/item/account-priority" },
+          ],
+        },
+      }] }),
+    });
+    expect(pushed.status).toBe(200);
+    const getTotal = async (q: string, group: string) => {
+      const params = new URLSearchParams({ q, group });
+      return ((await (await SELF.fetch(`http://localhost/api/products?${params}`)).json()) as { total: number }).total;
+    };
+    expect(await getTotal("接码回归唯一", "接码服务")).toBe(1);
+    expect(await getTotal("接码回归唯一", "Codex")).toBe(0);
+    expect(await getTotal("账号回归唯一", "Codex")).toBe(1);
+    expect(await getTotal("账号回归唯一", "接码服务")).toBe(0);
+  });
+  it("教程可按类型筛选且不会出现在接码服务中", async () => {
+    const pushed = await SELF.fetch("http://localhost/api/ingest", {
+      method: "POST", headers: ADMIN_AUTH_HEADERS,
+      body: JSON.stringify({ shops: [{
+        shopId: "tutorial-regression", shopUrl: "https://example.com/tutorial-regression",
+        snapshot: {
+          shopName: "教程回归店", canonicalUrl: "https://example.com/tutorial-regression", telegram: "",
+          shopSellCount: null, salesVisible: false, depositVisible: false, depositMoney: null,
+          items: [{ itemKey: "tutorial-1", rawName: "回归专用理论永久多次使用codex接马教程", shopCategory: "教程",
+            price: 1, stockCount: 2, stockStatus: "normal", itemUrl: "https://example.com/item/tutorial-1" }],
+        },
+      }] }),
+    });
+    expect(pushed.status).toBe(200);
+    const url = "http://localhost/api/products?q=回归专用理论永久多次使用";
+    const tutorial = await (await SELF.fetch(`${url}&type=tutorial`)).json() as { total: number; items: Array<{ group: string; attributes: { type: string } }> };
+    expect(tutorial.total).toBe(1);
+    expect(tutorial.items[0]).toMatchObject({ group: "工具教程", attributes: { type: "tutorial" } });
+    const sms = await (await SELF.fetch(`${url}&type=sms-service`)).json() as { total: number };
+    expect(sms.total).toBe(0);
+  });
   it("筛选分面应排除自身条件、合并旧枚举、联动清洗失效组合，且保留卡片属性与价格边界", async () => {
     const names = [
       ["Codex Plus 美区成品账号 月卡 质保首登", 10],

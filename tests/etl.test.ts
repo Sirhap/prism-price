@@ -236,6 +236,48 @@ describe("ETL 清洗、分类与同款聚合测试", () => {
     expect(extractAttributes("随机 2-4年邮箱 不包gcp", "Gemini/gmail邮箱/gmail邮箱接码").attrType).toBe("");
   });
 
+  it("教程按主体归类，附带教程的商品保留原类型", () => {
+    for (const [name, category] of [
+      ["理论永久多次使用codex接马教程.", "教程"],
+      ["Codex 教学视频", "G / Codex接码"],
+      ["🚀防封必看！G Plus土区稳定订阅保姆级教程", "教程"],
+      ["【教程】未接马plus G号接马并导入sub2api教程", "教程"],
+    ]) {
+      expect(detectBrandGroup(name, category)).toBe("工具教程");
+      expect(extractAttributes(name, category)).toMatchObject({ attrType: "tutorial", attrSms: "", attrPlan: "" });
+    }
+    expect(detectBrandGroup("Muse AI成品号｜10亿Token｜附改邮箱教程", "Muse")).toBe("Muse");
+    expect(extractAttributes("Muse AI成品号｜10亿Token｜附改邮箱教程", "Muse").attrType).toBe("ready");
+    expect(extractAttributes("Codex 接码服务 美区，赠送使用教程", "接码").attrType).toBe("sms-service");
+    expect(extractAttributes("7家接马网站价格对比", "知识付费").attrType).not.toBe("sms-service");
+    expect(extractAttributes("531790 验证试用0刀虚拟卡", "接马").attrType).not.toBe("sms-service");
+    expect(extractAttributes("codex 余额1000点", "Codex接码").attrType).not.toBe("sms-service");
+    expect(extractAttributes("Claude KYC认证服务", "AI接码").attrType).not.toBe("sms-service");
+    expect(extractAttributes("【Giffgaff Sim】接马神器，国外卡低成本保号", "手机接码").attrType).not.toBe("sms-service");
+  });
+
+  it.each([
+    ["codex 接🐎美+1（可二次验证需新卡密）", "Codex"],
+    ["Codex自动接🐎10次｜支持api对接", "Codex"],
+    ["Codex 美区自助接收验证码服务", "Codex"],
+    ["【Codex短信】Codex 手机号短信 短效", "Codex"],
+    ["ChatGPT 长效接🐴 美国实卡", "ChatGPT"],
+    ["Muse 接碼 美区长效", "Muse"],
+    ["Claude 接🐎 美区自动换号", "Claude"],
+  ])("接码变体 %s 优先归入接码服务", (title) => {
+    expect(detectBrandGroup(title, "")).toBe("接码服务");
+    expect(extractAttributes(title, "").attrType).toBe("sms-service");
+  });
+
+  it.each([
+    ["Codex 已接🐎成品号｜账密2FA", "ready", "done"],
+    ["ChatGPT 未接*码成品账号", "ready", "pending"],
+    ["Muse 成品号需要接收验证码", "ready", ""],
+    ["Claude 接🐎教程", "tutorial", ""],
+  ])("账号和教程不因接码变体被当作服务：%s", (title, type, sms) => {
+    expect(extractAttributes(title, "")).toMatchObject({ attrType: type, attrSms: sms });
+  });
+
   it.each([
     ["质保首登", "partial"], ["首登", ""], ["保订阅但不保封号", "partial"],
     ["封号不质保，保订阅30天", "partial"], ["无质保", "no"],

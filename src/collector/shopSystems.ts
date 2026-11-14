@@ -16,6 +16,7 @@ export interface ShopColumnCapabilities {
   systemType: boolean;
   description: boolean;
   createdAt: boolean;
+  submittedIntegrationCode?: boolean;
 }
 
 /** 每次按需只读检测 shops 表所有可选字段是否已迁移，不跨请求缓存数据库状态。 */
@@ -26,6 +27,7 @@ export async function getShopColumnCapabilities(db: D1Database): Promise<ShopCol
     systemType: names.has("system_type"),
     description: names.has("description"),
     createdAt: names.has("created_at"),
+    submittedIntegrationCode: names.has("submitted_integration_code"),
   };
 }
 
@@ -80,6 +82,7 @@ export function shopReadSource(source: boolean | ShopColumnCapabilities): string
   if (!caps.description) {
     extraColumns.push("'' AS description");
   }
+  if (!caps.submittedIntegrationCode) extraColumns.push("'' AS submitted_integration_code");
   if (!caps.createdAt) {
     extraColumns.push("NULL AS created_at");
   }

@@ -12,7 +12,7 @@ import { calculateMedian, isNonSalePlaceholderItem, normalizeOffer } from "./cle
 
 const snapshotBrandRules: readonly BrandRule[] = brandRules;
 
-export const SNAPSHOT_NORMALIZATION_VERSION = 8;
+export const SNAPSHOT_NORMALIZATION_VERSION = 11;
 
 /**
  * 计算店铺快照的 SHA-256 摘要（使用原生 Web Crypto，CPU 耗时极低）

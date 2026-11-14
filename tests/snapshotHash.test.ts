@@ -20,9 +20,9 @@ const snapshot: RawShopSnapshot = {
 };
 
 describe("Worker 与本地推送摘要一致性", () => {
-  it("两个运行环境均同步使用 normalizationVersion: 8，且对同一快照、排序变化及空店计算相同摘要", async () => {
-    expect(WORKER_VERSION).toBe(8);
-    expect(LOCAL_VERSION).toBe(8);
+  it("两个运行环境均同步使用 normalizationVersion: 11，且对同一快照、排序变化及空店计算相同摘要", async () => {
+    expect(WORKER_VERSION).toBe(11);
+    expect(LOCAL_VERSION).toBe(11);
 
     expect(await workerHash(snapshot)).toBe(localHash(snapshot));
     expect(await workerHash({ ...snapshot, items: [...snapshot.items].reverse() })).toBe(localHash(snapshot));

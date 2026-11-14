@@ -9,12 +9,25 @@ export interface ResponseStore {
   put(request: Request, response: Response): Promise<void>;
 }
 
+const SITEMAP_PATHS = new Set(["/sitemap.xml", "/sitemap-shops.xml", "/sitemap-products.xml"]);
+const LLMS_PATHS = new Set(["/llms.txt", "/llms-full.txt"]);
+
 export function isPublicCacheRequest(request: Request): boolean {
   const url = new URL(request.url);
   return request.method === "GET" && !request.headers.has("Authorization") &&
     !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
     url.searchParams.get("fields")?.trim() !== "sync" &&
-    (url.pathname.startsWith("/catalog/") || url.pathname === "/api/products" || url.pathname === "/api/shops" || /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
+    (url.pathname === "/catalog" || url.pathname.startsWith("/catalog/") || SITEMAP_PATHS.has(url.pathname) || LLMS_PATHS.has(url.pathname) || url.pathname === "/api/products" || /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
+}
+
+function isCatalogCursorListPath(pathname: string): boolean {
+  return (
+    pathname === "/catalog/shops/" ||
+    pathname === "/catalog/products/" ||
+    pathname === "/catalog/integration-codes/" ||
+    pathname === "/catalog/integration-codes" ||
+    /^\/catalog\/brands\/[^/]+\/$/.test(pathname)
+  );
 }
 
 /** 只纳入会改变公开结果的参数；忽略随机追踪参数，并统一旧别名、默认值与分页边界。 */
@@ -22,9 +35,11 @@ export function publicCacheKey(request: Request): Request {
   const url = new URL(request.url);
   const key = new URL(PREFIX + url.pathname, url.origin);
   const source = url.searchParams;
-  if (url.pathname === "/catalog/shops/" || url.pathname === "/catalog/products/") {
+  if (isCatalogCursorListPath(url.pathname)) {
     key.searchParams.set("after", source.get("after") || "");
     if (source.has("page")) key.searchParams.set("page", source.get("page") || "");
+  } else if (url.pathname === "/sitemap-shops.xml" || url.pathname === "/sitemap-products.xml") {
+    key.searchParams.set("page", String(positiveInteger(source.get("page"), 1, 100)));
   } else if (url.pathname === "/api/products") {
     const offerKey = (source.get("offerKey") || "").trim();
     if (offerKey) key.searchParams.set("offerKey", offerKey);

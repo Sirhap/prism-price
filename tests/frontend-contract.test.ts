@@ -46,12 +46,13 @@ describe("前端静态资源与前后端契约对齐验证", () => {
     expect(html).toContain("免责声明：");
     expect(html).toContain("使用前请自行甄别。");
     expect(html).toContain('id="profileModal"');
-    expect(html).toContain('href="https://wzyp.cn/merchant/register?invite_token=sirhao"');
+    expect(html).toContain('href="/go/open-store"');
     expect(html).toContain('rel="noopener noreferrer"');
-    const registrationLinks = [...html.matchAll(/<a\b[^>]*href="([^"]*\/merchant\/register[^"]*)"[^>]*>/g)].map((match) => match[1]);
+    const registrationLinks = [...html.matchAll(/<a\b[^>]*href="(\/go\/open-store)"[^>]*>/g)].map((match) => match[1]);
     expect(registrationLinks).toHaveLength(3);
+    expect(html).toContain('href="/open-store-guide/"');
     for (const href of registrationLinks) {
-      expect(href).toBe("https://wzyp.cn/merchant/register?invite_token=sirhao");
+      expect(href).toBe("/go/open-store");
     }
   });
 
@@ -161,9 +162,9 @@ describe("前端静态资源与前后端契约对齐验证", () => {
     expect(html).toContain('id="compareBar"');
     expect(html).toContain('id="customMinPrice"');
     expect(html).toContain('id="customMaxPrice"');
-    expect(html).toContain('id="shopSortSelect"');
+    expect(html).not.toContain('id="shopSortSelect"');
     expect(html).toContain('id="shopHasIntegrationCodeInput"');
-    expect(html).toContain('id="shopOpenStoreLink"');
+    expect(html).not.toContain('id="shopOpenStoreLink"');
     expect(html).toContain("我想开店");
     expect(html).not.toContain('id="shopHasDescriptionInput"');
     expect(html).toContain('id="backToTopBtn"');

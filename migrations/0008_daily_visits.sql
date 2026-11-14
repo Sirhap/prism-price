@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS daily_page_visits (day TEXT PRIMARY KEY, page_views INTEGER NOT NULL DEFAULT 0);

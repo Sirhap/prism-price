@@ -1,7 +1,7 @@
 import { PRODUCT_GROUPS } from "../types";
 
 /** 允许的商品类型规范枚举（已将 cdk 合并至 recharge） */
-export const PRODUCT_TYPE_OPTIONS = ["ready", "recharge", "api", "sms-service"] as const;
+export const PRODUCT_TYPE_OPTIONS = ["ready", "recharge", "api", "sms-service", "tutorial"] as const;
 export type ProductTypeOption = (typeof PRODUCT_TYPE_OPTIONS)[number];
 
 /** 允许的套餐规范枚举（已移除 advanced/codex/k12，并将 business 合并至 team） */
@@ -27,6 +27,7 @@ export const NON_PLAN_GROUPS: ReadonlySet<string> = new Set([
   "AI绘图",
   "AI音乐",
   "影音会员",
+  "社交会员",
   "网盘服务",
   "生活优惠",
   "手机卡",
@@ -38,6 +39,10 @@ export const NON_PLAN_GROUPS: ReadonlySet<string> = new Set([
   "代理IP",
   "邮箱账号",
   "平台账号",
+  "接码服务",
+  "云手机",
+  "软件工具",
+  "数字素材",
   "工具教程",
 ]);
 
@@ -50,6 +55,7 @@ export const NON_DURATION_GROUPS: ReadonlySet<string> = new Set([
   "邮箱账号",
   "平台账号",
   "中转",
+  "数字素材",
   "工具教程",
 ]);
 

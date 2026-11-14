@@ -3,18 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="棱镜比价收录公开店铺信息，比较 ChatGPT、Claude、Gemini、Codex 等 AI 订阅及数字商品的参考报价。价格和库存请以店铺页面为准。" />
+    <meta name="description" content="棱镜比价（PRISM）专注公开卡网比价与店铺收录，聚合联动小铺、云猫寄售、独角数卡等卡网商家，比较 ChatGPT、Codex、Claude、Gemini 等 AI 订阅及数字商品参考报价，支持店铺对接码查询与联动小铺开店入驻指引。" />
+    <meta name="keywords" content="棱镜比价,卡网,卡网比价,卡网比较,卡网收录,店铺收录,Codex,ChatGPT,Claude,Gemini,店铺对接码,分销码,开店,联动小铺,联动小铺开店,AI订阅比价" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <link rel="canonical" href="https://parity.sirhao.top/" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="LLMs 站点知识索引" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:site_name" content="棱镜比价" />
-    <meta property="og:title" content="棱镜比价 | AI 订阅与数字商品多店比价" />
-    <meta property="og:description" content="浏览公开店铺，对比 AI 订阅与数字商品的参考报价。" />
+    <meta property="og:title" content="棱镜比价 | 卡网比价、店铺收录与 ChatGPT/Codex/Claude/Gemini 多店对比" />
+    <meta property="og:description" content="收录联动小铺、独角数卡等公开卡网店铺，对比 ChatGPT、Codex、Claude、Gemini 报价，支持查询店铺对接码与开店入驻。" />
     <meta property="og:url" content="https://parity.sirhao.top/" />
     <meta name="twitter:card" content="summary" />
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"棱镜比价","alternateName":"PRISM","url":"https://parity.sirhao.top/","inLanguage":"zh-CN","description":"收录公开店铺，提供 AI 订阅与数字商品的多店参考报价。"}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"棱镜比价","alternateName":"PRISM","url":"https://parity.sirhao.top/","inLanguage":"zh-CN","description":"收录公开卡网店铺，提供 ChatGPT、Codex、Claude、Gemini 等 AI 订阅与数字商品的多店参考报价、店铺对接码检索及联动小铺开店指南。","potentialAction":{"@type":"SearchAction","target":"https://parity.sirhao.top/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemList","name":"棱镜比价核心导航","itemListElement":[{"@type":"SiteNavigationElement","position":1,"name":"关于棱镜比价与常见问答","url":"https://parity.sirhao.top/about/"},{"@type":"SiteNavigationElement","position":2,"name":"AI 订阅比价指南","url":"https://parity.sirhao.top/guide/"},{"@type":"SiteNavigationElement","position":3,"name":"ChatGPT 多店比价目录","url":"https://parity.sirhao.top/catalog/brands/ChatGPT/"},{"@type":"SiteNavigationElement","position":4,"name":"Codex 额度与账号比价目录","url":"https://parity.sirhao.top/catalog/brands/Codex/"},{"@type":"SiteNavigationElement","position":5,"name":"Claude 多店比价目录","url":"https://parity.sirhao.top/catalog/brands/Claude/"},{"@type":"SiteNavigationElement","position":6,"name":"Gemini 多店比价目录","url":"https://parity.sirhao.top/catalog/brands/Gemini/"},{"@type":"SiteNavigationElement","position":7,"name":"卡网店铺对接码目录","url":"https://parity.sirhao.top/catalog/integration-codes/"},{"@type":"SiteNavigationElement","position":8,"name":"联动小铺开店与收录指南","url":"https://parity.sirhao.top/guide/open-store/"}]}</script>
     <meta name="theme-color" content="#4f46e5" />
-    <title>棱镜比价 | AI 订阅与数字商品多店比价</title>
+    <title>棱镜比价 | AI 订阅与数字商品多店比价 · 卡网店铺收录与对接码导航</title>
     <link rel="icon" href="/favicon.svg?v=20261113-push-only2" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.svg?v=20261113-push-only2" />
     <link rel="manifest" href="/site.webmanifest?v=20261113-push-only2" />
@@ -80,14 +84,12 @@
             </svg>
           </button>
 
-          <button id="submitShopBtn" class="nav-pill submit-shop-nav" type="button">提交店铺</button>
+          <button id="submitShopBtn" class="nav-pill submit-shop-nav" type="button">添加收录店铺</button>
 
           <a
             class="masthead-cta"
-            data-open-store
-            href="https://wzyp.cn/merchant/register?invite_token=sirhao"
-            target="_blank"
-            rel="noopener noreferrer"
+            data-open-store-guide
+            href="/open-store-guide/"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
@@ -133,6 +135,7 @@
           <p class="subtitle">
             聚合公开店铺的 AI 订阅、API 中转与数字商品报价，支持按品牌、规格和价格筛选。本站仅提供信息检索，实际价格与库存请以店铺页面为准。
           </p>
+          <button id="heroKunEgg" class="hero-kun-egg" type="button" aria-label="打开鸡哥比价彩蛋">🐔 两年半比价练习生 <span aria-hidden="true">· 🏀</span></button>
         </div>
 
         <!-- 聚光灯指挥舱搜索框 -->
@@ -162,8 +165,9 @@
                 <option value="price-asc">最低价从低到高</option>
                 <option value="updated-desc">最近更新</option>
               </select>
-              <button class="search-submit" type="submit">
-                <span>立即检索</span>
+              <button class="search-submit" type="submit" aria-busy="false">
+                <span class="search-submit-label">立即检索</span>
+                <span class="search-spinner" aria-hidden="true" hidden></span>
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                   <polyline points="12 5 19 12 12 19"></polyline>
@@ -262,15 +266,6 @@
                     <option value="all">全部系统</option>
                   </select>
                 </label>
-                <label class="filter-field">
-                  <span>店铺排序</span>
-                  <select id="shopSortSelect" aria-label="店铺排序方式">
-                    <option value="default">综合推荐</option>
-                    <option value="products-desc">收录商品最多</option>
-                    <option value="sales-desc">参考销量优先</option>
-                    <option value="updated-desc">最近更新优先</option>
-                  </select>
-                </label>
                 <label class="shop-stock-filter" for="shopOnlyInStockInput">
                   <input id="shopOnlyInStockInput" type="checkbox" />
                   <span>仅看有收录商品</span>
@@ -294,12 +289,9 @@
                   <button id="applyCustomPriceBtn" class="quick-chip" type="button">应用</button>
                 </div>
                 <div class="filter-actions">
-                  <button id="toggleMoreFiltersBtn" class="quick-chip" type="button" aria-controls="moreFiltersPanel" aria-expanded="false" hidden>更多筛选</button>
                   <button id="resetFiltersBtn" class="quick-chip quick-chip-reset" type="button" hidden>清空筛选</button>
                 </div>
               </div>
-
-              <a id="shopOpenStoreLink" data-open-store class="btn btn-primary btn-compact shop-open-store-link" href="https://wzyp.cn/merchant/register?invite_token=sirhao" target="_blank" rel="noopener noreferrer" title="前往第三方店铺平台开店">我想开店 <span aria-hidden="true">↗</span></a>
 
               <div id="moreFiltersPanel" class="more-filters-panel" hidden></div>
               <div id="facetNoteBar" class="facet-note-bar" hidden></div>
@@ -363,14 +355,7 @@
             </section>
           </div>
         </div>
-      </section>
-
-      <section class="seo-about" aria-label="关于棱镜比价">
-        <h2>关于棱镜比价</h2>
-        <p>棱镜比价收录公开店铺信息，整理 ChatGPT、Claude、Gemini、Codex 等 AI 订阅和数字商品的参考报价，帮助用户比较不同店铺的商品规格与价格。</p>
-        <h3>如何使用报价？</h3>
-        <p>搜索商品或店铺，按品牌、类型、套餐和价格筛选，再进入店铺核实商品、库存、价格及售后。本站仅做信息收录，不参与交易；使用前请自行甄别。</p>
-      </section>
+  </section>
 
       <footer class="site-footer">
         <div class="site-footer-brand">
@@ -380,13 +365,16 @@
           <span>· 公开店铺收录与同款价格参考</span>
         </div>
         <div class="site-footer-links">
+          <a class="site-footer-link" href="/about/">关于棱镜比价</a>
           <a class="site-footer-link" href="/guide/">比价使用指南</a>
+          <a class="site-footer-link" href="/catalog/brands/">品牌目录</a>
+          <a class="site-footer-link" href="/catalog/integration-codes/">店铺对接码</a>
           <a class="site-footer-link" href="/catalog/shops/">店铺目录</a>
           <a class="site-footer-link" href="/catalog/products/">商品目录</a>
           <a
             class="site-footer-link"
             data-open-store
-            href="https://wzyp.cn/merchant/register?invite_token=sirhao"
+            href="/go/open-store"
             target="_blank"
             rel="noopener noreferrer"
           >店铺开店入驻 ↗</a>
@@ -413,16 +401,36 @@
     <!-- Toast 轻提示容器 -->
     <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
+    <dialog id="openStoreGuide" class="open-store-guide" aria-label="开店与对接货源引导">
+      <header class="guide-modal-header"><div><p class="guide-kicker">OPEN STORE GUIDE</p><strong>开店与对接货源</strong></div><button type="button" class="guide-close" data-guide-close aria-label="关闭开店引导">×</button></header>
+      <nav class="guide-progress" aria-label="引导步骤"><button type="button" data-guide-step="0"><span>1</span>注册店铺</button><button type="button" data-guide-step="1"><span>2</span>查找货源</button><button type="button" data-guide-step="2"><span>3</span>对接货源</button></nav>
+      <div class="guide-content" id="guideContent">
+        <section data-guide-page="0"><p class="guide-step-label">第一步 / 注册店铺</p><h2 id="guideStepTitle">先开一家自己的店</h2><p id="guideStepDescription">前往联动小铺，按平台提示完成注册和店铺设置。注册完成后，回来继续下一步。</p><div class="guide-highlight"><span aria-hidden="true">✦</span><div><strong>准备好开始了吗？</strong><p>注册页面将在新标签页打开。</p></div><a href="/go/open-store" target="_blank" rel="noopener noreferrer" class="guide-primary">前往注册 ↗</a></div><small>注册、费用及经营规则以第三方平台实际说明为准。</small></section>
+        <section data-guide-page="1" hidden><p class="guide-step-label">第二步 / 查找货源</p><h2>找到有对接码的店铺</h2><p>切换到“看收录店铺”，勾选“仅看有对接码”，点击合适店铺的对接码即可复制。</p><div class="guide-how"><div><b>1</b><span>看收录店铺</span></div><div><b>2</b><span>仅看有对接码</span></div><div><b>3</b><span>点击复制对接码</span></div></div><button type="button" class="guide-secondary" data-guide-find>查看有对接码的店铺 ↗</button><small>引导会折叠在页面下方，找到并复制对接码后可直接继续。请自行核实货源商的价格与售后。</small></section>
+        <section data-guide-page="2" hidden><p class="guide-step-label">第三步 / 对接货源</p><h2>在商家后台输入对接码</h2><p>打开联动小铺商家后台，选择“货源 → 我要对接货源”，粘贴对接码并搜索货源商，再按平台提示完成关联。</p><figure><img src="/open-store-guide/connect-supplier.png" alt="货源页面中输入对接码并搜索货源商" loading="lazy"><figcaption>操作参考：货源 → 我要对接货源 → 搜索货源商</figcaption></figure><figure><img src="/open-store-guide/supplier-demo.png" alt="已关联货源商的演示图，所有交易数据均为虚构示例" loading="lazy"><figcaption>示意图：店铺和交易数据均为虚构示例，不代表实际成交。</figcaption></figure></section>
+      </div>
+      <footer class="guide-modal-footer"><span id="guideStepCount" aria-live="polite">01 / 03</span><div><button type="button" class="guide-back" data-guide-back>上一步</button><button type="button" class="guide-primary" data-guide-next>下一步 →</button></div></footer>
+    </dialog>
+
+    <div id="guideSpotlightShade" class="guide-spotlight-shade" hidden aria-hidden="true"></div>
+    <aside id="guideFloating" class="guide-floating" hidden aria-label="开店引导进行中">
+      <div class="guide-floating-top"><span>开店引导 · 02 / 03</span><button type="button" data-guide-float-close aria-label="退出开店引导">×</button></div>
+      <strong>已为你筛选有对接码的店铺</strong><p>点击店铺名称旁的对接码复制，完成后继续下一步。</p>
+      <div class="guide-floating-actions"><button type="button" class="guide-back" data-guide-float-back>返回引导</button><button type="button" class="guide-primary" data-guide-float-next>下一步 →</button></div>
+    </aside>
+
     <dialog id="submitShopDialog" class="submit-shop-dialog" aria-labelledby="submitShopTitle">
       <form id="submitShopForm">
-        <div class="submit-shop-heading"><h2 id="submitShopTitle">提交店铺</h2><button type="button" id="closeSubmitShop" aria-label="关闭">×</button></div>
+        <div class="submit-shop-heading"><h2 id="submitShopTitle">添加收录店铺</h2><button type="button" id="closeSubmitShop" aria-label="关闭">×</button></div>
         <p>填写公开的卡网商家或第三方店铺网址，提交后将加入店铺列表。</p>
         <label for="submitShopUrl">店铺网址</label>
         <input id="submitShopUrl" type="url" placeholder="https://example.com/shop/…" required maxlength="2048" />
-        <p class="submit-shop-hint">商品和库存需要后续同步，第三方店铺可能需要人工适配。</p>
+        <label for="submitIntegrationCode">分销码 / 对接码（选填）</label>
+        <input id="submitIntegrationCode" type="text" maxlength="128" placeholder="例如：Lucky plus" autocomplete="off" />
+        <p class="submit-shop-hint">支持的平台提交后自动同步，其他店铺可能需要人工适配。</p>
         <p id="submitShopResult" role="status" aria-live="polite"></p>
-        <button type="button" id="previewShopNetwork" class="btn btn-secondary" hidden>使用我的网络同步商品</button>
-        <div class="submit-shop-actions"><button type="button" id="confirmShopBack" hidden>返回修改</button><button class="btn btn-primary" id="submitShopNext" type="submit">继续</button></div>
+        <button type="button" id="previewShopNetwork" class="btn btn-secondary" hidden>重试同步</button>
+        <div class="submit-shop-actions"><button type="button" id="confirmShopBack" hidden>返回修改</button><button class="btn btn-primary" id="submitShopNext" type="submit">确认</button></div>
       </form>
     </dialog>
 
@@ -430,6 +438,7 @@
     <div id="profileModal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <a class="profile-open-store" href="/go/open-store" target="_blank" rel="noopener noreferrer">我想开店 ↗</a>
         <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗">×</button>
         <div id="profileBody"></div>
       </div>

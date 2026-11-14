@@ -74,7 +74,7 @@ describe("系统类型迁移前的旧表写路径兼容", () => {
 
   it("0004 与 0005 均未迁移时，携带 description 的推送、导入与 runSyncBatch 应安全忽略新列而不报错", async () => {
     const caps = await getShopColumnCapabilities(legacyEnv.DB);
-    expect(caps).toEqual({ systemType: false, description: false, createdAt: false });
+    expect(caps).toEqual({ systemType: false, description: false, createdAt: false, submittedIntegrationCode: false });
 
     const withDesc = {
       shopId: "legacy-with-desc",
@@ -122,7 +122,7 @@ describe("0004 已迁移但 0005 尚未迁移时的中间态写路径兼容", ()
 
   it("应正确写入 system_type，同时优雅跳过缺失的 description 与 created_at（含 runSyncBatch）", async () => {
     const caps = await getShopColumnCapabilities(legacyEnv.DB);
-    expect(caps).toEqual({ systemType: true, description: false, createdAt: false });
+    expect(caps).toEqual({ systemType: true, description: false, createdAt: false, submittedIntegrationCode: false });
 
     await expect(
       upsertAdminShops(legacyEnv.DB, [

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
-import { fetchShopApiSnapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
+import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
 const syncDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(syncDir, '..');
@@ -125,13 +125,15 @@ export async function runSync(options, deps = {}) {
   const minInterval = options.intervalMs ?? options.intervalMinMs ?? 1000;
   const maxInterval = options.intervalMs != null ? options.intervalMs + 1000 : options.intervalMaxMs ?? 2000;
   const gate = deps.gate || createRequestGate(minInterval, { maxIntervalMs: maxInterval });
-  const collect = deps.collect || ((shop) => fetchShopApiSnapshot(shop, { requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true }));
+  const is16688 = (shop) => { try { return ['16688.com.cn','www.16688.com.cn'].includes(new URL(shop.shopUrl).hostname.toLowerCase()); } catch { return false; } };
+  const isPartialAdapter = shop => is16688(shop) || shop.adapterType === 'ka123_api';
+  const collect = deps.collect || ((shop) => (is16688(shop) ? fetch16688Snapshot : shop.adapterType === 'ka123_api' ? fetchKa123Snapshot : fetchShopApiSnapshot)(shop, { requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true }));
   const remove = deps.remove || ((shop) => jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${options.secret}` } }));
   const push = deps.push || ((entry) => jsonFetch(`${base}/api/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` }, body: JSON.stringify({ shops: [entry] }) }));
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
   const data = await load(`${base}/api/shops?fields=sync`);
   if (!Array.isArray(data.shops)) throw new Error('同步清单格式不正确');
-  let targets = data.shops.filter((s) => s.syncSupported && ['push_ingest', 'shop_api'].includes(s.adapterType));
+  let targets = data.shops.filter((s) => is16688(s) || (s.syncSupported && ['push_ingest', 'shop_api', 'ka123_api'].includes(s.adapterType)));
   if (options.shops.length) {
     const wanted = new Set(options.shops);
     targets = targets.filter((s) => wanted.has(s.id) || wanted.has(s.shopUrl) || wanted.has(new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1)));
@@ -172,13 +174,14 @@ export async function runSync(options, deps = {}) {
       try {
         const snapshot = await collect(shop);
         if (snapshot.items.length === 0) {
+          if (isPartialAdapter(shop)) throw new Error('部分采集店铺空列表不能删除店铺');
           if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
           const error = new Error('源站完整采集后无可收录商品'); error.shopUnavailable = 'empty'; throw error;
         }
-        const partial = snapshot.items.length > 2000;
+        const partial = isPartialAdapter(shop) || snapshot.items.length > 2000;
         if (partial) {
           if (!data.partialSnapshotSupport) throw new Error('目标站尚不支持部分同步，已停止该店推送以保护原有商品');
-          console.warn(`[local-sync] ${shop.id}: 商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`);
+          console.warn(`[local-sync] ${shop.id}: ${isPartialAdapter(shop) ? '源站列表完整性未确认，按部分同步保留其余商品' : `商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`}`);
           snapshot.items = snapshot.items.slice(0, 2000);
         }
         const unchanged = !partial && shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });

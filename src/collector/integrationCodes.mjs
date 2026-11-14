@@ -55,6 +55,7 @@ const fallbackByUrl = new Map(config.fallbacks.map(({ shopUrl, code }) => [norma
 export function resolveIntegrationCodes(shop) {
   const publicCodes = extractIntegrationCodes(shop.shop_name, shop.description);
   if (publicCodes.length) return { codes: publicCodes, source: "public" };
+  if (typeof shop.submitted_integration_code === "string" && shop.submitted_integration_code.trim()) return { codes: [shop.submitted_integration_code.trim()], source: "submitted" };
   for (const address of [shop.canonical_url, shop.shop_url]) {
     const fallback = fallbackByUrl.get(normalizeIntegrationShopUrl(address));
     if (fallback) return { codes: [fallback], source: "manual" };
@@ -66,6 +67,7 @@ export function resolveIntegrationCodes(shop) {
 export function integrationCodeCandidateFilter() {
   const needles = [...new Set([...config.labels, ...config.colonLabels])];
   const clauses = needles.flatMap(() => ["INSTR(shop_name, ?) > 0", "INSTR(description, ?) > 0"]);
+  clauses.push("TRIM(submitted_integration_code) != ''");
   // 此处只传输 id/名称/简介/地址小字段；宽松平台候选避免 SQL 与 URL 规范化行为不一致。
   for (const column of ["shop_url", "canonical_url"]) {
     clauses.push(`LOWER(${column}) LIKE '%wzyp.cn/shop/%'`, `LOWER(${column}) LIKE '%pay.ldxp.cn/shop/%'`);

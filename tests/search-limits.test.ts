@@ -310,7 +310,7 @@ describe("商品筛选参数规范化、联动清除与相关度排序", () => {
     };
     expect(shopMetaJson.appliedHasIntegrationCode).toBe(true);
     expect(shopMetaJson.appliedHasDescription).toBe(true);
-    expect(shopMetaJson.appliedSort).toBe("sales-desc");
+    expect(shopMetaJson.appliedSort).toBe("default");
     expect(shopMetaJson.shops.some((s) => s.id === "meta-rich-shop")).toBe(true);
   });
 });

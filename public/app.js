@@ -16,6 +16,7 @@ const BRAND_GROUP_ORDER = [
   "Augment",
   "Perplexity",
   "千问",
+  "MiniMax",
   "AI视频",
   "AI绘图",
   "AI音乐",
@@ -25,10 +26,15 @@ const BRAND_GROUP_ORDER = [
   "代理IP",
   "邮箱账号",
   "平台账号",
+  "接码服务",
+  "云手机",
+  "软件工具",
+  "数字素材",
   "工具教程",
   "手机卡",
   "游戏商品",
   "影音会员",
+  "社交会员",
   "网盘服务",
   "生活优惠",
   "其它",
@@ -52,10 +58,10 @@ const GROUP_CANONICAL_MAP = new Map([
 ]);
 
 /** 不存在订阅套餐概念的品牌分组 */
-const NON_PLAN_GROUPS = new Set(["Muse", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "影音会员", "网盘服务", "生活优惠", "AI创作", "DeepSeek", "中转", "虚拟卡", "代理IP", "邮箱账号", "平台账号", "工具教程"]);
+const NON_PLAN_GROUPS = new Set(["Muse", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "影音会员", "社交会员", "网盘服务", "生活优惠", "AI创作", "DeepSeek", "中转", "虚拟卡", "代理IP", "邮箱账号", "平台账号", "接码服务", "云手机", "软件工具", "数字素材", "工具教程"]);
 
 /** 不存在套餐周期概念的品牌分组 */
-const NON_DURATION_GROUPS = new Set(["手机卡", "游戏商品", "生活优惠", "虚拟卡", "邮箱账号", "平台账号", "中转", "工具教程"]);
+const NON_DURATION_GROUPS = new Set(["手机卡", "游戏商品", "生活优惠", "虚拟卡", "邮箱账号", "平台账号", "中转", "数字素材", "工具教程"]);
 
 /** 保留的商品筛选维度（已移除低覆盖/失真维度及“未标注”选项） */
 const FILTER_DIMENSIONS = [
@@ -67,6 +73,7 @@ const FILTER_DIMENSIONS = [
       { value: "recharge", label: "代充 / 兑换码" },
       { value: "api", label: "API / 中转" },
       { value: "sms-service", label: "接码服务" },
+      { value: "tutorial", label: "教程" },
     ],
   },
   {
@@ -114,8 +121,8 @@ const PRICE_OPTION_SET = new Set(PRICE_OPTIONS.map((opt) => opt.value));
 /** 首屏与后续加载使用相同的小批量，避免长列表集中渲染。 */
 const LIST_PAGE_SIZE = 6;
 
-const HOT_PRODUCT_QUERIES = ["Plus", "Pro", "Claude", "Codex", "Gemini", "API", "接码"];
-const HOT_SHOP_QUERIES = ["源头", "对接码", "独角", "API"];
+const HOT_PRODUCT_QUERIES = ["ChatGPT", "Plus", "Pro", "Claude", "Codex", "Gemini", "API", "接码"];
+const HOT_SHOP_QUERIES = ["联动小铺", "源头", "对接码", "独角", "API"];
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #4f46e5, #7c3aed)",
@@ -149,10 +156,12 @@ const GROUP_VISUAL_META = {
   Perplexity: { color: "#0d9488", bg: "rgba(13, 148, 136, 0.13)" },
   智谱: { color: "#0f766e", bg: "rgba(15, 118, 110, 0.13)" },
   影音会员: { color: "#c026d3", bg: "rgba(192, 38, 211, 0.13)" },
+  社交会员: { color: "#c026d3", bg: "rgba(192, 38, 211, 0.13)" },
   网盘服务: { color: "#0284c7", bg: "rgba(2, 132, 199, 0.13)" },
   生活优惠: { color: "#ea580c", bg: "rgba(234, 88, 12, 0.13)" },
   Muse: { color: "#7c3aed", bg: "rgba(124, 58, 237, 0.13)" },
   千问: { color: "#2563eb", bg: "rgba(37, 99, 235, 0.13)" },
+  MiniMax: { color: "#ea580c", bg: "rgba(234, 88, 12, 0.13)" },
   AI视频: { color: "#db2777", bg: "rgba(219, 39, 119, 0.13)" },
   AI绘图: { color: "#9333ea", bg: "rgba(147, 51, 234, 0.13)" },
   AI音乐: { color: "#e11d48", bg: "rgba(225, 29, 72, 0.13)" },
@@ -164,6 +173,10 @@ const GROUP_VISUAL_META = {
   代理IP: { color: "#059669", bg: "rgba(5, 150, 105, 0.13)" },
   邮箱账号: { color: "#ea580c", bg: "rgba(234, 88, 12, 0.13)" },
   平台账号: { color: "#4f46e5", bg: "rgba(79, 70, 229, 0.13)" },
+  接码服务: { color: "#0f766e", bg: "rgba(15, 118, 110, 0.13)" },
+  云手机: { color: "#0369a1", bg: "rgba(3, 105, 161, 0.13)" },
+  软件工具: { color: "#0f766e", bg: "rgba(15, 118, 110, 0.13)" },
+  数字素材: { color: "#9333ea", bg: "rgba(147, 51, 234, 0.13)" },
   工具教程: { color: "#0f766e", bg: "rgba(15, 118, 110, 0.13)" },
   其它: { color: "#64748b", bg: "rgba(100, 116, 139, 0.13)" },
 };
@@ -190,7 +203,7 @@ const GROUP_ICONS = {
 };
 
 function getGroupIconHtml(groupKey) {
-  const aliases = { Muse: "ChatGPT", 千问: "DeepSeek", AI视频: "AI创作", AI绘图: "AI创作", AI音乐: "AI创作", 手机卡: "虚拟卡", 游戏商品: "其它" };
+  const aliases = { Muse: "ChatGPT", 千问: "DeepSeek", MiniMax: "DeepSeek", 社交会员: "影音会员", 接码服务: "手机卡", 云手机: "手机卡", 软件工具: "工具教程", 数字素材: "AI创作", AI视频: "AI创作", AI绘图: "AI创作", AI音乐: "AI创作", 手机卡: "虚拟卡", 游戏商品: "其它" };
   return GROUP_ICONS[groupKey] || GROUP_ICONS[aliases[groupKey]] || GROUP_ICONS["其它"];
 }
 
@@ -272,6 +285,7 @@ const CARD_BADGE_LABELS = {
     cdk: "代充 / 兑换码",
     api: "API / 中转",
     "sms-service": "接码服务",
+    tutorial: "教程",
   },
   plan: {
     free: "Free 普号",
@@ -399,7 +413,6 @@ const els = {
   customMinPrice: document.querySelector("#customMinPrice"),
   customMaxPrice: document.querySelector("#customMaxPrice"),
   applyCustomPriceBtn: document.querySelector("#applyCustomPriceBtn"),
-  toggleMoreFiltersBtn: document.querySelector("#toggleMoreFiltersBtn"),
   resetFiltersBtn: document.querySelector("#resetFiltersBtn"),
   shareFiltersBtn: document.querySelector("#shareFiltersBtn"),
   primaryFilters: document.querySelector("#primaryFilters"),
@@ -648,6 +661,7 @@ async function copyTextWithFeedback(text, label = "内容") {
       if (!copied) throw new Error("Copy rejected");
     }
     showToast(`已复制${label}`);
+    if (label === '对接码') document.dispatchEvent(new CustomEvent('integration-code-copied'));
   } catch {
     showToast(`复制${label}失败，请手动复制`);
   }
@@ -773,14 +787,53 @@ function toggleShopFavorite(shopObj) {
       productCount: Number(shopObj.productCount || 0),
       integrationCodes: shopObj.integrationCodes || [],
     });
-    if (state.favorites.shops.length > 60) state.favorites.shops.length = 60;
+    if (state.favorites.shops.length > 60) {
+      const removed = state.favorites.shops.splice(60);
+      for (const item of removed) syncShopFavorite(item.id, false);
+    }
     showToast(`已收藏店铺：${shopObj.shopName}`);
   }
   saveFavoritesToStorage();
+  syncShopFavorite(shopObj.id, isShopFavorited(shopObj.id));
   renderWorkbenchIndicators();
   if (state.mode === "shop") renderShops();
   if (!els.workbenchModal.hidden) renderWorkbenchBody();
 }
+
+let favoriteRecordingEnabled = false;
+let configuredOpenStoreTypes = new Set(['ldxp']);
+const favoriteUpdates = new Map();
+async function refreshPublicSettings() {
+  try {
+    const response = await fetch('/api/public-settings', {cache:'no-store'});
+    if (!response.ok) return;
+    const config = await response.json();
+    favoriteRecordingEnabled = config.favoritesEnabled === true;
+    configuredOpenStoreTypes = new Set(config.openStoreTypes || ['ldxp']);
+    const submit = document.querySelector('#submitShopBtn');
+    if (submit) { submit.disabled = !config.submissionsEnabled; submit.title = config.submissionsEnabled ? '添加收录店铺' : '暂不接受新店提交'; }
+  } catch { /* Local favorites remain available while the service is unavailable. */ }
+}
+function syncShopFavorite(shopId, favorite) {
+  let clientId;
+  try {
+    clientId = localStorage.getItem('ldxp_favorite_client');
+    if (!/^[a-f0-9]{32}$/.test(clientId || '')) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      clientId = Array.from(bytes, n => n.toString(16).padStart(2,'0')).join('');
+      localStorage.setItem('ldxp_favorite_client', clientId);
+    }
+  } catch { return; }
+  const previous = favoriteUpdates.get(shopId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(async () => {
+    await refreshPublicSettings();
+    if (!favoriteRecordingEnabled) return;
+    return fetch('/api/shop-favorite', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,shopId,favorite})});
+  });
+  favoriteUpdates.set(shopId, next);
+  next.catch(() => {}).finally(() => { if (favoriteUpdates.get(shopId) === next) favoriteUpdates.delete(shopId); });
+}
+refreshPublicSettings();
 
 function toggleProductCompare(productId) {
   const existingIdx = state.compareItems.findIndex((p) => p.id === productId);
@@ -916,7 +969,7 @@ function readStateFromUrl() {
   const rawSort = (params.get("sort") || "").trim().toLowerCase();
   const mappedSort = rawSort === "shop-desc" ? "relevance" : rawSort;
   state.sort = SORT_OPTIONS.has(mappedSort) ? mappedSort : "relevance";
-  state.shopSort = SHOP_SORT_OPTIONS.has(rawSort) ? rawSort : "default";
+  state.shopSort = "default";
 
   state.shopSystemType = (params.get("systemType") || "").trim() || "all";
   const isFlagOn = (key) => ["1", "true", "yes"].includes((params.get(key) || "").trim().toLowerCase());
@@ -949,6 +1002,34 @@ function readStateFromUrl() {
   state.shopPage = 1;
 }
 
+const DEFAULT_DOCUMENT_TITLE = typeof document !== "undefined" ? document.title : "棱镜比价 - 卡网商品比价与店铺收录导航";
+
+/**
+ * 根据当前筛选状态同步浏览器标签页标题，提升用户检索感知与页面可分享性。
+ */
+function syncDocumentTitle() {
+  if (typeof document === "undefined") return;
+  const parts = [];
+  if (state.q && state.q.trim()) parts.push(state.q.trim());
+  if (state.mode === "shop") {
+    if (state.shopHasIntegrationCode) parts.push("支持店铺对接码");
+    if (state.shopSystemType && state.shopSystemType !== "all") parts.push(state.shopSystemType);
+    if (!parts.length) {
+      document.title = DEFAULT_DOCUMENT_TITLE;
+      return;
+    }
+    document.title = `${parts.join(" · ")} - 卡网店铺收录 · 棱镜比价`;
+    return;
+  }
+  if (state.group && state.group !== "all") parts.push(state.group);
+  if (state.type && state.type !== "all") parts.push(state.type);
+  if (!parts.length) {
+    document.title = DEFAULT_DOCUMENT_TITLE;
+    return;
+  }
+  document.title = `${parts.join(" · ")} - 卡网多店比价 · 棱镜比价`;
+}
+
 /**
  * 视图参数隔离：找商品与看店铺模式下仅往 URL 同步当前模式参数，互不污染
  */
@@ -979,6 +1060,7 @@ function syncStateToUrl() {
   const queryString = params.toString();
   const nextUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
   window.history.replaceState(null, "", nextUrl);
+  syncDocumentTitle();
 }
 
 function syncSearchInputHelpers() {
@@ -1683,10 +1765,7 @@ function renderFilterControls() {
   els.primaryFilters.innerHTML = primary.join("");
   els.moreFiltersPanel.innerHTML = more.join("");
   els.moreFiltersPanel.hidden = !state.moreFiltersOpen || more.length === 0;
-  els.toggleMoreFiltersBtn.hidden = more.length === 0;
-  els.toggleMoreFiltersBtn.textContent = state.moreFiltersOpen ? "收起时长" : "时长筛选";
-  els.toggleMoreFiltersBtn.classList.toggle("is-active", state.moreFiltersOpen || state.duration !== "all");
-  els.toggleMoreFiltersBtn.setAttribute("aria-expanded", String(state.moreFiltersOpen && more.length > 0));
+  els.moreFiltersPanel.hidden = true;
   els.facetNoteBar.hidden = false;
   els.facetNoteBar.textContent =
     "计数：保留其他条件、替换本项后的商品组数；切换品牌或类型会自动清除不兼容筛选。预设价格区间含下限、不含上限。";
@@ -1695,7 +1774,19 @@ function renderFilterControls() {
 
 function updateResultStatus() {
   const product = state.mode === "product";
+  const note = document.querySelector('.results-note');
+  if (note) note.textContent = product
+    ? '点击卡片报价可直查商家档案 · 实际价格以店铺页为准'
+    : '排名规则：后台推荐优先，其次按收藏数；零收藏时同步较新的店铺靠前';
   const loading = product ? state.productLoading : state.shopLoading;
+  const submit = document.querySelector('#searchForm .search-submit');
+  if (submit) {
+    submit.disabled = loading;
+    submit.setAttribute('aria-busy', String(loading));
+    submit.querySelector('.search-submit-label').textContent = loading ? '正在检索…' : '立即检索';
+    submit.querySelector('.search-spinner').hidden = !loading;
+    submit.querySelector('svg').hidden = loading;
+  }
   els.resultStatus.textContent = loading
     ? "正在查找，请稍候…"
     : product
@@ -1760,9 +1851,9 @@ function renderBrandChips() {
   const baseline = state.catalogGroupCounts;
   const totalAll = Object.values(facets).reduce((sum, n) => sum + Number(n || 0), 0);
   const sections = [
-    ["AI 对话与编程", BRAND_GROUP_ORDER.slice(0, 14)],
-    ["AI 视频与创作", BRAND_GROUP_ORDER.slice(14, 18)],
-    ["数字账号与基建", BRAND_GROUP_ORDER.slice(18)],
+    ["AI 对话与编程", BRAND_GROUP_ORDER.slice(0, 15)],
+    ["AI 视频与创作", BRAND_GROUP_ORDER.slice(15, 19)],
+    ["数字账号与基建", BRAND_GROUP_ORDER.slice(19)],
   ];
   const hasNonQueryFilters =
     state.type !== "all" ||
@@ -2145,7 +2236,8 @@ function renderShops(append = false) {
             <div class="shop-identity">
               <span class="shop-avatar" style="background:${avatarGrad}" aria-hidden="true">${escapeHtml(shopInitialChar(s.shopName))}</span>
               <div class="shop-title-wrap">
-                <h3>${escapeHtml(hideSavedTelegram(s.shopName))}</h3>
+                <div class="shop-name-line"><h3>${escapeHtml(hideSavedTelegram(s.shopName))}</h3>${s.manualRecommended ? '<span class="badge badge-system">后台推荐 · 背后有人 🐔</span>' : ''}</div>
+                <div class="shop-badges">${s.rank ? `<span class="badge">排名 #${escapeHtml(s.rank)}</span>` : ''}<span class="badge">★ ${escapeHtml(s.favoriteCount ?? 0)} 收藏</span></div>
                 ${renderIntegrationCodes(s.integrationCodes)}
                 <div class="shop-badges">
                   <span class="badge badge-system" title="卡网系统类型">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))}</span>
@@ -2212,6 +2304,8 @@ async function openShopProfile(shopId) {
     const data = await readPublicJson(res);
     if (controller.signal.aborted || state.profileController !== controller) return;
     const s = data.shop;
+    const openStore = document.querySelector('#profileModal .profile-open-store');
+    if (openStore) { const type = s?.systemType || 'unknown'; openStore.hidden = !configuredOpenStoreTypes.has(type); openStore.href = `/go/open-store?type=${encodeURIComponent(type)}`; }
     if (!s) {
       els.profileBody.innerHTML = '<h2 id="profileModalTitle">未找到该店铺信息</h2><p>请关闭后重试。</p>';
       return;
@@ -2762,10 +2856,6 @@ function bindEvents() {
   els.primaryFilters.addEventListener("change", handleFilterChange);
   els.moreFiltersPanel.addEventListener("change", handleFilterChange);
 
-  els.toggleMoreFiltersBtn.addEventListener("click", () => {
-    state.moreFiltersOpen = !state.moreFiltersOpen;
-    renderFilterControls();
-  });
 
   els.resetFiltersBtn.addEventListener("click", resetProductFilters);
 
@@ -3026,6 +3116,7 @@ function triggerKunEgg(secret = false) {
 }
 
 document.querySelector("#kunEggBtn")?.addEventListener("click", () => triggerKunEgg());
+document.querySelector("#heroKunEgg")?.addEventListener("click", () => triggerKunEgg());
 let kunSecretBuffer = "";
 let lastKunKeyAt = 0;
 document.addEventListener("keydown", (event) => {
@@ -3057,18 +3148,19 @@ document.addEventListener("keydown", (event) => {
   const form = document.querySelector('#submitShopForm');
   const input = document.querySelector('#submitShopUrl');
   const result = document.querySelector('#submitShopResult');
+  const integrationCode = document.querySelector('#submitIntegrationCode');
   const next = document.querySelector('#submitShopNext');
   const back = document.querySelector('#confirmShopBack');
   const close = document.querySelector('#closeSubmitShop');
   const preview = document.querySelector('#previewShopNetwork');
   if (!dialog || !open || !form || !input || !result || !next || !back || !close || !preview) return;
   let confirmedUrl = ''; let submittedShopId = '';
-  const reset = () => { confirmedUrl = ''; submittedShopId = ''; input.readOnly = false; input.hidden = false; back.hidden = true; next.hidden = false; next.textContent = '继续'; result.textContent = ''; preview.hidden = true; };
+  const reset = () => { confirmedUrl = ''; submittedShopId = ''; input.readOnly = false; input.hidden = false; back.hidden = true; next.hidden = false; next.textContent = '确认'; result.textContent = ''; preview.hidden = true; };
   open.addEventListener('click', () => { form.reset(); reset(); dialog.showModal(); input.focus(); });
   close.addEventListener('click', () => dialog.close());
   back.addEventListener('click', () => { reset(); input.focus(); });
-  preview.addEventListener('click', async () => {
-    preview.disabled = true; result.textContent = '正在通过你的网络读取源站商品…';
+  async function syncSubmittedShop() {
+    preview.hidden = true; preview.disabled = true; result.textContent = '正在通过你的网络读取源站商品…';
     try {
       const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
       const { snapshot, result: saved } = await syncShopFromBrowser(submittedShopId, confirmedUrl);
@@ -3077,26 +3169,31 @@ document.addEventListener("keydown", (event) => {
       result.textContent = `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`;
       const link = document.createElement('a'); link.href = confirmedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = '打开源站店铺';
       result.append(' ', link);
+      preview.hidden = false;
+      preview.textContent = '重试同步';
     }
     finally { preview.disabled = false; }
-  });
+  }
+  preview.addEventListener('click', syncSubmittedShop);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!confirmedUrl) {
-      try { const u = new URL(input.value.trim()); if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error(); confirmedUrl = u.href; }
-      catch { result.textContent = '请输入有效的店铺网址'; return; }
-      input.readOnly = true; result.textContent = `请确认提交：${confirmedUrl}`; back.hidden = false; next.textContent = '确认提交'; return;
-    }
+    if (next.disabled) return;
+    try { const u = new URL(input.value.trim()); if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error(); confirmedUrl = u.href; }
+    catch { result.textContent = '请输入有效的店铺网址'; return; }
     next.disabled = true; back.disabled = true; result.textContent = '正在提交…';
     try {
-      const response = await fetch('/api/shops/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopUrl: confirmedUrl }) });
+      const response = await fetch('/api/shops/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopUrl: confirmedUrl, integrationCode: integrationCode?.value.trim() || "" }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '提交失败');
       submittedShopId = data.shopId || '';
-      result.textContent = data.existing ? '该店铺已收录。' : '提交成功，店铺已收录。';
-      next.hidden = true; back.hidden = true; preview.hidden = !submittedShopId || !browserRefreshSupported(confirmedUrl);
-      if (!preview.hidden && !data.existing) preview.click();
-      if (!data.existing && state.mode === 'shop') fetchShops(false);
+      next.hidden = true; back.hidden = true; preview.hidden = true;
+      if (data.existing) { result.textContent = '该店铺已收录，无需重复添加。'; return; }
+      if (state.mode === 'shop') fetchShops(false);
+      if (submittedShopId && browserRefreshSupported(confirmedUrl)) {
+        await syncSubmittedShop();
+      } else {
+        result.textContent = '店铺已收录，暂不支持自动同步。';
+      }
     } catch (error) { result.textContent = error instanceof Error ? error.message : '提交失败，请稍后重试'; }
     finally { next.disabled = false; back.disabled = false; }
   });
@@ -3131,3 +3228,71 @@ document.addEventListener('click', async (event) => {
   } catch (error) { showToast(`读取源站失败：${error instanceof Error ? error.message : '请稍后再试'}`); }
   finally { button.disabled = false; button.textContent = label; }
 });
+
+// 同一浏览器 30 分钟内只计一次访问，跨北京时间日期仍计入新的一天。
+(() => {
+  const key='prism_last_visit_v1', now=Date.now(), day=Math.floor((now+8*3600000)/86400000);
+  try { const previous=JSON.parse(localStorage.getItem(key) || 'null'); if (previous && previous.day===day && now>=previous.at && now-previous.at<1800000) return; } catch { /* storage unavailable: count normally */ }
+  fetch('/api/visit',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:'{}'}).then(response=>{
+    if (response.ok) try { localStorage.setItem(key,JSON.stringify({day,at:now})); } catch { /* browsing is unaffected */ }
+  }).catch(()=>{});
+})();
+
+/** 首页内的开店引导；查看货源后保留当前步骤，方便返回继续。 */
+(() => {
+  const dialog = document.querySelector('#openStoreGuide');
+  const trigger = document.querySelector('[data-open-store-guide]');
+  if (!dialog || !trigger) return;
+  const pages = [...dialog.querySelectorAll('[data-guide-page]')];
+  const tabs = [...dialog.querySelectorAll('[data-guide-step]')];
+  const back = dialog.querySelector('[data-guide-back]');
+  const next = dialog.querySelector('[data-guide-next]');
+  const floating = document.querySelector('#guideFloating');
+  const shade = document.querySelector('#guideSpotlightShade');
+  let step = 0, lastFocus = null;
+  function hideFloating() {
+    floating.hidden = true; shade.hidden = true;
+    els.shopControlsWrap.classList.remove('guide-spotlight');
+    els.shopList.classList.remove('guide-spotlight');
+    document.querySelector('.layout')?.classList.remove('guide-spotlight-parent');
+  }
+  function reopen(target) {
+    hideFloating(); step = target; render(); dialog.showModal(); dialog.querySelector('[data-guide-close]').focus();
+  }
+  function render() {
+    pages.forEach((page, index) => { page.hidden = index !== step; });
+    tabs.forEach((tab, index) => { if (index === step) tab.setAttribute('aria-current','step'); else tab.removeAttribute('aria-current'); });
+    dialog.querySelector('#guideStepCount').textContent = `0${step + 1} / 03`;
+    back.hidden = step === 0;
+    next.textContent = step === pages.length - 1 ? '完成' : '下一步 →';
+    dialog.querySelector('#guideContent').scrollTop = 0;
+  }
+  trigger.addEventListener('click', event => { event.preventDefault(); hideFloating(); lastFocus = document.activeElement; render(); dialog.showModal(); dialog.querySelector('[data-guide-close]').focus(); });
+  dialog.querySelector('[data-guide-close]').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { if (lastFocus instanceof HTMLElement) lastFocus.focus({preventScroll:true}); });
+  dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+  dialog.addEventListener('keydown', event => event.stopPropagation());
+  tabs.forEach(tab => tab.addEventListener('click', () => { step = Number(tab.dataset.guideStep); render(); }));
+  back.addEventListener('click', () => { step = Math.max(0,step - 1); render(); });
+  next.addEventListener('click', () => { if (step === pages.length - 1) { dialog.close(); step = 0; } else { step++; render(); } });
+  dialog.querySelector('[data-guide-find]').addEventListener('click', () => {
+    dialog.close(); state.q = ''; state.searchDraft = ''; els.searchInput.value = '';
+    state.shopSystemType = 'all'; state.shopOnlyInStock = false; state.shopHasIntegrationCode = true;
+    switchMode('shop'); syncControlsFromState(); syncStateToUrl(); fetchShops(false, { allowAutoClean:true });
+    shade.hidden = false; floating.hidden = false;
+    floating.querySelector('strong').textContent = '已为你筛选有对接码的店铺';
+    floating.querySelector('p').textContent = '点击店铺名称旁的对接码复制，完成后继续下一步。';
+    document.querySelector('.layout')?.classList.add('guide-spotlight-parent');
+    els.shopControlsWrap.classList.add('guide-spotlight'); els.shopList.classList.add('guide-spotlight');
+    els.shopControlsWrap.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',block:'start'});
+  });
+  floating.querySelector('[data-guide-float-close]').addEventListener('click', hideFloating);
+  floating.querySelector('[data-guide-float-back]').addEventListener('click', () => reopen(1));
+  floating.querySelector('[data-guide-float-next]').addEventListener('click', () => reopen(2));
+  document.addEventListener('integration-code-copied', () => {
+    if (floating.hidden) return;
+    floating.querySelector('strong').textContent = '对接码已复制';
+    floating.querySelector('p').textContent = '现在可以继续，在商家后台粘贴对接码。';
+    floating.querySelector('[data-guide-float-next]').focus({preventScroll:true});
+  });
+})();

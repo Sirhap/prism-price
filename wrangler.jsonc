@@ -12,7 +12,15 @@
     "not_found_handling": "none",
     "run_worker_first": [
       "/api/*",
-      "/catalog/*"
+      "/admin",
+      "/go/open-store",
+      "/catalog",
+      "/catalog/*",
+      "/sitemap.xml",
+      "/sitemap-shops.xml",
+      "/sitemap-products.xml",
+      "/llms.txt",
+      "/llms-full.txt"
     ]
   },
   "d1_databases": [

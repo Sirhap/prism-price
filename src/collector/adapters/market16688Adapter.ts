@@ -19,7 +19,12 @@ export const market16688Adapter: ShopAdapter = {
     const detail = await post('shop/detail', {shop_no:token});
     const shopNo = typeof detail.shop_no === 'string' ? detail.shop_no.trim() : '';
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(shopNo)) throw new Error('16688 店铺编号无效');
-    const data = await post('goods/list', {shop_no:shopNo, sort:'default'});
+    const categoriesResponse = await fetch('https://www.16688.com.cn/shopApi/goodsCategory/list', {method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({shop_no:shopNo}),signal:AbortSignal.timeout(30000),redirect:'manual'});
+    if (!categoriesResponse.ok || !(categoriesResponse.headers.get('content-type') || '').toLowerCase().includes('json')) throw new Error('16688 商品分类请求失败');
+    const categories = await categoriesResponse.json() as {code?:number;data?:Array<{goods_category_no?:string;name?:string}>};
+    if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效');
+    const categoryNames = new Map(categories.data.filter(c => typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name!.trim()]));
+    const data = await post('goods/list', {shop_no:shopNo, goods_category_no:'', keywords:'', sort:'default'});
     if (!Array.isArray(data.list) || data.list.length === 0) throw new Error('16688 商品列表为空或无效，未覆盖已有商品');
     const items: RawOfferItem[] = []; const seen = new Set<string>();
     for (const raw of data.list.slice(0, 2000)) {
@@ -32,7 +37,7 @@ export const market16688Adapter: ShopAdapter = {
       seen.add(key);
       const rawStock = item.stock_available_quantity;
       const stock = item.stock_available_status === 'out' ? 0 : typeof rawStock === 'number' && Number.isFinite(rawStock) && rawStock >= 0 ? rawStock : null;
-      items.push({itemKey:key,rawName:name,shopCategory:'',price,stockCount:stock,stockStatus:stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient',itemUrl:`https://www.16688.com.cn/goods/${encodeURIComponent(key)}`});
+      items.push({itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient',itemUrl:`https://www.16688.com.cn/goods/${encodeURIComponent(key)}`});
     }
     return { shopName:typeof detail.name === 'string' && detail.name.trim() ? detail.name.trim() : shop.shop_name, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items };
   },

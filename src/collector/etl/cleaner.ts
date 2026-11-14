@@ -91,10 +91,41 @@ export function isNonSalePlaceholderItem(
   return false;
 }
 
-/**
- * 根据商品标题与店内原分类推断主分类；标题优先，其次店铺分类与联合语境，最后安全识别纯 "G" 店铺分类兜底。
- */
+/** 识别以教程为商品主体的标题，排除账号等商品附带或提示查看教程的描述。 */
+function isTutorialProduct(rawName: string): boolean {
+  const text = normalizeMatchText(rawName)
+    .replace(/(?:附带|附赠|附|赠送|赠|自带|含|包含|提供|参考)[^\n|｜，,。]{0,20}(?:教程|教学视频|课程)/g, "")
+    .replace(/(?:查看|请看|拍前看|先看|看)(?:商品简介|使用|配置|介绍)?(?:教程|教学视频|课程)/g, "");
+  if (/组合包/.test(text) && /教程\s*[+＋]\s*插件/.test(text)) return false;
+  return /教程|教学视频|教学课程|视频课程|图文教学/.test(text);
+}
+
+/** 接码商家常用表情、繁体或插入符号避敏；仅用于识别，不改变原始名称。 */
+function normalizeSmsText(value: string): string {
+  return normalizeMatchText(value)
+    .replace(/接\s*[🐎🐴]/gu, "接马")
+    .replace(/接\s*[*·•:：-]\s*[码馬马碼玛]/gu, "接码")
+    .replace(/接\s*[碼玛]/gu, "接码");
+}
+
+/** 不仅凭店铺目录名将商品认定为接码，标题必须有独立接码或号码验证线索。 */
+function hasIndependentSmsClue(value: string): boolean {
+  return /(?:接[码马]|接ma|接(?:收)?验证码|手机(?:号)?验证|短信(?:接|收|验证)|手机号?[^|｜\n]{0,10}短信[^|｜\n]{0,10}短效|美\+1|实卡[^|｜\n]{0,10}(?:单次验证|接码|接马)|登录验证[^|｜\n]{0,12}实卡)/.test(value);
+}
+
+function isPhysicalSimProduct(value: string): boolean {
+  return /(?:giffgaff|实体手机卡|实体sim卡)/i.test(value) && !/(?:接码服务|接马服务|短信接码|接码平台)/.test(value);
+}
+
+/** 教程和明确的接码服务按商品本体归类，其余再按品牌和店铺分类识别。 */
 export function detectBrandGroup(rawName: string, shopCategory: string): ProductGroup {
+  if (isTutorialProduct(rawName)) return "工具教程";
+  const smsText = normalizeSmsText(rawName);
+  const hasSmsClue = hasIndependentSmsClue(smsText);
+  if (hasSmsClue && !isPhysicalSimProduct(smsText) && !/(?:价格|网站|平台)\s*(?:对比|比较)/.test(smsText) &&
+      extractAttributes(rawName, shopCategory).attrType === "sms-service") {
+    return "接码服务";
+  }
   // 标题中的明确商品身份优先，避免店铺的宽泛分类污染每一件商品；未命中时再联合标题+分类及纯 G 分类兜底。
   const combined = shopCategory ? `${rawName} ${shopCategory}` : rawName;
   const matched = classifyBrand(rawName) ?? classifyBrand(shopCategory) ?? classifyBrand(combined);
@@ -127,13 +158,13 @@ const ACCOUNT_ENTITY_RE =
  * 表明商品并非独立接码服务（而是已/未接码账号、自备接码、邮箱载体或代过激活）的排除正则
  */
 const SMS_SERVICE_EXCLUSION_RE =
-  /(已接[码马]|已接ma|已经接[码马]|已过接(?:码|马|ma)|未接[码马]|未接ma|已绑手机|未绑手机|需自备接[码马]|无需接[码马]|不用接[码马]|支持接[码马]|可接[码马]|需接[码马]|需要接[码马]|必须要?接(?:码|马|ma)|需要?手机号?验证|需要?手机验证|需自行接[码马]|自行接[码马]|自己接[码马]|自备接[码马]|双接[码马]|带长效接[码马]|带[^|｜\n]{0,12}接(?:码|马|ma)链接|代过|自由接[码马]|自带接[码马]|带接[码马]|含接[码马]|接[码马]邮箱|临时邮箱)/;
+  /(已接[码马]|已接ma|已经接[码马]|已过接(?:码|马|ma)|未接[码马]|未接ma|已绑手机|未绑手机|(?:无需|不用|需要|需|自行|自己|自备|已|未)接(?:收)?验证码|需自备接[码马]|无需接[码马]|不用接[码马]|支持接[码马]|可接[码马]|需接[码马]|需要接[码马]|必须要?接(?:码|马|ma)|需要?手机号?验证|需要?手机验证|需自行接[码马]|自行接[码马]|自己接[码马]|自备接[码马]|双接[码马]|带长效接[码马]|带[^|｜\n]{0,12}接(?:码|马|ma)链接|代过|自由接[码马]|自带接[码马]|带接[码马]|含接[码马]|接[码马]邮箱|临时邮箱)/;
 
 /**
  * 独立接码服务信号正则（覆盖全品牌、次数搭配品牌、地区实卡及多种接码/接马/接ma表达）
  */
 const SMS_SERVICE_SIGNAL_RE =
-  /(接码服务|接马服务|短信接(?:码|马|ma)|手机接(?:码|马|ma)|接(?:码|马|ma)验证|长效接[码马]|短效接[码马]|单次接[码马]|一次性接[码马]|卖接[码马]|手机号?验证|短信验证|短信收码|(?:\d+|一|两|二|三|五|十|多|无限)次[^\n|｜]{0,12}接(?:码|马|ma)|注册接(?:码|马|ma)|全球接(?:码|马|ma)|手机[^|｜\n]{0,16}接(?:码|马|ma)|实卡[^|｜\n]{0,16}接(?:码|马|ma)|接(?:码|马|ma)[^|｜\n]{0,24}(?:美\+?1|实卡|美国|全球|印尼|哥伦比亚|英国|香港|菲律宾|日本|加拿大|自动换号|质保不来码|不来码|cdk|api|有效期内|二次验证|高成功率|自主换号|换号|一次|长效|短效|美区))/;
+  /(接码服务|接马服务|接(?:收)?验证码|手机号?[^|｜\n]{0,10}短信[^|｜\n]{0,10}短效|短信接(?:码|马|ma)|手机接(?:码|马|ma)|接(?:码|马|ma)验证|长效接[码马]|短效接[码马]|单次接[码马]|一次性接[码马]|卖接[码马]|手机号?验证|短信验证|短信收码|(?:\d+|一|两|二|三|五|十|多|无限)次[^\n|｜]{0,12}接(?:码|马|ma)|注册接(?:码|马|ma)|全球接(?:码|马|ma)|手机[^|｜\n]{0,16}接(?:码|马|ma)|实卡[^|｜\n]{0,16}接(?:码|马|ma)|接(?:码|马|ma)[^|｜\n]{0,24}(?:美\+?1|实卡|美国|全球|印尼|哥伦比亚|英国|香港|菲律宾|日本|加拿大|自动换号|质保不来码|不来码|cdk|api|有效期内|二次验证|高成功率|自主换号|换号|一次|长效|短效|美区))/;
 
 /**
  * 非账号/套餐语境下的兜底接码服务排除关键词
@@ -160,16 +191,16 @@ function hasPositiveRechargeSignal(text: string): boolean {
  * 从非标商品标题提取 6 维结构化筛选属性（与前端面板维度对齐）
  */
 export function extractAttributes(rawName: string, shopCategory: string): ExtractedAttributes {
+  if (isTutorialProduct(rawName)) {
+    return { attrType: "tutorial", attrPlan: "", attrDuration: "", attrWarranty: "", attrSms: "", attrRegion: "" };
+  }
   const title = parseAttributes(rawName);
   const category = parseAttributes(shopCategory);
-  const titleNorm = normalizeMatchText(rawName);
-  const titleHasSmsClue = /(?:接[码马]|接ma|手机号?验证|短信验证|短信收码|美\+?1|实卡|换号|来码)/.test(titleNorm);
-  const titleHasNonSmsEntity =
-    /(?:邮箱|邮件|母号|子号|账号|账户|帐号|帐户|成品|半成品|月卡|年卡|季卡|周卡|会员|日抛|教程|工具|free|plus|pro|ultra|cdk|兑换码|激活码|卡密|api|中转|额度)/.test(
-      titleNorm,
-    );
+  const titleNorm = normalizeSmsText(rawName);
+  const titleHasSmsClue = hasIndependentSmsClue(titleNorm);
   const blockCategorySmsService =
-    title.attrSms !== "" || SMS_SERVICE_EXCLUSION_RE.test(titleNorm) || (!titleHasSmsClue && titleHasNonSmsEntity);
+    title.attrSms !== "" || SMS_SERVICE_EXCLUSION_RE.test(titleNorm) ||
+    /(?:价格|网站|平台)\s*(?:对比|比较)/.test(titleNorm) || isPhysicalSimProduct(titleNorm) || !titleHasSmsClue;
 
   for (const key of Object.keys(title) as Array<keyof ExtractedAttributes>) {
     // 时长、售后、验证与地区只采信标题，不能用宽泛店铺分类补出规格或承诺。
@@ -191,13 +222,15 @@ export function extractAttributes(rawName: string, shopCategory: string): Extrac
 }
 
 function parseAttributes(value: string): ExtractedAttributes {
-  const text = normalizeMatchText(value);
+  const text = normalizeSmsText(value);
 
   // 1. 商品类型 (type)：独立接码优先于代充/成品/CDK，拼车/席位/独享归入 ready 避免含“额度”误入 api。
   let attrType = "";
   const isAccount = ACCOUNT_ENTITY_RE.test(text);
   const isSmsService =
     !isAccount &&
+    !isPhysicalSimProduct(text) &&
+    !/(?:价格|网站|平台)\s*(?:对比|比较)/.test(text) &&
     !SMS_SERVICE_EXCLUSION_RE.test(text) &&
     (SMS_SERVICE_SIGNAL_RE.test(text) || (!SMS_SERVICE_FALLBACK_EXCLUDE_RE.test(text) && /接(?:码|马|ma)/.test(text)));
 

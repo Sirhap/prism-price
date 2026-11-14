@@ -79,6 +79,7 @@ describe("未迁移 system_type 与 description/created_at 的旧库只读路径
       systemType: false,
       description: false,
       createdAt: false,
+      submittedIntegrationCode: false,
     });
     const result = await get("/api/shops?page=1&pageSize=10");
     expect(result.total).toBe(3);
@@ -206,6 +207,7 @@ describe("0004 已迁移但 0005 尚未迁移时的中间态只读路径", () =>
       systemType: true,
       description: false,
       createdAt: false,
+      submittedIntegrationCode: false,
     });
 
     const list = await get("/api/shops?page=1&pageSize=10");
