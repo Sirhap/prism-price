@@ -331,6 +331,33 @@ function parseVisitorDevice(req: Request): { device: string; os: string; browser
 }
 
 type VisitLogRow = { id: number; day: string; ip: string; location: string; device: string; os: string; browser: string; visited_at: string };
+type VisitBreakdownItem = { label: string; count: number };
+
+function summarizeVisitDays(visitDays: Array<{ day: string; page_views: number }>, bjNowMs: number) {
+  const today = new Date(bjNowMs).toISOString().slice(0, 10);
+  const yesterday = new Date(bjNowMs - 86400000).toISOString().slice(0, 10);
+  const start7 = new Date(bjNowMs - 6 * 86400000).toISOString().slice(0, 10);
+  const todayViews = Number(visitDays.find(r => r.day === today)?.page_views || 0);
+  const yesterdayViews = Number(visitDays.find(r => r.day === yesterday)?.page_views || 0);
+  const last7DaysViews = visitDays.filter(r => r.day >= start7).reduce((sum, r) => sum + Number(r.page_views || 0), 0);
+  const last30DaysViews = visitDays.reduce((sum, r) => sum + Number(r.page_views || 0), 0);
+  let peakDay: { day: string; pageViews: number } | null = null;
+  for (const row of visitDays) {
+    const pv = Number(row.page_views || 0);
+    if (!peakDay || pv > peakDay.pageViews) peakDay = { day: row.day, pageViews: pv };
+  }
+  return {
+    today,
+    todayViews,
+    yesterdayViews,
+    last7DaysViews,
+    last30DaysViews,
+    activeDays30: visitDays.length,
+    avgDailyViews: visitDays.length > 0 ? Math.round((last30DaysViews / visitDays.length) * 10) / 10 : 0,
+    peakDay,
+    days: visitDays.map(r => ({ day: r.day, pageViews: Number(r.page_views || 0) })),
+  };
+}
 
 async function readRecentVisitLogs(db: D1Database, limit = 30): Promise<VisitLogRow[]> {
   try {
@@ -341,6 +368,61 @@ async function readRecentVisitLogs(db: D1Database, limit = 30): Promise<VisitLog
     if (err instanceof Error && err.message.includes('no such table')) return [];
     throw err;
   }
+}
+
+async function readVisitInsights(db: D1Database, sinceDay: string, logLimit = 50): Promise<{
+  recentLogs: VisitLogRow[];
+  sampleTotal: number;
+  geoBreakdown: VisitBreakdownItem[];
+  deviceBreakdown: VisitBreakdownItem[];
+  browserBreakdown: VisitBreakdownItem[];
+}> {
+  try {
+    const [recentLogs, totalRow, geoRes, devRes, browserRes] = await Promise.all([
+      readRecentVisitLogs(db, logLimit),
+      db.prepare('SELECT COUNT(*) AS cnt FROM visit_logs WHERE day >= ?').bind(sinceDay).first<{ cnt: number }>(),
+      db.prepare("SELECT COALESCE(NULLIF(trim(location), ''), '未知地区') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 8").bind(sinceDay).all<VisitBreakdownItem>(),
+      db.prepare("SELECT COALESCE(NULLIF(trim(device), ''), '未知设备') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 6").bind(sinceDay).all<VisitBreakdownItem>(),
+      db.prepare("SELECT COALESCE(NULLIF(trim(browser), ''), '其它客户端') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 6").bind(sinceDay).all<VisitBreakdownItem>(),
+    ]);
+    return {
+      recentLogs,
+      sampleTotal: Number(totalRow?.cnt || 0),
+      geoBreakdown: (geoRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
+      deviceBreakdown: (devRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
+      browserBreakdown: (browserRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('no such table')) {
+      return { recentLogs: [], sampleTotal: 0, geoBreakdown: [], deviceBreakdown: [], browserBreakdown: [] };
+    }
+    throw err;
+  }
+}
+
+async function readRecentSyncRuns(db: D1Database, limit = 10) {
+  const { results } = await db.prepare(
+    'SELECT id,trigger_source,processed_count,skipped_unchanged,updated_count,failed_count,estimated_d1_writes,created_at FROM sync_runs ORDER BY created_at DESC LIMIT ?',
+  ).bind(limit).all<{
+    id: string;
+    trigger_source: string;
+    processed_count: number;
+    skipped_unchanged: number;
+    updated_count: number;
+    failed_count: number;
+    estimated_d1_writes: number;
+    created_at: string;
+  }>();
+  return (results || []).map(row => ({
+    id: row.id,
+    triggerSource: row.trigger_source,
+    processedCount: Number(row.processed_count || 0),
+    skippedUnchanged: Number(row.skipped_unchanged || 0),
+    updatedCount: Number(row.updated_count || 0),
+    failedCount: Number(row.failed_count || 0),
+    estimatedD1Writes: Number(row.estimated_d1_writes || 0),
+    createdAt: row.created_at,
+  }));
 }
 
 export async function handleAdminRoute(req: Request, env: Env): Promise<Response | null> {
@@ -410,38 +492,95 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
   if (!await authenticated(req,db)) return json({error:'请先登录'},401);
   if (path === '/api/control/session' && req.method === 'GET') return json({ok:true});
   if (path === '/api/control/visits' && req.method === 'GET') {
-    const day = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0,10);
-    const start = new Date(Date.now() + 8 * 60 * 60 * 1000 - 29 * 86400000).toISOString().slice(0,10);
-    const [{results}, recentLogs] = await Promise.all([
-      db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC').bind(start,day).all<{day:string;page_views:number}>(),
-      readRecentVisitLogs(db, 30),
+    const bjNow = Date.now() + 8 * 60 * 60 * 1000;
+    const day = new Date(bjNow).toISOString().slice(0, 10);
+    const start = new Date(bjNow - 29 * 86400000).toISOString().slice(0, 10);
+    const [{ results }, insights] = await Promise.all([
+      db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC')
+        .bind(start, day).all<{ day: string; page_views: number }>(),
+      readVisitInsights(db, start, 50),
     ]);
+    const summary = summarizeVisitDays(results || [], bjNow);
     return json({
-      today:day,
-      todayViews:results.find(r=>r.day===day)?.page_views || 0,
-      days:results,
-      recentLogs: recentLogs.map(r => ({
+      ...summary,
+      days: (results || []).map(r => ({ day: r.day, page_views: Number(r.page_views || 0), pageViews: Number(r.page_views || 0) })),
+      sampleTotal: insights.sampleTotal,
+      geoBreakdown: insights.geoBreakdown,
+      deviceBreakdown: insights.deviceBreakdown,
+      browserBreakdown: insights.browserBreakdown,
+      recentLogs: insights.recentLogs.map(r => ({
         id: r.id, day: r.day, ip: r.ip, location: r.location,
         device: r.device, os: r.os, browser: r.browser, visitedAt: r.visited_at,
       })),
     });
   }
+  if (path === '/api/control/catalog' && req.method === 'GET') {
+    const caps = await getShopColumnCapabilities(db);
+    const src = shopReadSource(caps);
+    const [shopCountRow, systemRes, catalogSummary, brandRes] = await Promise.all([
+      db.prepare(`SELECT COUNT(*) AS total FROM ${src}`).first<{ total: number }>(),
+      db.prepare(`SELECT
+        effective_system_type AS system_type,
+        COUNT(*) AS shop_count,
+        COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock_count,
+        COALESCE(SUM(product_count), 0) AS product_count
+        FROM ${src} GROUP BY effective_system_type ORDER BY shop_count DESC`).all<{ system_type: string; shop_count: number; in_stock_count: number; product_count: number }>(),
+      db.prepare(`SELECT
+        COUNT(*) AS group_count,
+        COALESCE(SUM(offer_count), 0) AS offer_count,
+        COALESCE(SUM(CASE WHEN stock_status = 'low' THEN 1 ELSE 0 END), 0) AS low_stock_groups,
+        MIN(min_price) AS min_price,
+        AVG(min_price) AS avg_min_price
+        FROM product_groups`).first<{ group_count: number; offer_count: number; low_stock_groups: number; min_price: number | null; avg_min_price: number | null }>(),
+      db.prepare(`SELECT
+        brand_group AS brand,
+        COUNT(*) AS group_count,
+        COALESCE(SUM(offer_count), 0) AS offer_count,
+        MIN(min_price) AS min_price
+        FROM product_groups GROUP BY brand_group ORDER BY offer_count DESC, group_count DESC LIMIT 15`).all<{ brand: string; group_count: number; offer_count: number; min_price: number | null }>(),
+    ]);
+    return json({
+      totalShops: Number(shopCountRow?.total || 0),
+      systems: (systemRes.results || []).map(row => ({
+        systemType: row.system_type || 'unknown',
+        label: SHOP_SYSTEMS[(row.system_type || 'unknown') as keyof typeof SHOP_SYSTEMS] || row.system_type || '未知',
+        shopCount: Number(row.shop_count || 0),
+        inStockCount: Number(row.in_stock_count || 0),
+        productCount: Number(row.product_count || 0),
+      })),
+      catalog: {
+        groupCount: Number(catalogSummary?.group_count || 0),
+        offerCount: Number(catalogSummary?.offer_count || 0),
+        lowStockGroups: Number(catalogSummary?.low_stock_groups || 0),
+        minPrice: catalogSummary?.min_price ?? null,
+        avgMinPrice: catalogSummary?.avg_min_price != null ? Math.round(Number(catalogSummary.avg_min_price) * 100) / 100 : null,
+        brands: (brandRes.results || []).map(row => ({
+          brand: row.brand || '其它',
+          groupCount: Number(row.group_count || 0),
+          offerCount: Number(row.offer_count || 0),
+          minPrice: row.min_price ?? null,
+        })),
+      },
+    });
+  }
+  if (path === '/api/control/sync-runs' && req.method === 'GET') {
+    const recentSyncs = await readRecentSyncRuns(db, 10);
+    return json({ recentSyncs });
+  }
   if (path === '/api/control/overview' && req.method === 'GET') {
+    const lite = url.searchParams.get('lite') === '1';
     const nowMs = Date.now();
     const bjNow = nowMs + 8 * 60 * 60 * 1000;
-    const today = new Date(bjNow).toISOString().slice(0,10);
-    const yesterday = new Date(bjNow - 86400000).toISOString().slice(0,10);
-    const start7 = new Date(bjNow - 6 * 86400000).toISOString().slice(0,10);
-    const start30 = new Date(bjNow - 29 * 86400000).toISOString().slice(0,10);
+    const today = new Date(bjNow).toISOString().slice(0, 10);
+    const start30 = new Date(bjNow - 29 * 86400000).toISOString().slice(0, 10);
     const since24h = new Date(nowMs - 86400000).toISOString();
     const since7d = new Date(nowMs - 7 * 86400000).toISOString();
     const caps = await getShopColumnCapabilities(db);
     const src = shopReadSource(caps);
 
-    const [visitRes, recentLogs, shopSummary, systemRes, catalogSummary, brandRes, rankSummary, openUrlRow, syncRunsRes, cfg] = await Promise.all([
+    const [visitRes, shopSummary, catalogSummary, rankSummary, openUrlRow, cfg, extra] = await Promise.all([
       db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC')
-        .bind(start30, today).all<{day:string;page_views:number}>(),
-      readRecentVisitLogs(db, 30),
+        .bind(start30, today).all<{ day: string; page_views: number }>(),
       db.prepare(`SELECT
         COUNT(*) AS total,
         COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock,
@@ -458,61 +597,49 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
         COALESCE(SUM(product_count), 0) AS total_shop_products
         FROM ${src}`).bind(since24h, since7d).first<Record<string, number>>(),
       db.prepare(`SELECT
-        effective_system_type AS system_type,
-        COUNT(*) AS shop_count,
-        COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock_count,
-        COALESCE(SUM(product_count), 0) AS product_count
-        FROM ${src} GROUP BY effective_system_type ORDER BY shop_count DESC`).all<{system_type:string;shop_count:number;in_stock_count:number;product_count:number}>(),
-      db.prepare(`SELECT
         COUNT(*) AS group_count,
         COALESCE(SUM(offer_count), 0) AS offer_count,
         COALESCE(SUM(CASE WHEN stock_status = 'low' THEN 1 ELSE 0 END), 0) AS low_stock_groups,
         MIN(min_price) AS min_price,
         AVG(min_price) AS avg_min_price
-        FROM product_groups`).first<{group_count:number;offer_count:number;low_stock_groups:number;min_price:number|null;avg_min_price:number|null}>(),
-      db.prepare(`SELECT
-        brand_group AS brand,
-        COUNT(*) AS group_count,
-        COALESCE(SUM(offer_count), 0) AS offer_count,
-        MIN(min_price) AS min_price
-        FROM product_groups GROUP BY brand_group ORDER BY offer_count DESC, group_count DESC LIMIT 8`).all<{brand:string;group_count:number;offer_count:number;min_price:number|null}>(),
+        FROM product_groups`).first<{ group_count: number; offer_count: number; low_stock_groups: number; min_price: number | null; avg_min_price: number | null }>(),
       db.prepare(`SELECT
         COALESCE(SUM(CASE WHEN manual_rank IS NOT NULL THEN 1 ELSE 0 END), 0) AS manual_ranked_count,
         COALESCE(SUM(favorite_count), 0) AS total_favorites,
         COALESCE(SUM(CASE WHEN favorite_count > 0 THEN 1 ELSE 0 END), 0) AS favorited_shop_count
-        FROM shop_rank_settings`).first<{manual_ranked_count:number;total_favorites:number;favorited_shop_count:number}>(),
-      db.prepare('SELECT COUNT(*) AS cnt FROM open_store_urls').first<{cnt:number}>(),
-      db.prepare('SELECT id,trigger_source,processed_count,skipped_unchanged,updated_count,failed_count,estimated_d1_writes,created_at FROM sync_runs ORDER BY created_at DESC LIMIT 5').all<{id:string;trigger_source:string;processed_count:number;skipped_unchanged:number;updated_count:number;failed_count:number;estimated_d1_writes:number;created_at:string}>(),
+        FROM shop_rank_settings`).first<{ manual_ranked_count: number; total_favorites: number; favorited_shop_count: number }>(),
+      db.prepare('SELECT COUNT(*) AS cnt FROM open_store_urls').first<{ cnt: number }>(),
       settings(db),
+      lite ? Promise.resolve(null) : Promise.all([
+        readRecentVisitLogs(db, 30),
+        db.prepare(`SELECT
+          effective_system_type AS system_type,
+          COUNT(*) AS shop_count,
+          COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock_count,
+          COALESCE(SUM(product_count), 0) AS product_count
+          FROM ${src} GROUP BY effective_system_type ORDER BY shop_count DESC`).all<{ system_type: string; shop_count: number; in_stock_count: number; product_count: number }>(),
+        db.prepare(`SELECT
+          brand_group AS brand,
+          COUNT(*) AS group_count,
+          COALESCE(SUM(offer_count), 0) AS offer_count,
+          MIN(min_price) AS min_price
+          FROM product_groups GROUP BY brand_group ORDER BY offer_count DESC, group_count DESC LIMIT 8`).all<{ brand: string; group_count: number; offer_count: number; min_price: number | null }>(),
+        readRecentSyncRuns(db, 5),
+      ]),
     ]);
 
-    const visitDays = visitRes.results || [];
-    const todayViews = visitDays.find(r => r.day === today)?.page_views || 0;
-    const yesterdayViews = visitDays.find(r => r.day === yesterday)?.page_views || 0;
-    const last7DaysViews = visitDays.filter(r => r.day >= start7).reduce((sum, r) => sum + Number(r.page_views || 0), 0);
-    const last30DaysViews = visitDays.reduce((sum, r) => sum + Number(r.page_views || 0), 0);
-    let peakDay: { day: string; pageViews: number } | null = null;
-    for (const row of visitDays) {
-      if (!peakDay || Number(row.page_views || 0) > peakDay.pageViews) {
-        peakDay = { day: row.day, pageViews: Number(row.page_views || 0) };
-      }
-    }
-
+    const visitSummary = summarizeVisitDays(visitRes.results || [], bjNow);
     const s = shopSummary || {};
     const totalShops = Number(s.total || 0);
     const readyShops = Number(s.ready || 0);
+    const recentLogs = extra ? extra[0] : [];
+    const systemRes = extra ? extra[1] : null;
+    const brandRes = extra ? extra[2] : null;
+    const recentSyncs = extra ? extra[3] : [];
 
     return json({
       visits: {
-        today,
-        todayViews,
-        yesterdayViews,
-        last7DaysViews,
-        last30DaysViews,
-        activeDays30: visitDays.length,
-        avgDailyViews: visitDays.length > 0 ? Math.round((last30DaysViews / visitDays.length) * 10) / 10 : 0,
-        peakDay,
-        days: visitDays.map(r => ({ day: r.day, pageViews: Number(r.page_views || 0) })),
+        ...visitSummary,
         recentLogs: recentLogs.map(r => ({
           id: r.id,
           day: r.day,
@@ -540,7 +667,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
         totalShopProducts: Number(s.total_shop_products || 0),
         healthRate: totalShops > 0 ? Math.round((readyShops / totalShops) * 1000) / 10 : 0,
       },
-      systems: (systemRes.results || []).map(row => ({
+      systems: (systemRes?.results || []).map(row => ({
         systemType: row.system_type || 'unknown',
         label: SHOP_SYSTEMS[(row.system_type || 'unknown') as keyof typeof SHOP_SYSTEMS] || row.system_type || '未知',
         shopCount: Number(row.shop_count || 0),
@@ -553,7 +680,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
         lowStockGroups: Number(catalogSummary?.low_stock_groups || 0),
         minPrice: catalogSummary?.min_price ?? null,
         avgMinPrice: catalogSummary?.avg_min_price != null ? Math.round(Number(catalogSummary.avg_min_price) * 100) / 100 : null,
-        brands: (brandRes.results || []).map(row => ({
+        brands: (brandRes?.results || []).map(row => ({
           brand: row.brand || '其它',
           groupCount: Number(row.group_count || 0),
           offerCount: Number(row.offer_count || 0),
@@ -570,16 +697,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
         submissionsEnabled: !!cfg.submissions_enabled,
         ingestConfigured: !!(cfg.ingest_hash || env.INGEST_SECRET),
       },
-      recentSyncs: (syncRunsRes.results || []).map(row => ({
-        id: row.id,
-        triggerSource: row.trigger_source,
-        processedCount: Number(row.processed_count || 0),
-        skippedUnchanged: Number(row.skipped_unchanged || 0),
-        updatedCount: Number(row.updated_count || 0),
-        failedCount: Number(row.failed_count || 0),
-        estimatedD1Writes: Number(row.estimated_d1_writes || 0),
-        createdAt: row.created_at,
-      })),
+      recentSyncs,
     });
   }
   if (path === '/api/control/rank-shops' && req.method === 'GET') {

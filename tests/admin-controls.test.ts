@@ -155,6 +155,33 @@ describe('后台和店铺排名', () => {
   expect(overview.operations.manualRankedCount).toBeGreaterThanOrEqual(1);
   expect(overview.operations.ingestConfigured).toBe(true);
   expect(overview.recentSyncs[0]).toMatchObject({ id: 'run-overview-1', triggerSource: 'manual', processedCount: 3, updatedCount: 2 });
+
+  expect((await SELF.fetch(origin+'/api/control/catalog')).status).toBe(401);
+  expect((await SELF.fetch(origin+'/api/control/sync-runs')).status).toBe(401);
+
+  const lite = await (await SELF.fetch(origin+'/api/control/overview?lite=1',{headers:{cookie}})).json() as typeof overview;
+  expect(lite.visits.recentLogs).toEqual([]);
+  expect(lite.recentSyncs).toEqual([]);
+  expect(lite.catalog.groupCount).toBe(overview.catalog.groupCount);
+
+  const visitPanel = await (await SELF.fetch(origin+'/api/control/visits',{headers:{cookie}})).json() as {
+   sampleTotal: number; last7DaysViews: number; geoBreakdown: Array<{ label: string; count: number }>; deviceBreakdown: Array<{ label: string; count: number }>; browserBreakdown: Array<{ label: string; count: number }>;
+  };
+  expect(visitPanel.sampleTotal).toBeGreaterThanOrEqual(2);
+  expect(visitPanel.last7DaysViews).toBeGreaterThanOrEqual(2);
+  expect(visitPanel.geoBreakdown.some(g => g.label === '中国 · Beijing')).toBe(true);
+  expect(visitPanel.deviceBreakdown.some(d => d.label === '手机')).toBe(true);
+  expect(visitPanel.browserBreakdown.some(b => b.label === 'Safari')).toBe(true);
+
+  const catalogPanel = await (await SELF.fetch(origin+'/api/control/catalog',{headers:{cookie}})).json() as {
+   totalShops: number; systems: Array<{ systemType: string; shopCount: number }>; catalog: { groupCount: number; brands: Array<{ brand: string }> };
+  };
+  expect(catalogPanel.totalShops).toBe(overview.shops.total);
+  expect(catalogPanel.systems.length).toBeGreaterThan(0);
+  expect(catalogPanel.catalog.brands.some(b => b.brand === 'ChatGPT')).toBe(true);
+
+  const syncPanel = await (await SELF.fetch(origin+'/api/control/sync-runs',{headers:{cookie}})).json() as { recentSyncs: Array<{ id: string }> };
+  expect(syncPanel.recentSyncs[0].id).toBe('run-overview-1');
  });
  it('密钥轮换生效且不回显，修改密码后旧会话失效', async () => {
   const nextSecret='isolated-new-secret-123456789';

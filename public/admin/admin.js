@@ -1,14 +1,36 @@
 const $ = (s) => document.querySelector(s);
 const notice = $('#notice');
 let noticeTimer, settingsDirty = false;
-const panelMeta = { overview:['工作台','全站运行指标一览'],sync:['商品同步','使用当前网络，更新店铺商品'],ranking:['店铺管理','查看同步状态、管理店铺与排名'],settings:['站点设置','管理收藏、收录与开店入口'],security:['安全设置','管理密码与同步凭据'] };
+const panelMeta = {
+  overview: ['工作台', '全站核心运行概览'],
+  visits: ['流量访客', '访问趋势、地域设备分布与近期明细'],
+  catalog: ['平台与品牌', '发卡平台架构分布与热门品牌商品规模'],
+  sync: ['商品同步', '浏览器端手动同步与服务端采集批次记录'],
+  ranking: ['店铺管理', '查看同步状态、管理店铺与排名'],
+  settings: ['站点设置', '管理收藏、收录与开店入口'],
+  security: ['安全设置', '管理密码与同步凭据'],
+};
+const panelLoaded = { overview: false, visits: false, catalog: false, sync: false };
+let activePanel = 'overview';
+
 function message(text, error = false) { clearTimeout(noticeTimer); notice.textContent=text;notice.dataset.error=String(error);notice.hidden=false; if(!error) noticeTimer=setTimeout(()=>notice.hidden=true,4500); }
+function ensurePanelData(key) {
+  if (key === 'visits' && !panelLoaded.visits) loadVisits().catch(err => message(err.message, true));
+  else if (key === 'catalog' && !panelLoaded.catalog) loadCatalog().catch(err => message(err.message, true));
+  else if (key === 'sync' && !panelLoaded.sync) loadSyncRuns().catch(err => message(err.message, true));
+}
 function selectPanel(key) {
-  if(!panelMeta[key]) key='overview';
-  document.querySelectorAll('.admin-panel').forEach(panel=>panel.hidden=panel.id!==`panel-${key}`);
-  document.querySelectorAll('.admin-nav-item').forEach(button=>{ if(button.dataset.panel===key)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current'); });
-  $('#panelTitle').textContent=panelMeta[key][0];$('#panelDescription').textContent=panelMeta[key][1];
-  history.replaceState(null,'',`#${key}`);
+  if (!panelMeta[key]) key = 'overview';
+  activePanel = key;
+  document.querySelectorAll('.admin-panel').forEach(panel => panel.hidden = panel.id !== `panel-${key}`);
+  document.querySelectorAll('.admin-nav-item').forEach(button => {
+    if (button.dataset.panel === key) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  $('#panelTitle').textContent = panelMeta[key][0];
+  $('#panelDescription').textContent = panelMeta[key][1];
+  history.replaceState(null, '', `#${key}`);
+  if (!$('#dashboard').hidden) ensurePanelData(key);
 }
 document.addEventListener('click',e=>{const button=e.target.closest('[data-panel]');if(button)selectPanel(button.dataset.panel);});
 window.addEventListener('hashchange',()=>selectPanel(location.hash.slice(1)));
@@ -51,6 +73,40 @@ function jumpToRanking({ filter = 'all', sync = 'all', stock = 'all', system = '
   page = 1;
   selectPanel('ranking');
   loadShops().catch(err => message(err.message, true));
+}
+function renderMiniStats(container, items) {
+  if (!container) return;
+  container.replaceChildren();
+  for (const [label, value] of items) {
+    const chip = document.createElement('div');
+    chip.className = 'mini-stat';
+    const k = document.createElement('small');
+    k.textContent = label;
+    const v = document.createElement('strong');
+    v.textContent = value;
+    chip.append(k, v);
+    container.append(chip);
+  }
+}
+function renderTrendBars(container, days, todayStr) {
+  if (!container) return;
+  container.replaceChildren();
+  const series = fillRecentDays(days || [], todayStr);
+  const maxViews = Math.max(1, ...series.map(item => item.pageViews));
+  for (const item of series) {
+    const barWrap = document.createElement('div');
+    barWrap.className = `trend-bar${item.isToday ? ' is-today' : ''}${item.pageViews === 0 ? ' is-zero' : ''}`;
+    barWrap.title = `${item.day}：${item.pageViews.toLocaleString()} 次访问`;
+    barWrap.setAttribute('aria-label', `${item.day} ${item.pageViews} 次访问`);
+    const bar = document.createElement('span');
+    bar.className = 'trend-bar-fill';
+    const pct = item.pageViews > 0 ? Math.max(8, Math.round((item.pageViews / maxViews) * 100)) : 4;
+    bar.style.height = `${pct}%`;
+    const dayLabel = document.createElement('small');
+    dayLabel.textContent = item.isToday ? '今' : item.day.slice(8);
+    barWrap.append(bar, dayLabel);
+    container.append(barWrap);
+  }
 }
 function renderVisitLogs(logs) {
   const wrap = $('#visitRecentLogs');
@@ -121,12 +177,176 @@ function renderBreakdownRow({ label, countText, ratio, tone = 'indigo', subText 
   if (onClick) row.addEventListener('click', onClick);
   return row;
 }
-function renderOverviewVisits(visits) {
+function renderShareBreakdown(container, items, total, tone, emptyText) {
+  if (!container) return;
+  container.replaceChildren();
+  if (!items || !items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = emptyText;
+    container.append(empty);
+    return;
+  }
+  const denom = Math.max(1, total || items.reduce((s, i) => s + Number(i.count || 0), 0));
+  for (const item of items) {
+    const count = Number(item.count || 0);
+    const pct = Math.round((count / denom) * 1000) / 10;
+    container.append(renderBreakdownRow({
+      label: item.label,
+      countText: `${count.toLocaleString()} 次 (${pct}%)`,
+      ratio: pct,
+      tone,
+    }));
+  }
+}
+function renderVisitsPanel(visits) {
   const todayViews = Number(visits?.todayViews || 0);
   const yesterdayViews = Number(visits?.yesterdayViews || 0);
   const last7 = Number(visits?.last7DaysViews || 0);
   const last30 = Number(visits?.last30DaysViews || 0);
   const avg = Number(visits?.avgDailyViews || 0);
+  const peakText = visits?.peakDay ? `${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '—';
+
+  renderMiniStats($('#visitSummaryStats'), [
+    ['今日访问', `${todayViews.toLocaleString()} 次`],
+    ['昨日访问', `${yesterdayViews.toLocaleString()} 次`],
+    ['近 7 天累计', `${last7.toLocaleString()} 次`],
+    ['近 30 天累计', `${last30.toLocaleString()} 次`],
+    ['有记录日均', `${avg.toLocaleString()} 次`],
+    ['近 30 天峰值', peakText],
+  ]);
+
+  renderTrendBars($('#visitTrendChart'), visits?.days || [], visits?.today);
+
+  const sampleTotal = Number(visits?.sampleTotal || 0);
+  if ($('#visitSampleHint')) {
+    $('#visitSampleHint').textContent = sampleTotal > 0 ? `基于近 30 天共 ${sampleTotal.toLocaleString()} 条访问日志聚合` : '有前台访问产生后将实时生成地区分布';
+  }
+  renderShareBreakdown($('#visitGeoBreakdown'), visits?.geoBreakdown || [], sampleTotal, 'indigo', '暂无来访地区数据');
+  renderShareBreakdown($('#visitDeviceBreakdown'), visits?.deviceBreakdown || [], sampleTotal, 'emerald', '暂无设备终端数据');
+
+  const browserEl = $('#visitBrowserBreakdown');
+  if (browserEl) {
+    browserEl.replaceChildren();
+    for (const item of visits?.browserBreakdown || []) {
+      const chip = document.createElement('span');
+      chip.className = 'sub-chip';
+      chip.textContent = `${item.label} · ${Number(item.count || 0).toLocaleString()} 次`;
+      browserEl.append(chip);
+    }
+  }
+
+  renderVisitLogs(visits?.recentLogs || []);
+
+  const list = $('#visitHistory');
+  if (list) {
+    list.replaceChildren();
+    const rawDays = visits?.days || [];
+    if (!rawDays.length) {
+      list.textContent = '暂无按日访问计数';
+    } else {
+      for (const item of rawDays) {
+        const row = document.createElement('div');
+        row.className = 'visit-row';
+        const day = document.createElement('span');
+        day.textContent = item.day;
+        const count = document.createElement('strong');
+        count.textContent = `${Number(item.pageViews ?? item.page_views ?? 0).toLocaleString()} 次`;
+        row.append(day, count);
+        list.append(row);
+      }
+    }
+  }
+}
+function renderCatalogPanel(data) {
+  const totalShops = Number(data?.totalShops || 0);
+  const catalog = data?.catalog || {};
+  const minPrice = catalog.minPrice != null ? `¥${catalog.minPrice}` : '—';
+  const avgPrice = catalog.avgMinPrice != null ? `¥${catalog.avgMinPrice}` : '—';
+
+  renderMiniStats($('#catalogSummaryStats'), [
+    ['聚合规格组', `${Number(catalog.groupCount || 0).toLocaleString()} 组`],
+    ['在售商品报价', `${Number(catalog.offerCount || 0).toLocaleString()} 条`],
+    ['低库存规格', `${Number(catalog.lowStockGroups || 0).toLocaleString()} 组`],
+    ['最低参考价 / 均价', `${minPrice} / ${avgPrice}`],
+  ]);
+
+  const systemEl = $('#systemBreakdown');
+  if (systemEl) {
+    systemEl.replaceChildren();
+    const systems = data?.systems || [];
+    if (!systems.length) {
+      systemEl.textContent = '暂无平台分布数据';
+    } else {
+      const denom = Math.max(1, totalShops);
+      for (const sys of systems) {
+        const pct = totalShops > 0 ? Math.round((sys.shopCount / denom) * 1000) / 10 : 0;
+        systemEl.append(renderBreakdownRow({
+          label: sys.label || sys.systemType,
+          countText: `${Number(sys.shopCount || 0).toLocaleString()} 家 (${pct}%)`,
+          ratio: pct,
+          tone: 'indigo',
+          subText: `有货 ${Number(sys.inStockCount || 0)} 家 · 商品 ${Number(sys.productCount || 0).toLocaleString()} 件`,
+          onClick: () => jumpToRanking({ system: sys.systemType }),
+        }));
+      }
+    }
+  }
+
+  const brandEl = $('#brandBreakdown');
+  if (brandEl) {
+    brandEl.replaceChildren();
+    const brands = catalog.brands || [];
+    if (!brands.length) {
+      brandEl.textContent = '暂无已聚合商品品牌数据';
+    } else {
+      const maxOffers = Math.max(1, ...brands.map(b => Number(b.offerCount || 0)));
+      for (const b of brands) {
+        const ratio = Math.round((Number(b.offerCount || 0) / maxOffers) * 100);
+        const priceTip = b.minPrice != null ? ` · 最低 ¥${b.minPrice}` : '';
+        brandEl.append(renderBreakdownRow({
+          label: b.brand,
+          countText: `${Number(b.offerCount || 0).toLocaleString()} 条报价`,
+          ratio,
+          tone: 'emerald',
+          subText: `${Number(b.groupCount || 0).toLocaleString()} 个规格组${priceTip}`,
+        }));
+      }
+    }
+  }
+}
+function renderSyncRunsPanel(data) {
+  const runsEl = $('#recentSyncRuns');
+  if (!runsEl) return;
+  runsEl.replaceChildren();
+  const runs = data?.recentSyncs || [];
+  if (!runs.length) {
+    runsEl.textContent = '暂无服务端采集批次记录（可使用上方浏览器端同步工具更新商品）';
+    return;
+  }
+  for (const run of runs) {
+    const item = document.createElement('div');
+    item.className = 'sync-run-item';
+    const left = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `${run.triggerSource === 'cron' ? '定时调度' : '手动触发'} · ${formatBjTime(run.createdAt)}`;
+    const detail = document.createElement('small');
+    detail.textContent = `处理 ${run.processedCount} 家 · 未变更跳过 ${run.skippedUnchanged} · 更新 ${run.updatedCount} · 失败 ${run.failedCount}`;
+    left.append(title, detail);
+    const badge = document.createElement('span');
+    badge.className = `run-badge ${run.failedCount > 0 ? 'has-error' : 'is-ok'}`;
+    badge.textContent = `写入 ~${Number(run.estimatedD1Writes || 0).toLocaleString()} 行`;
+    item.append(left, badge);
+    runsEl.append(item);
+  }
+}
+function renderOverview(data) {
+  const visits = data.visits || {};
+  const todayViews = Number(visits.todayViews || 0);
+  const yesterdayViews = Number(visits.yesterdayViews || 0);
+  const last7 = Number(visits.last7DaysViews || 0);
+  const last30 = Number(visits.last30DaysViews || 0);
+  const avg = Number(visits.avgDailyViews || 0);
   const diff = todayViews - yesterdayViews;
   const diffText = diff === 0 ? '与昨日持平' : (diff > 0 ? `较昨日 +${diff.toLocaleString()}` : `较昨日 ${diff.toLocaleString()}`);
 
@@ -134,78 +354,21 @@ function renderOverviewVisits(visits) {
   if ($('#metricVisitsSub')) $('#metricVisitsSub').textContent = `昨日 ${yesterdayViews.toLocaleString()} 次 · ${diffText}`;
   if ($('#metricVisits30d')) $('#metricVisits30d').textContent = last30.toLocaleString();
   if ($('#metricVisits30dSub')) {
-    const peakText = visits?.peakDay ? `峰值 ${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '近 7 天暂无记录';
+    const peakText = visits.peakDay ? `峰值 ${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '近 7 天暂无记录';
     $('#metricVisits30dSub').textContent = `近 7 天 ${last7.toLocaleString()} · ${peakText}`;
   }
 
-  const summaryEl = $('#visitSummaryStats');
-  if (summaryEl) {
-    summaryEl.replaceChildren();
-    for (const [label, value] of [
-      ['今日', `${todayViews.toLocaleString()} 次`],
-      ['近 7 天', `${last7.toLocaleString()} 次`],
-      ['近 30 天', `${last30.toLocaleString()} 次`],
-      ['有记录日均', `${avg.toLocaleString()} 次`],
-    ]) {
-      const chip = document.createElement('div');
-      chip.className = 'mini-stat';
-      const k = document.createElement('small');
-      k.textContent = label;
-      const v = document.createElement('strong');
-      v.textContent = value;
-      chip.append(k, v);
-      summaryEl.append(chip);
-    }
-  }
-
-  const chart = $('#visitTrendChart');
-  if (chart) {
-    chart.replaceChildren();
-    const series = fillRecentDays(visits?.days || [], visits?.today);
-    const maxViews = Math.max(1, ...series.map(item => item.pageViews));
-    for (const item of series) {
-      const barWrap = document.createElement('div');
-      barWrap.className = `trend-bar${item.isToday ? ' is-today' : ''}${item.pageViews === 0 ? ' is-zero' : ''}`;
-      barWrap.title = `${item.day}：${item.pageViews.toLocaleString()} 次访问`;
-      barWrap.setAttribute('aria-label', `${item.day} ${item.pageViews} 次访问`);
-      const bar = document.createElement('span');
-      bar.className = 'trend-bar-fill';
-      const pct = item.pageViews > 0 ? Math.max(8, Math.round((item.pageViews / maxViews) * 100)) : 4;
-      bar.style.height = `${pct}%`;
-      const dayLabel = document.createElement('small');
-      dayLabel.textContent = item.isToday ? '今' : item.day.slice(8);
-      barWrap.append(bar, dayLabel);
-      chart.append(barWrap);
-    }
-  }
-
-  renderVisitLogs(visits?.recentLogs || []);
-
-  const list = $('#visitHistory');
-  list.replaceChildren();
-  const rawDays = visits?.days || [];
-  if (!rawDays.length) {
-    list.textContent = '暂无按日访问计数';
-    return;
-  }
-  for (const item of rawDays) {
-    const row = document.createElement('div');
-    row.className = 'visit-row';
-    const day = document.createElement('span');
-    day.textContent = item.day;
-    const count = document.createElement('strong');
-    count.textContent = `${Number(item.pageViews ?? item.page_views ?? 0).toLocaleString()} 次`;
-    row.append(day, count);
-    list.append(row);
-  }
-}
-function renderOverview(data) {
-  renderOverviewVisits(data.visits || {});
+  renderMiniStats($('#overviewVisitStats'), [
+    ['今日', `${todayViews.toLocaleString()} 次`],
+    ['近 7 天', `${last7.toLocaleString()} 次`],
+    ['近 30 天', `${last30.toLocaleString()} 次`],
+    ['有记录日均', `${avg.toLocaleString()} 次`],
+  ]);
+  renderTrendBars($('#overviewVisitChart'), visits.days || [], visits.today);
 
   const shops = data.shops || {};
   const totalShops = Number(shops.total || 0);
   const catalog = data.catalog || {};
-  const ops = data.operations || {};
 
   $('#metricShops').textContent = totalShops.toLocaleString();
   if ($('#metricShopsSub')) {
@@ -229,13 +392,6 @@ function renderOverview(data) {
     const pct = totalShops > 0 ? Math.round((withCode / totalShops) * 1000) / 10 : 0;
     $('#metricIntegrationCodes').textContent = `${withCode.toLocaleString()} 家`;
     if ($('#metricIntegrationCodesSub')) $('#metricIntegrationCodesSub').textContent = `占比 ${pct}% · 点此筛选 ↗`;
-  }
-  if ($('#metricFavoritesSub')) {
-    $('#metricFavoritesSub').textContent = `收藏 ${Number(ops.totalFavorites || 0).toLocaleString()} · 置顶 ${Number(ops.manualRankedCount || 0)} 家 ↗`;
-  }
-  if ($('#metricSubmissionsSub')) {
-    const keyStatus = ops.ingestConfigured ? '密钥正常' : '密钥未配';
-    $('#metricSubmissionsSub').textContent = `${Number(ops.openStoreUrlCount || 0)} 平台入口 · ${keyStatus} ↗`;
   }
 
   const syncEl = $('#syncBreakdown');
@@ -281,86 +437,35 @@ function renderOverview(data) {
       stockEl.append(btn);
     }
   }
-
-  const systemEl = $('#systemBreakdown');
-  if (systemEl) {
-    systemEl.replaceChildren();
-    const systems = data.systems || [];
-    if (!systems.length) {
-      systemEl.textContent = '暂无平台分布数据';
-    } else {
-      const denom = Math.max(1, totalShops);
-      for (const sys of systems) {
-        const pct = totalShops > 0 ? Math.round((sys.shopCount / denom) * 1000) / 10 : 0;
-        systemEl.append(renderBreakdownRow({
-          label: sys.label || sys.systemType,
-          countText: `${Number(sys.shopCount || 0).toLocaleString()} 家 (${pct}%)`,
-          ratio: pct,
-          tone: 'indigo',
-          subText: `有货 ${Number(sys.inStockCount || 0)} 家 · 商品 ${Number(sys.productCount || 0).toLocaleString()} 件`,
-          onClick: () => jumpToRanking({ system: sys.systemType }),
-        }));
-      }
-    }
-  }
-
-  const brandEl = $('#brandBreakdown');
-  if (brandEl) {
-    brandEl.replaceChildren();
-    const brands = catalog.brands || [];
-    if (!brands.length) {
-      brandEl.textContent = '暂无已聚合商品品牌数据';
-    } else {
-      const maxOffers = Math.max(1, ...brands.map(b => Number(b.offerCount || 0)));
-      for (const b of brands) {
-        const ratio = Math.round((Number(b.offerCount || 0) / maxOffers) * 100);
-        const priceTip = b.minPrice != null ? ` · 最低 ¥${b.minPrice}` : '';
-        brandEl.append(renderBreakdownRow({
-          label: b.brand,
-          countText: `${Number(b.offerCount || 0).toLocaleString()} 条报价`,
-          ratio,
-          tone: 'emerald',
-          subText: `${Number(b.groupCount || 0).toLocaleString()} 个规格组${priceTip}`,
-        }));
-      }
-    }
-  }
-
-  const runsEl = $('#recentSyncRuns');
-  if (runsEl) {
-    runsEl.replaceChildren();
-    const runs = data.recentSyncs || [];
-    if (!runs.length) {
-      runsEl.textContent = '暂无服务端采集批次记录（可使用「商品同步」在浏览器中执行同步）';
-    } else {
-      for (const run of runs) {
-        const item = document.createElement('div');
-        item.className = 'sync-run-item';
-        const left = document.createElement('div');
-        const title = document.createElement('strong');
-        title.textContent = `${run.triggerSource === 'cron' ? '定时调度' : '手动触发'} · ${formatBjTime(run.createdAt)}`;
-        const detail = document.createElement('small');
-        detail.textContent = `处理 ${run.processedCount} 家 · 未变更跳过 ${run.skippedUnchanged} · 更新 ${run.updatedCount} · 失败 ${run.failedCount}`;
-        left.append(title, detail);
-        const badge = document.createElement('span');
-        badge.className = `run-badge ${run.failedCount > 0 ? 'has-error' : 'is-ok'}`;
-        badge.textContent = `写入 ~${Number(run.estimatedD1Writes || 0).toLocaleString()} 行`;
-        item.append(left, badge);
-        runsEl.append(item);
-      }
-    }
-  }
 }
 async function loadOverview() {
   try {
-    const data = await api('/api/control/overview');
+    const data = await api('/api/control/overview?lite=1');
+    panelLoaded.overview = true;
     renderOverview(data);
   } catch {
     $('#metricVisits').textContent = '暂不可用';
-    $('#visitHistory').textContent = '工作台统计加载失败，请稍后重试';
   }
 }
-function updateMetrics(data) {$('#metricFavorites').textContent=data.favoritesEnabled?'已开启':'已关闭';$('#metricSubmissions').textContent=data.submissionsEnabled?'接受提交':'暂停收录';}
+async function loadVisits() {
+  const data = await api('/api/control/visits');
+  panelLoaded.visits = true;
+  renderVisitsPanel(data);
+}
+async function loadCatalog() {
+  const data = await api('/api/control/catalog');
+  panelLoaded.catalog = true;
+  renderCatalogPanel(data);
+}
+async function loadSyncRuns() {
+  const data = await api('/api/control/sync-runs');
+  panelLoaded.sync = true;
+  renderSyncRunsPanel(data);
+}
+function updateMetrics(data) {
+  if ($('#metricFavorites')) $('#metricFavorites').textContent = data.favoritesEnabled ? '已开启' : '已关闭';
+  if ($('#metricSubmissions')) $('#metricSubmissions').textContent = data.submissionsEnabled ? '接受提交' : '暂停收录';
+}
 $('#settingsForm').addEventListener('input',()=>setDirty(true));
 window.addEventListener('beforeunload',e=>{if(settingsDirty){e.preventDefault();e.returnValue='';}});
 function shopRow(shop) {
@@ -411,11 +516,31 @@ submitForm('#loginForm',async f=>{await api('/api/control/login',{password:f.ele
 submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await Promise.all([loadShops(),loadOverview()]);});
 submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');await loadOverview();});
 submitForm('#passwordForm',async f=>{await api('/api/control/password',{oldPassword:f.elements.oldPassword.value,newPassword:f.elements.newPassword.value});f.reset();$('#dashboard').hidden=true;$('#loginPanel').hidden=false;$('#logout').hidden=true;message('密码已修改，请重新登录');});
-$('#logout').addEventListener('click',async()=>{try{await api('/api/control/logout',{});settingsDirty=false;location.reload();}catch(err){message(err.message,true);}});
+$('#logout').addEventListener('click',async()=>{try{await api('/api/control/logout',{});settingsDirty=false;Object.keys(panelLoaded).forEach(k=>panelLoaded[k]=false);location.reload();}catch(err){message(err.message,true);}});
 submitForm('#searchForm',async()=>{query=$('#searchInput').value.trim();page=1;await loadShops();});
 for(const sel of ['#rankSort','#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])$(sel)?.addEventListener('change',()=>{page=1;loadShops().catch(err=>message(err.message,true));});
 $('#rankResetFilters')?.addEventListener('click',()=>{$('#searchInput').value='';query='';for(const sel of ['#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])if($(sel))$(sel).value='all';page=1;loadShops().catch(err=>message(err.message,true));});
-$('#refreshOverview')?.addEventListener('click',async()=>{const btn=$('#refreshOverview');if(!btn||btn.disabled)return;btn.disabled=true;btn.textContent='刷新中…';try{await loadOverview();message('工作台指标已刷新');}finally{btn.disabled=false;btn.textContent='↻ 刷新指标';}});
+function bindRefresh(selector, loader, idleLabel, successMessage) {
+  $(selector)?.addEventListener('click', async () => {
+    const btn = $(selector);
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '刷新中…';
+    try {
+      await loader();
+      message(successMessage);
+    } catch (err) {
+      message(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = idleLabel;
+    }
+  });
+}
+bindRefresh('#refreshOverview', loadOverview, '↻ 刷新概览', '工作台概览已刷新');
+bindRefresh('#refreshVisits', loadVisits, '↻ 刷新访客数据', '访客数据已刷新');
+bindRefresh('#refreshCatalog', loadCatalog, '↻ 刷新分布数据', '平台与品牌分布已刷新');
+bindRefresh('#refreshSyncRuns', loadSyncRuns, '↻ 刷新批次', '采集批次已刷新');
 document.addEventListener('click',e=>{const el=e.target.closest('[data-jump-sync],[data-jump-stock],[data-jump-filter]');if(!el)return;jumpToRanking({sync:el.dataset.jumpSync||'all',stock:el.dataset.jumpStock||'all',filter:el.dataset.jumpFilter||'all'});});
 $('#previousPage').addEventListener('click',()=>{if(page>1){page--;loadShops().catch(err=>message(err.message,true));}});
 $('#nextPage').addEventListener('click',()=>{if(page<pages){page++;loadShops().catch(err=>message(err.message,true));}});
