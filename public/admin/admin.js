@@ -1,7 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const notice = $('#notice');
 let noticeTimer, settingsDirty = false;
-const panelMeta = { overview:['工作台','快速掌握站点状态，继续常用操作'],sync:['商品同步','使用当前网络，更新店铺商品'],ranking:['店铺管理','查看同步状态、管理店铺与排名'],productPreview:['商品排序','查看商品推荐排序效果'],settings:['站点设置','管理收藏、收录与开店入口'],security:['安全设置','管理密码与同步凭据'] };
+const panelMeta = { overview:['工作台','全站运行指标一览'],sync:['商品同步','使用当前网络，更新店铺商品'],ranking:['店铺管理','查看同步状态、管理店铺与排名'],settings:['站点设置','管理收藏、收录与开店入口'],security:['安全设置','管理密码与同步凭据'] };
 function message(text, error = false) { clearTimeout(noticeTimer); notice.textContent=text;notice.dataset.error=String(error);notice.hidden=false; if(!error) noticeTimer=setTimeout(()=>notice.hidden=true,4500); }
 function selectPanel(key) {
   if(!panelMeta[key]) key='overview';
@@ -26,13 +26,339 @@ async function loadSettings() {
   for(const k of ['favoritesEnabled','manualRankEnabled','submissionsEnabled'])f.elements[k].checked=data[k];
   f.elements.openStoreUrl.value=data.openStoreUrl; for(const key of ['catfk','16688','acg-faka','dujiaoka','other','unknown'])f.elements[`store_${key}`].value=data.openStoreUrls?.[key] || '';setDirty(false);updateMetrics(data);
 }
-async function loadVisits() {
+function formatBjTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+}
+function fillRecentDays(days, todayStr) {
+  const map = new Map((days || []).map(item => [item.day, Number(item.pageViews ?? item.page_views ?? 0)]));
+  const base = todayStr ? new Date(`${todayStr}T00:00:00Z`) : new Date(Date.now() + 8 * 3600000);
+  const list = [];
+  for (let i = 29; i >= 0; i--) {
+    const day = new Date(base.getTime() - i * 86400000).toISOString().slice(0, 10);
+    list.push({ day, pageViews: map.get(day) || 0, isToday: day === todayStr });
+  }
+  return list;
+}
+function jumpToRanking({ filter = 'all', sync = 'all', stock = 'all', system = 'all' } = {}) {
+  if ($('#searchInput')) $('#searchInput').value = '';
+  query = '';
+  if ($('#rankFilter')) $('#rankFilter').value = filter;
+  if ($('#rankSyncFilter')) $('#rankSyncFilter').value = sync;
+  if ($('#rankStockFilter')) $('#rankStockFilter').value = stock;
+  if ($('#rankSystemFilter')) $('#rankSystemFilter').value = system;
+  page = 1;
+  selectPanel('ranking');
+  loadShops().catch(err => message(err.message, true));
+}
+function renderVisitLogs(logs) {
+  const wrap = $('#visitRecentLogs');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  if (!logs || !logs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '暂无访问明细记录（有前台访问产生后将实时记录 IP、地区与设备）';
+    wrap.append(empty);
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'visit-logs-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const title of ['访问时间（北京时间）', 'IP 地址', '地区', '设备终端']) {
+    const th = document.createElement('th');
+    th.textContent = title;
+    headRow.append(th);
+  }
+  thead.append(headRow);
+  const tbody = document.createElement('tbody');
+  for (const log of logs) {
+    const tr = document.createElement('tr');
+    const tdTime = document.createElement('td');
+    tdTime.textContent = formatBjTime(log.visitedAt);
+    const tdIp = document.createElement('td');
+    const code = document.createElement('code');
+    code.textContent = log.ip || 'unknown';
+    tdIp.append(code);
+    const tdLoc = document.createElement('td');
+    tdLoc.textContent = log.location || '未知地区';
+    const tdDev = document.createElement('td');
+    tdDev.textContent = [log.device, log.os, log.browser].filter(Boolean).join(' · ') || '未知设备';
+    tr.append(tdTime, tdIp, tdLoc, tdDev);
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+}
+function renderBreakdownRow({ label, countText, ratio, tone = 'indigo', subText = '', onClick }) {
+  const row = document.createElement(onClick ? 'button' : 'div');
+  if (onClick) row.type = 'button';
+  row.className = `breakdown-row tone-${tone}${onClick ? ' is-clickable' : ''}`;
+  const head = document.createElement('div');
+  head.className = 'breakdown-head';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'breakdown-label';
+  nameEl.textContent = label;
+  const valEl = document.createElement('strong');
+  valEl.className = 'breakdown-value';
+  valEl.textContent = countText;
+  head.append(nameEl, valEl);
+  const track = document.createElement('div');
+  track.className = 'breakdown-track';
+  const fill = document.createElement('span');
+  fill.className = 'breakdown-fill';
+  fill.style.width = `${Math.max(ratio > 0 ? 3 : 0, Math.min(100, ratio))}%`;
+  track.append(fill);
+  row.append(head, track);
+  if (subText) {
+    const sub = document.createElement('small');
+    sub.className = 'breakdown-sub';
+    sub.textContent = subText;
+    row.append(sub);
+  }
+  if (onClick) row.addEventListener('click', onClick);
+  return row;
+}
+function renderOverviewVisits(visits) {
+  const todayViews = Number(visits?.todayViews || 0);
+  const yesterdayViews = Number(visits?.yesterdayViews || 0);
+  const last7 = Number(visits?.last7DaysViews || 0);
+  const last30 = Number(visits?.last30DaysViews || 0);
+  const avg = Number(visits?.avgDailyViews || 0);
+  const diff = todayViews - yesterdayViews;
+  const diffText = diff === 0 ? '与昨日持平' : (diff > 0 ? `较昨日 +${diff.toLocaleString()}` : `较昨日 ${diff.toLocaleString()}`);
+
+  $('#metricVisits').textContent = todayViews.toLocaleString();
+  if ($('#metricVisitsSub')) $('#metricVisitsSub').textContent = `昨日 ${yesterdayViews.toLocaleString()} 次 · ${diffText}`;
+  if ($('#metricVisits30d')) $('#metricVisits30d').textContent = last30.toLocaleString();
+  if ($('#metricVisits30dSub')) {
+    const peakText = visits?.peakDay ? `峰值 ${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '近 7 天暂无记录';
+    $('#metricVisits30dSub').textContent = `近 7 天 ${last7.toLocaleString()} · ${peakText}`;
+  }
+
+  const summaryEl = $('#visitSummaryStats');
+  if (summaryEl) {
+    summaryEl.replaceChildren();
+    for (const [label, value] of [
+      ['今日', `${todayViews.toLocaleString()} 次`],
+      ['近 7 天', `${last7.toLocaleString()} 次`],
+      ['近 30 天', `${last30.toLocaleString()} 次`],
+      ['有记录日均', `${avg.toLocaleString()} 次`],
+    ]) {
+      const chip = document.createElement('div');
+      chip.className = 'mini-stat';
+      const k = document.createElement('small');
+      k.textContent = label;
+      const v = document.createElement('strong');
+      v.textContent = value;
+      chip.append(k, v);
+      summaryEl.append(chip);
+    }
+  }
+
+  const chart = $('#visitTrendChart');
+  if (chart) {
+    chart.replaceChildren();
+    const series = fillRecentDays(visits?.days || [], visits?.today);
+    const maxViews = Math.max(1, ...series.map(item => item.pageViews));
+    for (const item of series) {
+      const barWrap = document.createElement('div');
+      barWrap.className = `trend-bar${item.isToday ? ' is-today' : ''}${item.pageViews === 0 ? ' is-zero' : ''}`;
+      barWrap.title = `${item.day}：${item.pageViews.toLocaleString()} 次访问`;
+      barWrap.setAttribute('aria-label', `${item.day} ${item.pageViews} 次访问`);
+      const bar = document.createElement('span');
+      bar.className = 'trend-bar-fill';
+      const pct = item.pageViews > 0 ? Math.max(8, Math.round((item.pageViews / maxViews) * 100)) : 4;
+      bar.style.height = `${pct}%`;
+      const dayLabel = document.createElement('small');
+      dayLabel.textContent = item.isToday ? '今' : item.day.slice(8);
+      barWrap.append(bar, dayLabel);
+      chart.append(barWrap);
+    }
+  }
+
+  renderVisitLogs(visits?.recentLogs || []);
+
+  const list = $('#visitHistory');
+  list.replaceChildren();
+  const rawDays = visits?.days || [];
+  if (!rawDays.length) {
+    list.textContent = '暂无按日访问计数';
+    return;
+  }
+  for (const item of rawDays) {
+    const row = document.createElement('div');
+    row.className = 'visit-row';
+    const day = document.createElement('span');
+    day.textContent = item.day;
+    const count = document.createElement('strong');
+    count.textContent = `${Number(item.pageViews ?? item.page_views ?? 0).toLocaleString()} 次`;
+    row.append(day, count);
+    list.append(row);
+  }
+}
+function renderOverview(data) {
+  renderOverviewVisits(data.visits || {});
+
+  const shops = data.shops || {};
+  const totalShops = Number(shops.total || 0);
+  const catalog = data.catalog || {};
+  const ops = data.operations || {};
+
+  $('#metricShops').textContent = totalShops.toLocaleString();
+  if ($('#metricShopsSub')) {
+    $('#metricShopsSub').textContent = `有货 ${Number(shops.inStock || 0).toLocaleString()} 家 · 近7日 +${Number(shops.added7d || 0)} ↗`;
+  }
+  if ($('#metricGroups')) {
+    $('#metricGroups').textContent = `${Number(catalog.groupCount || 0).toLocaleString()} 组`;
+  }
+  if ($('#metricGroupsSub')) {
+    const minP = catalog.minPrice != null ? `最低 ¥${catalog.minPrice}` : '暂无价格';
+    $('#metricGroupsSub').textContent = `${Number(catalog.offerCount || 0).toLocaleString()} 报价 · ${minP}`;
+  }
+  if ($('#metricSyncHealth')) {
+    $('#metricSyncHealth').textContent = `${Number(shops.healthRate || 0)}%`;
+  }
+  if ($('#metricSyncHealthSub')) {
+    $('#metricSyncHealthSub').textContent = `异常 ${Number(shops.error || 0)} · 24h同步 ${Number(shops.synced24h || 0)} ↗`;
+  }
+  if ($('#metricIntegrationCodes')) {
+    const withCode = Number(shops.withCode || 0);
+    const pct = totalShops > 0 ? Math.round((withCode / totalShops) * 1000) / 10 : 0;
+    $('#metricIntegrationCodes').textContent = `${withCode.toLocaleString()} 家`;
+    if ($('#metricIntegrationCodesSub')) $('#metricIntegrationCodesSub').textContent = `占比 ${pct}% · 点此筛选 ↗`;
+  }
+  if ($('#metricFavoritesSub')) {
+    $('#metricFavoritesSub').textContent = `收藏 ${Number(ops.totalFavorites || 0).toLocaleString()} · 置顶 ${Number(ops.manualRankedCount || 0)} 家 ↗`;
+  }
+  if ($('#metricSubmissionsSub')) {
+    const keyStatus = ops.ingestConfigured ? '密钥正常' : '密钥未配';
+    $('#metricSubmissionsSub').textContent = `${Number(ops.openStoreUrlCount || 0)} 平台入口 · ${keyStatus} ↗`;
+  }
+
+  const syncEl = $('#syncBreakdown');
+  if (syncEl) {
+    syncEl.replaceChildren();
+    const denom = Math.max(1, totalShops);
+    const states = [
+      { key: 'ready', label: '同步正常', count: Number(shops.ready || 0), tone: 'emerald' },
+      { key: 'pending', label: '待同步', count: Number(shops.pending || 0), tone: 'amber' },
+      { key: 'error', label: '同步异常', count: Number(shops.error || 0), tone: 'rose' },
+      { key: 'manual', label: '待适配 / 人工', count: Number(shops.manual || 0), tone: 'slate' },
+      { key: 'never', label: '从未同步过', count: Number(shops.neverSynced || 0), tone: 'amber' },
+    ];
+    for (const item of states) {
+      const pct = totalShops > 0 ? Math.round((item.count / denom) * 1000) / 10 : 0;
+      syncEl.append(renderBreakdownRow({
+        label: item.label,
+        countText: `${item.count.toLocaleString()} 家 (${pct}%)`,
+        ratio: pct,
+        tone: item.tone,
+        onClick: () => jumpToRanking({ sync: item.key }),
+      }));
+    }
+  }
+
+  const stockEl = $('#stockBreakdown');
+  if (stockEl) {
+    stockEl.replaceChildren();
+    const chips = [
+      { label: `有在售商品 ${Number(shops.inStock || 0)} 家`, onClick: () => jumpToRanking({ stock: 'in-stock' }), tone: 'emerald' },
+      { label: `空店（0 商品）${Number(shops.empty || 0)} 家`, onClick: () => jumpToRanking({ stock: 'empty' }), tone: 'rose' },
+      { label: `自动采集支持 ${Number(shops.syncSupported || 0)} 家`, tone: 'indigo' },
+      { label: `累计店铺商品 ${Number(shops.totalShopProducts || 0)} 件`, tone: 'slate' },
+    ];
+    for (const chip of chips) {
+      const btn = document.createElement(chip.onClick ? 'button' : 'span');
+      if (chip.onClick) {
+        btn.type = 'button';
+        btn.addEventListener('click', chip.onClick);
+      }
+      btn.className = `sub-chip tone-${chip.tone}${chip.onClick ? ' is-clickable' : ''}`;
+      btn.textContent = chip.label;
+      stockEl.append(btn);
+    }
+  }
+
+  const systemEl = $('#systemBreakdown');
+  if (systemEl) {
+    systemEl.replaceChildren();
+    const systems = data.systems || [];
+    if (!systems.length) {
+      systemEl.textContent = '暂无平台分布数据';
+    } else {
+      const denom = Math.max(1, totalShops);
+      for (const sys of systems) {
+        const pct = totalShops > 0 ? Math.round((sys.shopCount / denom) * 1000) / 10 : 0;
+        systemEl.append(renderBreakdownRow({
+          label: sys.label || sys.systemType,
+          countText: `${Number(sys.shopCount || 0).toLocaleString()} 家 (${pct}%)`,
+          ratio: pct,
+          tone: 'indigo',
+          subText: `有货 ${Number(sys.inStockCount || 0)} 家 · 商品 ${Number(sys.productCount || 0).toLocaleString()} 件`,
+          onClick: () => jumpToRanking({ system: sys.systemType }),
+        }));
+      }
+    }
+  }
+
+  const brandEl = $('#brandBreakdown');
+  if (brandEl) {
+    brandEl.replaceChildren();
+    const brands = catalog.brands || [];
+    if (!brands.length) {
+      brandEl.textContent = '暂无已聚合商品品牌数据';
+    } else {
+      const maxOffers = Math.max(1, ...brands.map(b => Number(b.offerCount || 0)));
+      for (const b of brands) {
+        const ratio = Math.round((Number(b.offerCount || 0) / maxOffers) * 100);
+        const priceTip = b.minPrice != null ? ` · 最低 ¥${b.minPrice}` : '';
+        brandEl.append(renderBreakdownRow({
+          label: b.brand,
+          countText: `${Number(b.offerCount || 0).toLocaleString()} 条报价`,
+          ratio,
+          tone: 'emerald',
+          subText: `${Number(b.groupCount || 0).toLocaleString()} 个规格组${priceTip}`,
+        }));
+      }
+    }
+  }
+
+  const runsEl = $('#recentSyncRuns');
+  if (runsEl) {
+    runsEl.replaceChildren();
+    const runs = data.recentSyncs || [];
+    if (!runs.length) {
+      runsEl.textContent = '暂无服务端采集批次记录（可使用「商品同步」在浏览器中执行同步）';
+    } else {
+      for (const run of runs) {
+        const item = document.createElement('div');
+        item.className = 'sync-run-item';
+        const left = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = `${run.triggerSource === 'cron' ? '定时调度' : '手动触发'} · ${formatBjTime(run.createdAt)}`;
+        const detail = document.createElement('small');
+        detail.textContent = `处理 ${run.processedCount} 家 · 未变更跳过 ${run.skippedUnchanged} · 更新 ${run.updatedCount} · 失败 ${run.failedCount}`;
+        left.append(title, detail);
+        const badge = document.createElement('span');
+        badge.className = `run-badge ${run.failedCount > 0 ? 'has-error' : 'is-ok'}`;
+        badge.textContent = `写入 ~${Number(run.estimatedD1Writes || 0).toLocaleString()} 行`;
+        item.append(left, badge);
+        runsEl.append(item);
+      }
+    }
+  }
+}
+async function loadOverview() {
   try {
-    const data=await api('/api/control/visits'); $('#metricVisits').textContent=Number(data.todayViews).toLocaleString();
-    const list=$('#visitHistory'); list.replaceChildren();
-    if(!data.days.length){list.textContent='暂无访问记录';return;}
-    for(const item of data.days){const row=document.createElement('div');row.className='visit-row';const day=document.createElement('span');day.textContent=item.day;const count=document.createElement('strong');count.textContent=`${Number(item.page_views).toLocaleString()} 次`;row.append(day,count);list.append(row);}
-  } catch { $('#metricVisits').textContent='暂不可用';$('#visitHistory').textContent='访问统计暂不可用'; }
+    const data = await api('/api/control/overview');
+    renderOverview(data);
+  } catch {
+    $('#metricVisits').textContent = '暂不可用';
+    $('#visitHistory').textContent = '工作台统计加载失败，请稍后重试';
+  }
 }
 function updateMetrics(data) {$('#metricFavorites').textContent=data.favoritesEnabled?'已开启':'已关闭';$('#metricSubmissions').textContent=data.submissionsEnabled?'接受提交':'暂停收录';}
 $('#settingsForm').addEventListener('input',()=>setDirty(true));
@@ -80,23 +406,17 @@ async function loadShops() {
  try{const data=await api(`/api/control/rank-shops?${new URLSearchParams({q:query,page:String(page),sort:$('#rankSort').value,filter,sync,stock,system})}`);if(ticket!==listRequest)return;pages=data.totalPages||1;list.replaceChildren();for(const shop of data.shops)list.append(shopRow(shop));if(!data.shops.length)list.textContent='没有找到符合条件的店铺，试试调整筛选项或关键词';$('#pageInfo').textContent=`第 ${page} / ${pages} 页 · ${data.total} 家店铺`;$('#previousPage').disabled=page<=1;$('#nextPage').disabled=page>=pages;if(!filtered)$('#metricShops').textContent=data.total.toLocaleString();}
  finally{if(ticket===listRequest){list.removeAttribute('aria-busy');list.style.opacity='1';}}
 }
-async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;selectPanel(location.hash.slice(1));try{await Promise.all([loadSettings(),loadShops(),loadVisits()]);}catch(err){message(err.message,true);}}
+async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;selectPanel(location.hash.slice(1));try{await Promise.all([loadSettings(),loadShops(),loadOverview()]);}catch(err){message(err.message,true);}}
 submitForm('#loginForm',async f=>{await api('/api/control/login',{password:f.elements.password.value});f.reset();notice.hidden=true;await showDashboard();});
-submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await loadShops();});
-submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');});
+submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await Promise.all([loadShops(),loadOverview()]);});
+submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');await loadOverview();});
 submitForm('#passwordForm',async f=>{await api('/api/control/password',{oldPassword:f.elements.oldPassword.value,newPassword:f.elements.newPassword.value});f.reset();$('#dashboard').hidden=true;$('#loginPanel').hidden=false;$('#logout').hidden=true;message('密码已修改，请重新登录');});
 $('#logout').addEventListener('click',async()=>{try{await api('/api/control/logout',{});settingsDirty=false;location.reload();}catch(err){message(err.message,true);}});
 submitForm('#searchForm',async()=>{query=$('#searchInput').value.trim();page=1;await loadShops();});
-submitForm('#productPreviewForm',async()=>{
- const query=$('#productPreviewQuery').value.trim();if(!query)throw new Error('请输入商品搜索词');
- const list=$('#productPreviewResults');list.textContent='正在比较排序…';
- try {const data=await api(`/api/control/product-ranking-preview?${new URLSearchParams({q:query})}`);list.replaceChildren();
- if(!data.items.length){list.textContent='没有找到商品';return;}
- for(const item of data.items){const row=document.createElement('div');row.className='preview-row';const name=document.createElement('strong');name.textContent=`${item.rank}. ${item.name}`;const detail=document.createElement('small');const change=item.previousRank===null?'原排序前 30 名以外':`原第 ${item.previousRank} 名`;detail.textContent=`${change} · 搜索相关度 ${item.textScore ?? "—"} · ${item.shopCount} 家报价 · 推荐加分 ${item.shopBonus ?? 0} · 最低 ¥${item.minPrice}`;row.append(name,detail);list.append(row);}
- } catch(error){list.textContent='预览失败，请重试';throw error;}
-});
 for(const sel of ['#rankSort','#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])$(sel)?.addEventListener('change',()=>{page=1;loadShops().catch(err=>message(err.message,true));});
 $('#rankResetFilters')?.addEventListener('click',()=>{$('#searchInput').value='';query='';for(const sel of ['#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])if($(sel))$(sel).value='all';page=1;loadShops().catch(err=>message(err.message,true));});
+$('#refreshOverview')?.addEventListener('click',async()=>{const btn=$('#refreshOverview');if(!btn||btn.disabled)return;btn.disabled=true;btn.textContent='刷新中…';try{await loadOverview();message('工作台指标已刷新');}finally{btn.disabled=false;btn.textContent='↻ 刷新指标';}});
+document.addEventListener('click',e=>{const el=e.target.closest('[data-jump-sync],[data-jump-stock],[data-jump-filter]');if(!el)return;jumpToRanking({sync:el.dataset.jumpSync||'all',stock:el.dataset.jumpStock||'all',filter:el.dataset.jumpFilter||'all'});});
 $('#previousPage').addEventListener('click',()=>{if(page>1){page--;loadShops().catch(err=>message(err.message,true));}});
 $('#nextPage').addEventListener('click',()=>{if(page<pages){page++;loadShops().catch(err=>message(err.message,true));}});
 api('/api/control/session').then(showDashboard).catch(()=>{});
@@ -111,7 +431,7 @@ function renderSync() {
   const state=syncRead(); const done=state?.index || 0, total=state?.shops?.length || 0;
   $('#syncProgress').max=Math.max(total,1); $('#syncProgress').value=done;
   $('#syncStatus').textContent=state ? `${syncRunning?'正在同步':done<total?'已暂停':'已完成'} · ${done} / ${total} 家 · 成功 ${state.success} · 失败 ${state.failed} · 不支持 ${state.unsupported} · 耗时 ${elapsed(state.elapsed || 0)}` : '尚未开始';
-  $('#overviewSync').textContent=state ? `${syncRunning?'同步中':done<total?'上次暂停':'上轮完成'} · ${done} / ${total} 家，点击查看进度` : '从当前网络更新商品，支持断点续跑';
+  if ($('#overviewSync')) $('#overviewSync').textContent=state ? `${syncRunning?'同步中':done<total?'上次暂停':'上轮完成'} · ${done} / ${total} 家，点击查看进度` : '从当前网络更新商品，支持断点续跑';
   $('#syncMin').disabled=syncRunning; $('#syncMax').disabled=syncRunning;
   $('#syncStart').disabled=syncRunning || !!(state && done<total); $('#syncResume').hidden=syncRunning || !state || done>=total; $('#syncStop').hidden=!syncRunning; $('#syncRetryFailed').hidden=syncRunning || !state || done<total || !state.failures?.length;
   const list=$('#syncLog'); list.replaceChildren(); for (const line of [...(state?.logs || [])].reverse()) { const li=document.createElement('li'); li.textContent=line; list.append(li); }

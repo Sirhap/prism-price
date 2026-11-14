@@ -1,7 +1,7 @@
 /** Administrative controls and anonymous shop favorite counts. */
 import { deleteShopById } from '../collector/scheduler';
 import { hideTelegramContacts } from '../collector/shopPresentation';
-import { shopReadSource } from '../collector/shopSystems';
+import { getShopColumnCapabilities, SHOP_SYSTEMS, shopReadSource } from '../collector/shopSystems';
 const storeTypes = ['ldxp','catfk','16688','acg-faka','dujiaoka','other','unknown'] as const;
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const encoder = new TextEncoder();
@@ -44,6 +44,141 @@ async function body(req: Request): Promise<Record<string, unknown>> {
 const cookie = (request: Request, value: string, maxAge: number) => `admin_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`;
 export async function getIngestHash(db: D1Database): Promise<string | null> { return (await settings(db)).ingest_hash; }
 export async function matchesIngestSecret(input: string, expectedHash: string): Promise<boolean> { return same(await digest(input), expectedHash); }
+
+const COUNTRY_NAMES: Record<string, string> = {
+  CN: '中国', HK: '中国香港', MO: '中国澳门', TW: '中国台湾',
+  US: '美国', JP: '日本', SG: '新加坡', KR: '韩国',
+  GB: '英国', DE: '德国', FR: '法国', CA: '加拿大',
+  AU: '澳大利亚', NL: '荷兰', RU: '俄罗斯', IN: '印度',
+  MY: '马来西亚', TH: '泰国', VN: '越南', PH: '菲律宾',
+  ID: '印度尼西亚', BR: '巴西', IT: '意大利', ES: '西班牙',
+  SE: '瑞典', CH: '瑞士', AE: '阿联酋', T1: 'Tor 网络', XX: '未知地区',
+};
+
+/** 按代理可信优先级提取客户端 IP。 */
+function extractClientIp(req: Request): string {
+  const candidates = [
+    req.headers.get('CF-Connecting-IP'),
+    req.headers.get('True-Client-IP'),
+    req.headers.get('X-Real-IP'),
+    req.headers.get('X-Forwarded-For')?.split(',')[0],
+  ];
+  for (const raw of candidates) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const stripped = trimmed.startsWith('[') && trimmed.includes(']')
+      ? trimmed.slice(1, trimmed.indexOf(']'))
+      : /^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(trimmed)
+        ? trimmed.replace(/:\d+$/, '')
+        : trimmed;
+    if (stripped) return stripped.slice(0, 64);
+  }
+  return 'unknown';
+}
+
+function isLocalOrPrivateIp(ip: string): boolean {
+  if (!ip || ip === 'unknown') return false;
+  const normalized = ip.replace(/^::ffff:/i, '').toLowerCase();
+  if (normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost') return true;
+  if (normalized.startsWith('10.') || normalized.startsWith('192.168.') || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:')) return true;
+  const match = /^172\.(\d+)\./.exec(normalized);
+  if (match) {
+    const second = Number(match[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+/** 结合 Cloudflare cf 对象及标准地理请求头提取地区展示文案。 */
+function extractVisitorGeo(req: Request, ip: string): { country: string; region: string; city: string; location: string } {
+  const cf = (req as Request & { cf?: Record<string, unknown> }).cf;
+  const rawCountry = String(
+    cf?.country ||
+    req.headers.get('CF-IPCountry') ||
+    req.headers.get('X-Vercel-IP-Country') ||
+    req.headers.get('X-Geo-Country') ||
+    ''
+  ).trim().slice(0, 64);
+  const rawRegion = String(
+    cf?.region ||
+    req.headers.get('CF-Region') ||
+    req.headers.get('X-Vercel-IP-Country-Region') ||
+    req.headers.get('X-Geo-Region') ||
+    ''
+  ).trim().slice(0, 64);
+  const rawCity = String(
+    cf?.city ||
+    req.headers.get('CF-IPCity') ||
+    req.headers.get('X-Vercel-IP-City') ||
+    req.headers.get('X-Geo-City') ||
+    ''
+  ).trim().slice(0, 64);
+
+  const upperCode = rawCountry.toUpperCase();
+  const countryLabel = upperCode === 'XX' ? '' : (COUNTRY_NAMES[upperCode] || rawCountry);
+  const parts: string[] = [];
+  for (const seg of [countryLabel, rawRegion, rawCity]) {
+    const clean = seg.trim();
+    if (clean && !parts.includes(clean)) parts.push(clean);
+  }
+  if (parts.length > 0) {
+    return { country: countryLabel || upperCode, region: rawRegion, city: rawCity, location: parts.join(' · ') };
+  }
+  if (isLocalOrPrivateIp(ip)) {
+    return { country: 'LOCAL', region: '', city: '', location: '本地 / 内网' };
+  }
+  return { country: '', region: '', city: '', location: '未知地区' };
+}
+
+/** 从 User-Agent 及 Client Hints 识别设备形态、操作系统与浏览器。 */
+function parseVisitorDevice(req: Request): { device: string; os: string; browser: string; userAgent: string } {
+  const ua = (req.headers.get('User-Agent') || '').trim().slice(0, 300);
+  const chMobile = req.headers.get('Sec-CH-UA-Mobile') === '?1';
+  const isBot = /bot|spider|crawl|slurp|curl|wget|python-requests|go-http-client|headless|lighthouse/i.test(ua);
+
+  let os = '未知系统';
+  if (/HarmonyOS/i.test(ua)) os = 'HarmonyOS';
+  else if (/iPad/i.test(ua)) os = 'iPadOS';
+  else if (/iPhone|iPod/i.test(ua)) os = 'iOS';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Windows NT/i.test(ua)) os = 'Windows';
+  else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+  else if (/Linux|X11/i.test(ua)) os = 'Linux';
+  else if (isBot) os = '脚本/爬虫';
+
+  let device = '桌面端';
+  if (isBot) device = '爬虫/脚本';
+  else if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) device = '平板';
+  else if (chMobile || /Mobile|iPhone|iPod|Android.*Mobile|Windows Phone/i.test(ua)) device = '手机';
+  else if (!ua) device = '未知设备';
+
+  let browser = '其它客户端';
+  if (/MicroMessenger/i.test(ua)) browser = '微信';
+  else if (/QQBrowser|MQQBrowser/i.test(ua)) browser = 'QQ 浏览器';
+  else if (/EdgA|EdgiOS|Edg\//i.test(ua)) browser = 'Edge';
+  else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+  else if (/Firefox|FxiOS/i.test(ua)) browser = 'Firefox';
+  else if (/CriOS|Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser = 'Chrome';
+  else if (/Safari\//i.test(ua) && !/Chrome|Chromium|CriOS|Edg/i.test(ua)) browser = 'Safari';
+  else if (/curl\//i.test(ua)) browser = 'curl';
+  else if (isBot) browser = 'Bot';
+
+  return { device, os, browser, userAgent: ua };
+}
+
+type VisitLogRow = { id: number; day: string; ip: string; location: string; device: string; os: string; browser: string; visited_at: string };
+
+async function readRecentVisitLogs(db: D1Database, limit = 30): Promise<VisitLogRow[]> {
+  try {
+    const { results } = await db.prepare('SELECT id,day,ip,location,device,os,browser,visited_at FROM visit_logs ORDER BY id DESC LIMIT ?')
+      .bind(limit).all<VisitLogRow>();
+    return results || [];
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('no such table')) return [];
+    throw err;
+  }
+}
+
 export async function handleAdminRoute(req: Request, env: Env): Promise<Response | null> {
   const url = new URL(req.url), path = url.pathname, db = env.DB;
   if (path === '/api/public-settings' && req.method === 'GET') {
@@ -61,8 +196,23 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
   }
   if (path === '/api/visit' && req.method === 'POST') {
     if (!originOk(req)) return json({error:'请求来源不匹配'},403);
+    const nowIso = new Date().toISOString();
     const day = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0,10);
-    await db.prepare('INSERT INTO daily_page_visits(day,page_views) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET page_views=page_views+1').bind(day).run();
+    const ip = extractClientIp(req);
+    const geo = extractVisitorGeo(req, ip);
+    const dev = parseVisitorDevice(req);
+    const writeDaily = db.prepare('INSERT INTO daily_page_visits(day,page_views) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET page_views=page_views+1').bind(day);
+    const writeLog = db.prepare('INSERT INTO visit_logs(day,ip,country,region,city,location,device,os,browser,user_agent,visited_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(day, ip, geo.country, geo.region, geo.city, geo.location, dev.device, dev.os, dev.browser, dev.userAgent, nowIso);
+    try {
+      await db.batch([writeDaily, writeLog]);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('no such table')) {
+        await writeDaily.run();
+      } else {
+        throw err;
+      }
+    }
     return new Response(null,{status:204,headers});
   }
   if (path === '/api/shop-favorite' && req.method === 'POST') {
@@ -98,8 +248,175 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
   if (path === '/api/control/visits' && req.method === 'GET') {
     const day = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0,10);
     const start = new Date(Date.now() + 8 * 60 * 60 * 1000 - 29 * 86400000).toISOString().slice(0,10);
-    const {results} = await db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC').bind(start,day).all<{day:string;page_views:number}>();
-    return json({today:day,todayViews:results.find(r=>r.day===day)?.page_views || 0,days:results});
+    const [{results}, recentLogs] = await Promise.all([
+      db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC').bind(start,day).all<{day:string;page_views:number}>(),
+      readRecentVisitLogs(db, 30),
+    ]);
+    return json({
+      today:day,
+      todayViews:results.find(r=>r.day===day)?.page_views || 0,
+      days:results,
+      recentLogs: recentLogs.map(r => ({
+        id: r.id, day: r.day, ip: r.ip, location: r.location,
+        device: r.device, os: r.os, browser: r.browser, visitedAt: r.visited_at,
+      })),
+    });
+  }
+  if (path === '/api/control/overview' && req.method === 'GET') {
+    const nowMs = Date.now();
+    const bjNow = nowMs + 8 * 60 * 60 * 1000;
+    const today = new Date(bjNow).toISOString().slice(0,10);
+    const yesterday = new Date(bjNow - 86400000).toISOString().slice(0,10);
+    const start7 = new Date(bjNow - 6 * 86400000).toISOString().slice(0,10);
+    const start30 = new Date(bjNow - 29 * 86400000).toISOString().slice(0,10);
+    const since24h = new Date(nowMs - 86400000).toISOString();
+    const since7d = new Date(nowMs - 7 * 86400000).toISOString();
+    const caps = await getShopColumnCapabilities(db);
+    const src = shopReadSource(caps);
+
+    const [visitRes, recentLogs, shopSummary, systemRes, catalogSummary, brandRes, rankSummary, openUrlRow, syncRunsRes, cfg] = await Promise.all([
+      db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC')
+        .bind(start30, today).all<{day:string;page_views:number}>(),
+      readRecentVisitLogs(db, 30),
+      db.prepare(`SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock,
+        COALESCE(SUM(CASE WHEN product_count = 0 THEN 1 ELSE 0 END), 0) AS empty,
+        COALESCE(SUM(CASE WHEN sync_supported = 1 THEN 1 ELSE 0 END), 0) AS sync_supported,
+        COALESCE(SUM(CASE WHEN sync_state = 'ready' THEN 1 ELSE 0 END), 0) AS ready,
+        COALESCE(SUM(CASE WHEN sync_state = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN sync_state = 'error' THEN 1 ELSE 0 END), 0) AS error,
+        COALESCE(SUM(CASE WHEN sync_state = 'manual' THEN 1 ELSE 0 END), 0) AS manual,
+        COALESCE(SUM(CASE WHEN last_synced_at IS NULL THEN 1 ELSE 0 END), 0) AS never_synced,
+        COALESCE(SUM(CASE WHEN last_synced_at >= ? THEN 1 ELSE 0 END), 0) AS synced_24h,
+        COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS added_7d,
+        COALESCE(SUM(CASE WHEN trim(submitted_integration_code) != '' THEN 1 ELSE 0 END), 0) AS with_code,
+        COALESCE(SUM(product_count), 0) AS total_shop_products
+        FROM ${src}`).bind(since24h, since7d).first<Record<string, number>>(),
+      db.prepare(`SELECT
+        effective_system_type AS system_type,
+        COUNT(*) AS shop_count,
+        COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock_count,
+        COALESCE(SUM(product_count), 0) AS product_count
+        FROM ${src} GROUP BY effective_system_type ORDER BY shop_count DESC`).all<{system_type:string;shop_count:number;in_stock_count:number;product_count:number}>(),
+      db.prepare(`SELECT
+        COUNT(*) AS group_count,
+        COALESCE(SUM(offer_count), 0) AS offer_count,
+        COALESCE(SUM(CASE WHEN stock_status = 'low' THEN 1 ELSE 0 END), 0) AS low_stock_groups,
+        MIN(min_price) AS min_price,
+        AVG(min_price) AS avg_min_price
+        FROM product_groups`).first<{group_count:number;offer_count:number;low_stock_groups:number;min_price:number|null;avg_min_price:number|null}>(),
+      db.prepare(`SELECT
+        brand_group AS brand,
+        COUNT(*) AS group_count,
+        COALESCE(SUM(offer_count), 0) AS offer_count,
+        MIN(min_price) AS min_price
+        FROM product_groups GROUP BY brand_group ORDER BY offer_count DESC, group_count DESC LIMIT 8`).all<{brand:string;group_count:number;offer_count:number;min_price:number|null}>(),
+      db.prepare(`SELECT
+        COALESCE(SUM(CASE WHEN manual_rank IS NOT NULL THEN 1 ELSE 0 END), 0) AS manual_ranked_count,
+        COALESCE(SUM(favorite_count), 0) AS total_favorites,
+        COALESCE(SUM(CASE WHEN favorite_count > 0 THEN 1 ELSE 0 END), 0) AS favorited_shop_count
+        FROM shop_rank_settings`).first<{manual_ranked_count:number;total_favorites:number;favorited_shop_count:number}>(),
+      db.prepare('SELECT COUNT(*) AS cnt FROM open_store_urls').first<{cnt:number}>(),
+      db.prepare('SELECT id,trigger_source,processed_count,skipped_unchanged,updated_count,failed_count,estimated_d1_writes,created_at FROM sync_runs ORDER BY created_at DESC LIMIT 5').all<{id:string;trigger_source:string;processed_count:number;skipped_unchanged:number;updated_count:number;failed_count:number;estimated_d1_writes:number;created_at:string}>(),
+      settings(db),
+    ]);
+
+    const visitDays = visitRes.results || [];
+    const todayViews = visitDays.find(r => r.day === today)?.page_views || 0;
+    const yesterdayViews = visitDays.find(r => r.day === yesterday)?.page_views || 0;
+    const last7DaysViews = visitDays.filter(r => r.day >= start7).reduce((sum, r) => sum + Number(r.page_views || 0), 0);
+    const last30DaysViews = visitDays.reduce((sum, r) => sum + Number(r.page_views || 0), 0);
+    let peakDay: { day: string; pageViews: number } | null = null;
+    for (const row of visitDays) {
+      if (!peakDay || Number(row.page_views || 0) > peakDay.pageViews) {
+        peakDay = { day: row.day, pageViews: Number(row.page_views || 0) };
+      }
+    }
+
+    const s = shopSummary || {};
+    const totalShops = Number(s.total || 0);
+    const readyShops = Number(s.ready || 0);
+
+    return json({
+      visits: {
+        today,
+        todayViews,
+        yesterdayViews,
+        last7DaysViews,
+        last30DaysViews,
+        activeDays30: visitDays.length,
+        avgDailyViews: visitDays.length > 0 ? Math.round((last30DaysViews / visitDays.length) * 10) / 10 : 0,
+        peakDay,
+        days: visitDays.map(r => ({ day: r.day, pageViews: Number(r.page_views || 0) })),
+        recentLogs: recentLogs.map(r => ({
+          id: r.id,
+          day: r.day,
+          ip: r.ip,
+          location: r.location,
+          device: r.device,
+          os: r.os,
+          browser: r.browser,
+          visitedAt: r.visited_at,
+        })),
+      },
+      shops: {
+        total: totalShops,
+        inStock: Number(s.in_stock || 0),
+        empty: Number(s.empty || 0),
+        syncSupported: Number(s.sync_supported || 0),
+        ready: readyShops,
+        pending: Number(s.pending || 0),
+        error: Number(s.error || 0),
+        manual: Number(s.manual || 0),
+        neverSynced: Number(s.never_synced || 0),
+        synced24h: Number(s.synced_24h || 0),
+        added7d: Number(s.added_7d || 0),
+        withCode: Number(s.with_code || 0),
+        totalShopProducts: Number(s.total_shop_products || 0),
+        healthRate: totalShops > 0 ? Math.round((readyShops / totalShops) * 1000) / 10 : 0,
+      },
+      systems: (systemRes.results || []).map(row => ({
+        systemType: row.system_type || 'unknown',
+        label: SHOP_SYSTEMS[(row.system_type || 'unknown') as keyof typeof SHOP_SYSTEMS] || row.system_type || '未知',
+        shopCount: Number(row.shop_count || 0),
+        inStockCount: Number(row.in_stock_count || 0),
+        productCount: Number(row.product_count || 0),
+      })),
+      catalog: {
+        groupCount: Number(catalogSummary?.group_count || 0),
+        offerCount: Number(catalogSummary?.offer_count || 0),
+        lowStockGroups: Number(catalogSummary?.low_stock_groups || 0),
+        minPrice: catalogSummary?.min_price ?? null,
+        avgMinPrice: catalogSummary?.avg_min_price != null ? Math.round(Number(catalogSummary.avg_min_price) * 100) / 100 : null,
+        brands: (brandRes.results || []).map(row => ({
+          brand: row.brand || '其它',
+          groupCount: Number(row.group_count || 0),
+          offerCount: Number(row.offer_count || 0),
+          minPrice: row.min_price ?? null,
+        })),
+      },
+      operations: {
+        manualRankedCount: Number(rankSummary?.manual_ranked_count || 0),
+        totalFavorites: Number(rankSummary?.total_favorites || 0),
+        favoritedShopCount: Number(rankSummary?.favorited_shop_count || 0),
+        openStoreUrlCount: Number(openUrlRow?.cnt || 0),
+        favoritesEnabled: !!cfg.favorites_enabled,
+        manualRankEnabled: !!cfg.manual_rank_enabled,
+        submissionsEnabled: !!cfg.submissions_enabled,
+        ingestConfigured: !!(cfg.ingest_hash || env.INGEST_SECRET),
+      },
+      recentSyncs: (syncRunsRes.results || []).map(row => ({
+        id: row.id,
+        triggerSource: row.trigger_source,
+        processedCount: Number(row.processed_count || 0),
+        skippedUnchanged: Number(row.skipped_unchanged || 0),
+        updatedCount: Number(row.updated_count || 0),
+        failedCount: Number(row.failed_count || 0),
+        estimatedD1Writes: Number(row.estimated_d1_writes || 0),
+        createdAt: row.created_at,
+      })),
+    });
   }
   if (path === '/api/control/rank-shops' && req.method === 'GET') {
     const q=(url.searchParams.get('q') || '').trim().slice(0,120).toLowerCase();

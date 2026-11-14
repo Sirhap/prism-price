@@ -25,10 +25,12 @@ describe('后台和店铺排名', () => {
   expect((await SELF.fetch(origin+'/api/control/settings',{headers:{cookie}})).status).toBe(200);
   expect((await post('/api/control/shop-details',{shopId:'admin-test-a',integrationCode:'Lucky plus',favoriteCount:7})).status).toBe(401);
   expect((await SELF.fetch(origin+'/api/control/visits')).status).toBe(401);
-  expect((await post('/api/visit',{})).status).toBe(204);
-  expect((await post('/api/visit',{})).status).toBe(204);
-  const visits=await (await SELF.fetch(origin+'/api/control/visits',{headers:{cookie}})).json() as {todayViews:number;days:Array<{day:string;page_views:number}>};
+  expect((await SELF.fetch(origin+'/api/visit',{method:'POST',headers:{...headers(),'CF-Connecting-IP':'203.0.113.8','CF-IPCountry':'CN','CF-IPCity':'Beijing','User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'},body:'{}'})).status).toBe(204);
+  expect((await SELF.fetch(origin+'/api/visit',{method:'POST',headers:{...headers(),'X-Real-IP':'127.0.0.1','User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'},body:'{}'})).status).toBe(204);
+  const visits=await (await SELF.fetch(origin+'/api/control/visits',{headers:{cookie}})).json() as {todayViews:number;days:Array<{day:string;page_views:number}>;recentLogs:Array<{ip:string;location:string;device:string;os:string;browser:string}>};
   expect(visits.todayViews).toBe(2);expect(visits.days[0].page_views).toBe(2);
+  expect(visits.recentLogs[0]).toMatchObject({ip:'127.0.0.1',location:'本地 / 内网',device:'桌面端',os:'macOS',browser:'Chrome'});
+  expect(visits.recentLogs[1]).toMatchObject({ip:'203.0.113.8',location:'中国 · Beijing',device:'手机',os:'iOS',browser:'Safari'});
   expect((await SELF.fetch(origin+'/api/control/sync-shops')).status).toBe(401);
   const syncList=await (await SELF.fetch(origin+'/api/control/sync-shops',{headers:{cookie}})).json() as {shops:Array<{id:string}>};
   expect(syncList.shops.some(s=>s.id==='admin-test-a')).toBe(true);
@@ -120,6 +122,38 @@ describe('后台和店铺排名', () => {
   expect(preview.items[0].shopBonus).toBeGreaterThan(0); expect(preview.items[0].textScore).toBeGreaterThan(0);
   await env.DB.prepare('UPDATE product_groups SET shop_count=100 WHERE group_key=?').bind('rank-cheap').run();
   expect((await get('relevance')).items[0].minPrice).toBe(10);
+ });
+ it('工作台综合指标接口需鉴权且准确汇总访问、店铺、商品、平台与同步记录', async () => {
+  expect((await SELF.fetch(origin+'/api/control/overview')).status).toBe(401);
+  await env.DB.prepare("UPDATE shops SET sync_state='ready',last_synced_at=? WHERE id='admin-test-a'").bind(new Date().toISOString()).run();
+  await env.DB.prepare("INSERT INTO sync_runs(id,trigger_source,processed_count,skipped_unchanged,updated_count,failed_count,estimated_d1_writes,details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+   .bind('run-overview-1','manual',3,1,2,0,45,'{"secret":"hidden"}','2026-03-02T10:00:00.000Z').run();
+  const res = await SELF.fetch(origin+'/api/control/overview',{headers:{cookie}});
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  expect(text).not.toContain('hidden');
+  const overview = JSON.parse(text) as {
+   visits: { todayViews: number; last30DaysViews: number; days: Array<{ day: string; pageViews: number }>; recentLogs: Array<{ ip: string; location: string; device: string }> };
+   shops: { total: number; ready: number; inStock: number; synced24h: number; totalShopProducts: number };
+   systems: Array<{ systemType: string; shopCount: number }>;
+   catalog: { groupCount: number; offerCount: number; brands: Array<{ brand: string; groupCount: number; offerCount: number }> };
+   operations: { manualRankedCount: number; openStoreUrlCount: number; ingestConfigured: boolean };
+   recentSyncs: Array<{ id: string; triggerSource: string; processedCount: number; updatedCount: number }>;
+  };
+  expect(overview.visits.todayViews).toBeGreaterThanOrEqual(2);
+  expect(overview.visits.last30DaysViews).toBeGreaterThanOrEqual(2);
+  expect(overview.visits.recentLogs.length).toBeGreaterThanOrEqual(2);
+  expect(overview.visits.recentLogs[1]).toMatchObject({ ip: '203.0.113.8', location: '中国 · Beijing', device: '手机' });
+  expect(overview.shops.total).toBeGreaterThanOrEqual(2);
+  expect(overview.shops.ready).toBeGreaterThanOrEqual(1);
+  expect(overview.shops.synced24h).toBeGreaterThanOrEqual(1);
+  expect(overview.shops.totalShopProducts).toBeGreaterThanOrEqual(7);
+  expect(overview.systems.reduce((sum, item) => sum + item.shopCount, 0)).toBe(overview.shops.total);
+  expect(overview.catalog.groupCount).toBeGreaterThanOrEqual(2);
+  expect(overview.catalog.brands.some(b => b.brand === 'ChatGPT')).toBe(true);
+  expect(overview.operations.manualRankedCount).toBeGreaterThanOrEqual(1);
+  expect(overview.operations.ingestConfigured).toBe(true);
+  expect(overview.recentSyncs[0]).toMatchObject({ id: 'run-overview-1', triggerSource: 'manual', processedCount: 3, updatedCount: 2 });
  });
  it('密钥轮换生效且不回显，修改密码后旧会话失效', async () => {
   const nextSecret='isolated-new-secret-123456789';
