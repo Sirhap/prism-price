@@ -23,6 +23,16 @@
 
 ---
 
+## Screenshots (Live Production UI)
+
+| Bilingual Search Workbench (English) | Multi-Store Price Comparison (ChatGPT) |
+| :---: | :---: |
+| <img src="docs/images/desktop-home-en.png" alt="PRISM Parity English homepage showing AI subscription search, brand radar sidebar, and live index stats" /> | <img src="docs/images/desktop-home-zh.png" alt="PRISM Parity Chinese comparison view expanding 103 ChatGPT Plus store quotes side by side with official price reference" /> |
+| **Store Directory & Integration Codes** | **Mobile Responsive View (`390px`)** |
+| <img src="docs/images/desktop-shops-codes.png" alt="PRISM Parity store directory filtered by public integration codes, system type badges, and product counts" /> | <img src="docs/images/mobile-home-zh.png" width="240" alt="PRISM Parity mobile responsive layout showing two-row masthead, mode switch, search box, and compact 3-column metrics" /> |
+
+---
+
 ## Core Capabilities
 
 - **Normalized Multi-Store Price Aggregation (`product_groups`)**: Parses raw product titles and categories via configurable regex rule sets ([`src/config/brand-rules.json`](src/config/brand-rules.json)), splitting brand, form factor (ready account / top-up & redeem code / API relay / SMS verification), tier (`Plus`, `Pro`, `Team`, `Max 5x`, `Max 20x`, `Ultra`), duration, warranty, and region into comparable SKUs.

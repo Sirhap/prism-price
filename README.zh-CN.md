@@ -24,6 +24,16 @@
 
 ---
 
+## 实际网页截图
+
+| 英文双语首页（IP 自动切换 / 实时聚合工作台） | 同款多店比价明细（展开多店横向对比与官网参考价） |
+| :---: | :---: |
+| <img src="docs/images/desktop-home-en.png" alt="棱镜比价英文版桌面端首页，展示 AI 订阅检索、品牌品类雷达侧栏与全站统计指标" /> | <img src="docs/images/desktop-home-zh.png" alt="棱镜比价中文版 ChatGPT 比价视图，展开 103 家同款店铺报价明细、当前最低价与官网参考价对比" /> |
+| **看收录店铺与对接码筛选** | **手机端响应式适配（`390px` 视口）** |
+| <img src="docs/images/desktop-shops-codes.png" alt="棱镜比价收录店铺列表，展示一键复制店铺对接码、卡网系统标识与在售分类统计" /> | <img src="docs/images/mobile-home-zh.png" width="240" alt="棱镜比价手机端响应式布局，展示双行防溢出顶栏、双模式切换、检索框与 3 列紧凑统计卡" /> |
+
+---
+
 ## 核心能力与技术亮点
 
 - **同款规格归一化与多店聚合（`product_groups`）**：通过可配置正则规则（[`src/config/brand-rules.json`](src/config/brand-rules.json)）清洗商品名称与店铺分类，拆分品牌、商品形态（成品账号 / 代充兑换码 / API 中转 / 接码服务）、套餐档位、时长、质保、是否接码与地区属性，实现跨店横向比价。
