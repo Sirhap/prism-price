@@ -33,7 +33,8 @@
         } catch {}
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=20261113-push-only2" />
+    <link rel="stylesheet" href="/styles.css?v=20261115-mobile1" />
+    <script src="/i18n.js?v=20261115-i18n" defer></script>
   </head>
   <body>
     <!-- 极光与透视晶格背景层 -->
@@ -58,23 +59,23 @@
           </span>
           <span class="wordmark-text">
             <span class="wordmark-title-row">
-              <strong>棱镜比价</strong>
+              <strong data-i18n="home.brandName">棱镜比价</strong>
               <span class="wordmark-tag">PRISM</span>
             </span>
-            <small>AI 与数字权益多店行情雷达</small>
+            <small data-i18n="home.brandSub">AI 与数字权益多店行情雷达</small>
           </span>
         </a>
 
         <div class="masthead-actions">
-          <button id="workbenchBtn" class="nav-pill" type="button" title="打开收藏夹与同台对比工作台">
+          <button id="workbenchBtn" class="nav-pill" type="button" title="打开收藏夹与同台对比工作台" data-i18n-title="home.workbenchTitle">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3l2.6 5.3 5.9.8-4.3 4.1 1 5.8L12 16.2 6.8 19l1-5.8-4.3-4.1 5.9-.8L12 3z"></path>
             </svg>
-            <span>收藏<span class="hide-xs">与对比</span></span>
+            <span><span data-i18n="home.workbenchPrefix">收藏</span><span class="hide-xs" data-i18n="home.workbenchSub">与对比</span></span>
             <em id="workbenchBadge" class="nav-pill-badge" hidden>0</em>
           </button>
 
-          <button id="themeToggleBtn" class="nav-pill nav-pill-icon" type="button" aria-label="切换浅色/深色主题" title="切换浅色/深色主题">
+          <button id="themeToggleBtn" class="nav-pill nav-pill-icon" type="button" aria-label="切换浅色/深色主题" title="切换浅色/深色主题" data-i18n-aria="home.themeAria" data-i18n-title="home.themeAria">
             <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="4"></circle>
               <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
@@ -84,7 +85,11 @@
             </svg>
           </button>
 
-          <button id="submitShopBtn" class="nav-pill submit-shop-nav" type="button">添加收录店铺</button>
+          <button id="langToggleBtn" class="nav-pill lang-pill" type="button" data-lang-toggle aria-label="Switch to English" title="Switch to English">EN</button>
+
+          <span class="masthead-break" aria-hidden="true"></span>
+
+          <button id="submitShopBtn" class="nav-pill submit-shop-nav" type="button" data-i18n="home.submitShop">添加收录店铺</button>
 
           <a
             class="masthead-cta"
@@ -94,7 +99,7 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
             </svg>
-            <span>我想开店</span>
+            <span data-i18n="home.openStoreCta">我想开店</span>
             <span aria-hidden="true">↗</span>
           </a>
         </div>
@@ -105,7 +110,7 @@
         <div class="spotlight-top-bar">
           <div class="eyebrow">
             <span class="live-dot" aria-hidden="true"></span>
-            <span>PRISM LIVE INDEX · 多源同款实时聚合引擎</span>
+            <span data-i18n="home.eyebrow">PRISM LIVE INDEX · 多源同款实时聚合引擎</span>
           </div>
 
           <div class="mode-tabs" role="tablist" aria-label="检索视图模式">
@@ -115,7 +120,7 @@
                 <polyline points="2 17 12 22 22 17"></polyline>
                 <polyline points="2 12 12 17 22 12"></polyline>
               </svg>
-              <span>找商品比价</span>
+              <span data-i18n="home.tabProducts">找商品比价</span>
               <small id="tabProductCount">0</small>
             </button>
             <button type="button" class="mode-tab" id="shopTab" data-mode="shop" aria-controls="shopView" role="tab" aria-selected="false">
@@ -124,24 +129,24 @@
                 <path d="M3 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"></path>
                 <path d="M5 12v8h14v-8"></path>
               </svg>
-              <span>看收录店铺</span>
+              <span data-i18n="home.tabShops">看收录店铺</span>
               <small id="tabShopCount">0</small>
             </button>
           </div>
         </div>
 
         <div class="spotlight-headline">
-          <h1>AI 订阅与数字商品，<span>多店报价一目了然</span></h1>
-          <p class="subtitle">
+          <h1 data-i18n-html="home.heroHeadlineHtml">AI 订阅与数字商品，<span>多店报价一目了然</span></h1>
+          <p class="subtitle" data-i18n="home.heroSubtitle">
             聚合公开店铺的 AI 订阅、API 中转与数字商品报价，支持按品牌、规格和价格筛选。本站仅提供信息检索，实际价格与库存请以店铺页面为准。
           </p>
-          <button id="heroKunEgg" class="hero-kun-egg" type="button" aria-label="打开鸡哥比价彩蛋">🐔 两年半比价练习生 <span aria-hidden="true">· 🏀</span></button>
+          <button id="heroKunEgg" class="hero-kun-egg" type="button" aria-label="打开鸡哥比价彩蛋" data-i18n="home.kunEgg" data-i18n-aria="home.kunEggAria">🐔 两年半比价练习生 <span aria-hidden="true">· 🏀</span></button>
         </div>
 
         <!-- 聚光灯指挥舱搜索框 -->
         <div class="spotlight-command-box">
           <form id="searchForm" class="search-row" role="search">
-            <label for="searchInput" class="sr-only">搜索商品、分类或店铺</label>
+            <label for="searchInput" class="sr-only" data-i18n="home.searchLabel">搜索商品、分类或店铺</label>
             <div class="search-input-wrap">
               <svg class="search-leading-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="8"></circle>
@@ -151,22 +156,23 @@
                 id="searchInput"
                 type="search"
                 placeholder="搜索 ChatGPT Plus、Claude Pro、Codex、美区，或输入店铺名称…"
+                data-i18n-placeholder="home.searchPlaceholderProduct"
                 maxlength="480"
                 aria-describedby="searchHint"
                 autocomplete="off"
               />
               <kbd class="search-kbd" title="按 / 键快速聚焦搜索框" aria-hidden="true">/</kbd>
-              <button id="clearSearchBtn" class="search-clear-btn" type="button" aria-label="清空搜索词" hidden>×</button>
+              <button id="clearSearchBtn" class="search-clear-btn" type="button" aria-label="清空搜索词" data-i18n-aria="home.clearSearchAria" hidden>×</button>
             </div>
 
             <div class="search-controls-group">
-              <select id="sortSelect" aria-label="排序方式">
-                <option value="relevance">默认热度（按相关度 / 店铺数）</option>
-                <option value="price-asc">最低价从低到高</option>
-                <option value="updated-desc">最近更新</option>
+              <select id="sortSelect" aria-label="排序方式" data-i18n-aria="home.sortLabel">
+                <option value="relevance" data-i18n="home.sortRelevance">默认热度（按相关度 / 店铺数）</option>
+                <option value="price-asc" data-i18n="home.sortPriceAsc">最低价从低到高</option>
+                <option value="updated-desc" data-i18n="home.sortUpdatedDesc">最近更新</option>
               </select>
               <button class="search-submit" type="submit" aria-busy="false">
-                <span class="search-submit-label">立即检索</span>
+                <span class="search-submit-label" data-i18n="home.searchBtn">立即检索</span>
                 <span class="search-spinner" aria-hidden="true" hidden></span>
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -177,10 +183,10 @@
           </form>
 
           <div class="search-assist-row">
-            <p id="searchHint" class="search-hint">输入后点击“立即检索”或按回车查询 · 支持空格分词</p>
+            <p id="searchHint" class="search-hint" data-i18n="home.searchHint">输入后点击“立即检索”或按回车查询 · 支持空格分词</p>
             <div class="search-assist-tools">
               <div id="hotQueries" class="hot-queries" aria-label="热门快捷搜索"></div>
-              <button id="shareFiltersBtn" class="quick-chip share-link-chip" type="button" title="复制当前筛选链接">
+              <button id="shareFiltersBtn" class="quick-chip share-link-chip" type="button" title="复制当前筛选链接" data-i18n-title="home.shareFiltersTitle">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="18" cy="5" r="3"></circle>
                   <circle cx="6" cy="12" r="3"></circle>
@@ -188,7 +194,7 @@
                   <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
                   <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                 </svg>
-                <span>分享筛选</span>
+                <span data-i18n="home.shareFilters">分享筛选</span>
               </button>
             </div>
           </div>
@@ -205,7 +211,7 @@
               </svg>
             </span>
             <div class="metric-copy">
-              <span>已收录店铺</span>
+              <span data-i18n="home.metricShops">已收录店铺</span>
               <strong id="shopCount">—</strong>
             </div>
           </div>
@@ -219,7 +225,7 @@
               </svg>
             </span>
             <div class="metric-copy">
-              <span>同款商品组</span>
+              <span data-i18n="home.metricGroups">同款商品组</span>
               <strong id="groupCount">—</strong>
             </div>
           </div>
@@ -231,7 +237,7 @@
               </svg>
             </span>
             <div class="metric-copy">
-              <span>实时监测报价</span>
+              <span data-i18n="home.metricOffers">实时监测报价</span>
               <strong id="offerCount">—</strong>
             </div>
           </div>
@@ -250,7 +256,7 @@
                   <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
                 </svg>
               </span>
-              <strong>品牌与品类雷达</strong>
+              <strong data-i18n="home.brandRailTitle">品牌与品类雷达</strong>
             </div>
             <div id="brandChips" class="brand-chips" aria-label="品牌分组"></div>
           </aside>
@@ -261,35 +267,35 @@
               <!-- 看店铺筛选条 -->
               <div id="shopControlsWrap" class="shop-controls" hidden>
                 <label class="filter-field">
-                  <span>卡网系统类型</span>
+                  <span data-i18n="home.shopSystemLabel">卡网系统类型</span>
                   <select id="shopSystemSelect" aria-label="卡网系统类型筛选">
-                    <option value="all">全部系统</option>
+                    <option value="all" data-i18n="home.shopAllSystems">全部系统</option>
                   </select>
                 </label>
                 <label class="shop-stock-filter" for="shopOnlyInStockInput">
                   <input id="shopOnlyInStockInput" type="checkbox" />
-                  <span>仅看有收录商品</span>
+                  <span data-i18n="home.shopOnlyInStock">仅看有收录商品</span>
                 </label>
                 <label class="shop-stock-filter" for="shopHasIntegrationCodeInput">
                   <input id="shopHasIntegrationCodeInput" type="checkbox" />
-                  <span>仅看有对接码</span>
+                  <span data-i18n="home.shopHasCode">仅看有对接码</span>
                 </label>
-                <button id="shopResetFiltersBtn" class="quick-chip quick-chip-reset" type="button" hidden>清空筛选</button>
-                <span class="shop-system-note">域名未匹配平台的店铺暂归为“第三方自建站（待确认）”</span>
+                <button id="shopResetFiltersBtn" class="quick-chip quick-chip-reset" type="button" data-i18n="home.resetFilters" hidden>清空筛选</button>
+                <span class="shop-system-note" data-i18n="home.shopSystemNote">域名未匹配平台的店铺暂归为“第三方自建站（待确认）”</span>
               </div>
 
               <!-- 找商品筛选条 -->
               <div id="productControlsWrap" class="product-controls-wrap">
                 <div id="primaryFilters" class="filter-selects"></div>
                 <div class="custom-price-range" aria-label="自定义价格区间">
-                  <span class="custom-price-label">自定义 ¥</span>
-                  <input id="customMinPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最低" aria-label="自定义最低价格" />
+                  <span class="custom-price-label" data-i18n="home.customPriceLabel">自定义 ¥</span>
+                  <input id="customMinPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最低" data-i18n-placeholder="home.customMinPlaceholder" aria-label="自定义最低价格" data-i18n-aria="home.customMinAria" />
                   <span class="custom-price-sep">~</span>
-                  <input id="customMaxPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最高" aria-label="自定义最高价格" />
-                  <button id="applyCustomPriceBtn" class="quick-chip" type="button">应用</button>
+                  <input id="customMaxPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最高" data-i18n-placeholder="home.customMaxPlaceholder" aria-label="自定义最高价格" data-i18n-aria="home.customMaxAria" />
+                  <button id="applyCustomPriceBtn" class="quick-chip" type="button" data-i18n="home.applyBtn">应用</button>
                 </div>
                 <div class="filter-actions">
-                  <button id="resetFiltersBtn" class="quick-chip quick-chip-reset" type="button" hidden>清空筛选</button>
+                  <button id="resetFiltersBtn" class="quick-chip quick-chip-reset" type="button" data-i18n="home.resetFilters" hidden>清空筛选</button>
                 </div>
               </div>
 
@@ -302,12 +308,12 @@
             <!-- 结果状态栏与单/双列视图切换器 -->
             <div class="results-toolbar">
               <div class="results-status-group">
-                <span id="resultStatus" role="status" aria-live="polite">正在加载行情目录…</span>
-                <span class="results-note">点击卡片报价可直查商家档案与同步状态 · 实际价格以店铺页为准</span>
+                <span id="resultStatus" role="status" aria-live="polite" data-i18n="home.resultLoading">正在加载行情目录…</span>
+                <span class="results-note" data-i18n="home.resultNote">点击卡片报价可直查商家档案与同步状态 · 实际价格以店铺页为准</span>
               </div>
 
               <div id="viewLayoutSwitch" class="view-mode-switch" role="group" aria-label="列表布局切换">
-                <button type="button" id="viewListBtn" class="view-mode-btn is-active" data-view-mode="list" title="单列票据详情流" aria-pressed="true">
+                <button type="button" id="viewListBtn" class="view-mode-btn is-active" data-view-mode="list" title="单列票据详情流" data-i18n-title="home.viewListTitle" aria-pressed="true">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <line x1="8" y1="6" x2="21" y2="6"></line>
                     <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -316,23 +322,23 @@
                     <line x1="3" y1="12" x2="3.01" y2="12"></line>
                     <line x1="3" y1="18" x2="3.01" y2="18"></line>
                   </svg>
-                  <span>单列</span>
+                  <span data-i18n="home.viewList">单列</span>
                 </button>
-                <button type="button" id="viewGridBtn" class="view-mode-btn" data-view-mode="grid" title="双列卡片网格" aria-pressed="false">
+                <button type="button" id="viewGridBtn" class="view-mode-btn" data-view-mode="grid" title="双列卡片网格" data-i18n-title="home.viewGridTitle" aria-pressed="false">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="3" y="3" width="7" height="7" rx="1"></rect>
                     <rect x="14" y="3" width="7" height="7" rx="1"></rect>
                     <rect x="14" y="14" width="7" height="7" rx="1"></rect>
                     <rect x="3" y="14" width="7" height="7" rx="1"></rect>
                   </svg>
-                  <span>双列</span>
+                  <span data-i18n="home.viewGrid">双列</span>
                 </button>
               </div>
             </div>
 
             <div id="requestMessage" class="request-message" role="alert" hidden>
               <span></span>
-              <button id="retryBtn" class="btn" type="button">重试</button>
+              <button id="retryBtn" class="btn" type="button" data-i18n="home.retry">重试</button>
             </div>
 
             <!-- 视图 1：找商品（票据式比价卡片流 / 双列网格） -->
@@ -340,18 +346,18 @@
               <aside id="officialPriceAnchor" class="ref-price-banner" role="note" hidden></aside>
               <div id="productList" class="product-list"></div>
               <div id="loadMoreWrap" class="load-more-wrap" hidden>
-                <button id="loadMoreBtn" class="btn btn-secondary" type="button">显示更多商品</button>
+                <button id="loadMoreBtn" class="btn btn-secondary" type="button" data-i18n="home.loadMoreProducts">显示更多商品</button>
               </div>
-              <p id="productEmpty" class="empty-tip" hidden>暂无匹配商品，可尝试调整搜索词或清空筛选条件。</p>
+              <p id="productEmpty" class="empty-tip" data-i18n="home.productEmpty" hidden>暂无匹配商品，可尝试调整搜索词或清空筛选条件。</p>
             </section>
 
             <!-- 视图 2：看店铺（商家名片橱窗） -->
             <section id="shopView" role="tabpanel" aria-labelledby="shopTab" hidden>
               <div id="shopList" class="shop-grid"></div>
               <div id="shopLoadMoreWrap" class="load-more-wrap" hidden>
-                <button id="shopLoadMoreBtn" class="btn btn-secondary" type="button">显示更多店铺</button>
+                <button id="shopLoadMoreBtn" class="btn btn-secondary" type="button" data-i18n="home.loadMoreShops">显示更多店铺</button>
               </div>
-              <p id="shopEmpty" class="empty-tip" hidden>暂无匹配店铺。</p>
+              <p id="shopEmpty" class="empty-tip" data-i18n="home.shopEmpty" hidden>暂无匹配店铺。</p>
             </section>
           </div>
         </div>
@@ -361,76 +367,77 @@
         <div class="site-footer-brand">
           <span class="footer-prism-dot" aria-hidden="true"></span>
           <strong>棱镜比价 PRISM RADAR</strong>
-          <button id="kunEggBtn" class="copy-inline-btn" type="button" title="鸡哥的小彩蛋：点击轮换；空白处输入 IKUN 试试" aria-label="打开鸡哥坤坤彩蛋">🐔 · 练习时长两年半</button>
-          <span>· 公开店铺收录与同款价格参考</span>
+          <button id="kunEggBtn" class="copy-inline-btn" type="button" title="鸡哥的小彩蛋：点击轮换；空白处输入 IKUN 试试" aria-label="打开鸡哥坤坤彩蛋" data-i18n="home.footerKunBtn">🐔 · 练习时长两年半</button>
+          <span data-i18n="home.footerBrandSub">· 公开店铺收录与同款价格参考</span>
         </div>
         <div class="site-footer-links">
-          <a class="site-footer-link" href="/about/">关于棱镜比价</a>
-          <a class="site-footer-link" href="/guide/">比价使用指南</a>
-          <a class="site-footer-link" href="/catalog/brands/">品牌目录</a>
-          <a class="site-footer-link" href="/catalog/integration-codes/">店铺对接码</a>
-          <a class="site-footer-link" href="/catalog/shops/">店铺目录</a>
-          <a class="site-footer-link" href="/catalog/products/">商品目录</a>
+          <a class="site-footer-link" href="/about/" data-i18n="home.footerAbout">关于棱镜比价</a>
+          <a class="site-footer-link" href="/guide/" data-i18n="home.footerGuide">比价使用指南</a>
+          <a class="site-footer-link" href="/catalog/brands/" data-i18n="home.footerBrands">品牌目录</a>
+          <a class="site-footer-link" href="/catalog/integration-codes/" data-i18n="home.footerCodes">店铺对接码</a>
+          <a class="site-footer-link" href="/catalog/shops/" data-i18n="home.footerShops">店铺目录</a>
+          <a class="site-footer-link" href="/catalog/products/" data-i18n="home.footerProducts">商品目录</a>
           <a
             class="site-footer-link"
             data-open-store
             href="/go/open-store"
             target="_blank"
             rel="noopener noreferrer"
+            data-i18n="home.footerOpenStore"
           >店铺开店入驻 ↗</a>
         </div>
-        <p class="site-disclaimer" role="note"><strong>免责声明：</strong>本站仅做公开店铺信息收录，不参与交易，也不对店铺商品、售后和风险负责。使用前请自行甄别。</p>
+        <p class="site-disclaimer" role="note" data-i18n-html="home.disclaimerHtml"><strong>免责声明：</strong>本站仅做公开店铺信息收录，不参与交易，也不对店铺商品、售后和风险负责。使用前请自行甄别。</p>
       </footer>
     </main>
 
     <!-- 底部同台比价浮条 -->
     <aside id="compareBar" class="compare-dock" aria-label="同台比价清单" hidden>
       <div class="compare-dock-info">
-        <strong>同台比价清单</strong>
+        <strong data-i18n="home.compareDockTitle">同台比价清单</strong>
         <span id="compareDockItems" class="compare-dock-items"></span>
       </div>
       <div class="compare-dock-actions">
-        <button id="openCompareModalBtn" class="btn btn-primary btn-compact" type="button"><span>立即对比 (<em id="compareDockCount" style="font-style: normal">0</em>/4)</span></button>
-        <button id="clearCompareBtn" class="btn btn-compact" type="button">清空</button>
+        <button id="openCompareModalBtn" class="btn btn-primary btn-compact" type="button"><span data-i18n-html="home.compareNowHtml">立即对比 (<em id="compareDockCount" style="font-style: normal">0</em>/4)</span></button>
+        <button id="clearCompareBtn" class="btn btn-compact" type="button" data-i18n="home.clearBtn">清空</button>
       </div>
     </aside>
 
     <!-- 回到顶部悬浮按钮 -->
-    <button id="backToTopBtn" class="back-to-top" type="button" aria-label="回到页面顶部" title="回到顶部" hidden>↑</button>
+    <button id="backToTopBtn" class="back-to-top" type="button" aria-label="回到页面顶部" title="回到顶部" data-i18n-aria="home.backToTop" data-i18n-title="home.backToTop" hidden>↑</button>
 
     <!-- Toast 轻提示容器 -->
     <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
     <dialog id="openStoreGuide" class="open-store-guide" aria-label="开店与对接货源引导">
-      <header class="guide-modal-header"><div><p class="guide-kicker">OPEN STORE GUIDE</p><strong>开店与对接货源</strong></div><button type="button" class="guide-close" data-guide-close aria-label="关闭开店引导">×</button></header>
-      <nav class="guide-progress" aria-label="引导步骤"><button type="button" data-guide-step="0"><span>1</span>注册店铺</button><button type="button" data-guide-step="1"><span>2</span>查找货源</button><button type="button" data-guide-step="2"><span>3</span>对接货源</button></nav>
+      <header class="guide-modal-header"><div><p class="guide-kicker" data-i18n="home.guideKicker">OPEN STORE GUIDE</p><strong data-i18n="home.guideTitle">开店与对接货源</strong></div><button type="button" class="guide-close" data-guide-close aria-label="关闭开店引导" data-i18n-aria="home.guideCloseAria">×</button></header>
+      <nav class="guide-progress" aria-label="引导步骤"><button type="button" data-guide-step="0" data-i18n-html="home.guideStep1TabHtml"><span>1</span>注册店铺</button><button type="button" data-guide-step="1" data-i18n-html="home.guideStep2TabHtml"><span>2</span>查找货源</button><button type="button" data-guide-step="2" data-i18n-html="home.guideStep3TabHtml"><span>3</span>对接货源</button></nav>
       <div class="guide-content" id="guideContent">
-        <section data-guide-page="0"><p class="guide-step-label">第一步 / 注册店铺</p><h2 id="guideStepTitle">先开一家自己的店</h2><p id="guideStepDescription">前往联动小铺，按平台提示完成注册和店铺设置。注册完成后，回来继续下一步。</p><div class="guide-highlight"><span aria-hidden="true">✦</span><div><strong>准备好开始了吗？</strong><p>注册页面将在新标签页打开。</p></div><a href="/go/open-store" target="_blank" rel="noopener noreferrer" class="guide-primary">前往注册 ↗</a></div><small>注册、费用及经营规则以第三方平台实际说明为准。</small></section>
-        <section data-guide-page="1" hidden><p class="guide-step-label">第二步 / 查找货源</p><h2>找到有对接码的店铺</h2><p>切换到“看收录店铺”，勾选“仅看有对接码”，点击合适店铺的对接码即可复制。</p><div class="guide-how"><div><b>1</b><span>看收录店铺</span></div><div><b>2</b><span>仅看有对接码</span></div><div><b>3</b><span>点击复制对接码</span></div></div><button type="button" class="guide-secondary" data-guide-find>查看有对接码的店铺 ↗</button><small>引导会折叠在页面下方，找到并复制对接码后可直接继续。请自行核实货源商的价格与售后。</small></section>
-        <section data-guide-page="2" hidden><p class="guide-step-label">第三步 / 对接货源</p><h2>在商家后台输入对接码</h2><p>打开联动小铺商家后台，选择“货源 → 我要对接货源”，粘贴对接码并搜索货源商，再按平台提示完成关联。</p><figure><img src="/open-store-guide/connect-supplier.png" alt="货源页面中输入对接码并搜索货源商" loading="lazy"><figcaption>操作参考：货源 → 我要对接货源 → 搜索货源商</figcaption></figure><figure><img src="/open-store-guide/supplier-demo.png" alt="已关联货源商的演示图，所有交易数据均为虚构示例" loading="lazy"><figcaption>示意图：店铺和交易数据均为虚构示例，不代表实际成交。</figcaption></figure></section>
+        <section data-guide-page="0"><p class="guide-step-label" data-i18n="home.guideP1Label">第一步 / 注册店铺</p><h2 id="guideStepTitle" data-i18n="home.guideP1Title">先开一家自己的店</h2><p id="guideStepDescription" data-i18n="home.guideP1Desc">前往联动小铺，按平台提示完成注册和店铺设置。注册完成后，回来继续下一步。</p><div class="guide-highlight"><span aria-hidden="true">✦</span><div><strong data-i18n="home.guideP1ReadyTitle">准备好开始了吗？</strong><p data-i18n="home.guideP1ReadyDesc">注册页面将在新标签页打开。</p></div><a href="/go/open-store" target="_blank" rel="noopener noreferrer" class="guide-primary" data-i18n="home.guideP1Cta">前往注册 ↗</a></div><small data-i18n="home.guideP1Foot">注册、费用及经营规则以第三方平台实际说明为准。</small></section>
+        <section data-guide-page="1" hidden><p class="guide-step-label" data-i18n="home.guideP2Label">第二步 / 查找货源</p><h2 data-i18n="home.guideP2Title">找到有对接码的店铺</h2><p data-i18n="home.guideP2Desc">切换到“看收录店铺”，勾选“仅看有对接码”，点击合适店铺的对接码即可复制。</p><div class="guide-how"><div data-i18n-html="home.guideP2How1Html"><b>1</b><span>看收录店铺</span></div><div data-i18n-html="home.guideP2How2Html"><b>2</b><span>仅看有对接码</span></div><div data-i18n-html="home.guideP2How3Html"><b>3</b><span>点击复制对接码</span></div></div><button type="button" class="guide-secondary" data-guide-find data-i18n="home.guideP2Btn">查看有对接码的店铺 ↗</button><small data-i18n="home.guideP2Foot">引导会折叠在页面下方，找到并复制对接码后可直接继续。请自行核实货源商的价格与售后。</small></section>
+        <section data-guide-page="2" hidden><p class="guide-step-label" data-i18n="home.guideP3Label">第三步 / 对接货源</p><h2 data-i18n="home.guideP3Title">在商家后台输入对接码</h2><p data-i18n="home.guideP3Desc">打开联动小铺商家后台，选择“货源 → 我要对接货源”，粘贴对接码并搜索货源商，再按平台提示完成关联。</p><figure><img src="/open-store-guide/connect-supplier.png" alt="货源页面中输入对接码并搜索货源商" loading="lazy"><figcaption data-i18n="home.guideP3Cap1">操作参考：货源 → 我要对接货源 → 搜索货源商</figcaption></figure><figure><img src="/open-store-guide/supplier-demo.png" alt="已关联货源商的演示图，所有交易数据均为虚构示例" loading="lazy"><figcaption data-i18n="home.guideP3Cap2">示意图：店铺和交易数据均为虚构示例，不代表实际成交。</figcaption></figure></section>
       </div>
-      <footer class="guide-modal-footer"><span id="guideStepCount" aria-live="polite">01 / 03</span><div><button type="button" class="guide-back" data-guide-back>上一步</button><button type="button" class="guide-primary" data-guide-next>下一步 →</button></div></footer>
+      <footer class="guide-modal-footer"><span id="guideStepCount" aria-live="polite">01 / 03</span><div><button type="button" class="guide-back" data-guide-back data-i18n="home.guideBack">上一步</button><button type="button" class="guide-primary" data-guide-next data-i18n="home.guideNext">下一步 →</button></div></footer>
     </dialog>
 
     <div id="guideSpotlightShade" class="guide-spotlight-shade" hidden aria-hidden="true"></div>
     <aside id="guideFloating" class="guide-floating" hidden aria-label="开店引导进行中">
-      <div class="guide-floating-top"><span>开店引导 · 02 / 03</span><button type="button" data-guide-float-close aria-label="退出开店引导">×</button></div>
-      <strong>已为你筛选有对接码的店铺</strong><p>点击店铺名称旁的对接码复制，完成后继续下一步。</p>
-      <div class="guide-floating-actions"><button type="button" class="guide-back" data-guide-float-back>返回引导</button><button type="button" class="guide-primary" data-guide-float-next>下一步 →</button></div>
+      <div class="guide-floating-top"><span data-i18n="home.guideFloatTitle">开店引导 · 02 / 03</span><button type="button" data-guide-float-close aria-label="退出开店引导" data-i18n-aria="home.guideCloseAria">×</button></div>
+      <strong data-i18n="home.guideFloatHeading">已为你筛选有对接码的店铺</strong><p data-i18n="home.guideFloatDesc">点击店铺名称旁的对接码复制，完成后继续下一步。</p>
+      <div class="guide-floating-actions"><button type="button" class="guide-back" data-guide-float-back data-i18n="home.guideFloatBack">返回引导</button><button type="button" class="guide-primary" data-guide-float-next data-i18n="home.guideFloatNext">下一步 →</button></div>
     </aside>
 
     <dialog id="submitShopDialog" class="submit-shop-dialog" aria-labelledby="submitShopTitle">
       <form id="submitShopForm">
-        <div class="submit-shop-heading"><h2 id="submitShopTitle">添加收录店铺</h2><button type="button" id="closeSubmitShop" aria-label="关闭">×</button></div>
-        <p>填写公开的卡网商家或第三方店铺网址，提交后将加入店铺列表。</p>
-        <label for="submitShopUrl">店铺网址</label>
+        <div class="submit-shop-heading"><h2 id="submitShopTitle" data-i18n="home.submitTitle">添加收录店铺</h2><button type="button" id="closeSubmitShop" aria-label="关闭" data-i18n-aria="home.profileCloseAria">×</button></div>
+        <p data-i18n="home.submitDesc">填写公开的卡网商家或第三方店铺网址，提交后将加入店铺列表。</p>
+        <label for="submitShopUrl" data-i18n="home.submitUrlLabel">店铺网址</label>
         <input id="submitShopUrl" type="url" placeholder="https://example.com/shop/…" required maxlength="2048" />
-        <label for="submitIntegrationCode">分销码 / 对接码（选填）</label>
-        <input id="submitIntegrationCode" type="text" maxlength="128" placeholder="例如：Lucky plus" autocomplete="off" />
-        <p class="submit-shop-hint">支持的平台提交后自动同步，其他店铺可能需要人工适配。</p>
+        <label for="submitIntegrationCode" data-i18n="home.submitCodeLabel">分销码 / 对接码（选填）</label>
+        <input id="submitIntegrationCode" type="text" maxlength="128" placeholder="例如：Lucky plus" data-i18n-placeholder="home.submitCodePlaceholder" autocomplete="off" />
+        <p class="submit-shop-hint" data-i18n="home.submitHint">支持的平台提交后自动同步，其他店铺可能需要人工适配。</p>
         <p id="submitShopResult" role="status" aria-live="polite"></p>
-        <button type="button" id="previewShopNetwork" class="btn btn-secondary" hidden>重试同步</button>
-        <div class="submit-shop-actions"><button type="button" id="confirmShopBack" hidden>返回修改</button><button class="btn btn-primary" id="submitShopNext" type="submit">确认</button></div>
+        <button type="button" id="previewShopNetwork" class="btn btn-secondary" data-i18n="home.submitPreviewRetry" hidden>重试同步</button>
+        <div class="submit-shop-actions"><button type="button" id="confirmShopBack" data-i18n="home.submitBack" hidden>返回修改</button><button class="btn btn-primary" id="submitShopNext" type="submit" data-i18n="home.submitConfirm">确认</button></div>
       </form>
     </dialog>
 
@@ -438,8 +445,8 @@
     <div id="profileModal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-        <a class="profile-open-store" href="/go/open-store" target="_blank" rel="noopener noreferrer">我想开店 ↗</a>
-        <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗">×</button>
+        <a class="profile-open-store" href="/go/open-store" target="_blank" rel="noopener noreferrer" data-i18n="home.profileOpenStore">我想开店 ↗</a>
+        <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" data-i18n-aria="home.profileCloseAria">×</button>
         <div id="profileBody"></div>
       </div>
     </div>
@@ -448,18 +455,18 @@
     <div id="workbenchModal" class="modal" hidden>
       <div class="modal-backdrop" data-close-workbench></div>
       <div class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="workbenchModalTitle">
-        <button class="modal-close" type="button" data-close-workbench aria-label="关闭工作台">×</button>
+        <button class="modal-close" type="button" data-close-workbench aria-label="关闭工作台" data-i18n-aria="home.profileCloseAria">×</button>
         <div class="workbench-header">
-          <h2 id="workbenchModalTitle">收藏与同台对比</h2>
+          <h2 id="workbenchModalTitle" data-i18n="home.workbenchTitleHeader">收藏与同台对比</h2>
           <div class="workbench-tabs" role="tablist">
-            <button type="button" class="workbench-tab is-active" data-wb-tab="compare" role="tab" aria-selected="true">同台比价 <small id="wbCompareCount">0</small></button>
-            <button type="button" class="workbench-tab" data-wb-tab="favorites" role="tab" aria-selected="false">我的收藏 <small id="wbFavCount">0</small></button>
+            <button type="button" class="workbench-tab is-active" data-wb-tab="compare" role="tab" aria-selected="true" data-i18n-html="home.workbenchCompareTabHtml">同台比价 <small id="wbCompareCount">0</small></button>
+            <button type="button" class="workbench-tab" data-wb-tab="favorites" role="tab" aria-selected="false" data-i18n-html="home.workbenchFavTabHtml">我的收藏 <small id="wbFavCount">0</small></button>
           </div>
         </div>
         <div id="workbenchBody" class="workbench-body"></div>
       </div>
     </div>
 
-    <script src="/app.js?v=20261113-push-only2" defer></script>
+    <script src="/app.js?v=20261115-i18n" defer></script>
   </body>
 </html>

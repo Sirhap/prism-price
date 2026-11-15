@@ -300,6 +300,14 @@ body {
   justify-content: center;
 }
 
+.lang-pill {
+  font-family: var(--font-mono);
+  min-width: 44px;
+  padding: 6px 11px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+}
+
 .nav-pill-badge {
   font-style: normal;
   font-family: var(--font-mono);
@@ -2630,16 +2638,53 @@ html[data-theme="dark"] .toast-item {
   }
 }
 
+.masthead-break {
+  display: none;
+}
+
 @media (max-width: 760px) {
-  .layout {
-    padding: 10px 12px 64px;
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
   }
 
+  .layout {
+    padding: 8px 10px 88px;
+  }
+
+  /* 移动端顶栏取消吸顶以让出首屏空间，并稳健拆成工具行 + 双主按钮行 */
   .masthead {
-    top: 6px;
-    border-radius: 18px;
-    padding: 8px 10px;
+    position: static;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 6px;
+    border-radius: 16px;
+    padding: 9px 10px;
+    margin-bottom: 12px;
+  }
+
+  .wordmark {
+    order: 1;
+    margin-right: auto;
+    min-width: 0;
     gap: 8px;
+  }
+
+  .wordmark-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .wordmark-mark svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .wordmark-text strong {
+    font-size: 14.5px;
   }
 
   .wordmark-text small,
@@ -2649,92 +2694,314 @@ html[data-theme="dark"] .toast-item {
   }
 
   .masthead-actions {
-    gap: 5px;
-    flex-wrap: nowrap;
+    display: contents;
   }
 
-  .nav-pill,
-  .masthead-cta {
+  #workbenchBtn,
+  #themeToggleBtn,
+  #langToggleBtn {
+    order: 2;
+    min-height: 32px;
     padding: 5px 9px;
-    font-size: 11.5px;
+    font-size: 12px;
     white-space: nowrap;
   }
 
+  #themeToggleBtn {
+    padding: 5px 7px;
+  }
+
+  .masthead-break {
+    display: block;
+    flex-basis: 100%;
+    height: 0;
+    order: 3;
+  }
+
+  .submit-shop-nav,
+  .masthead-cta {
+    order: 4;
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  /* 聚光灯 Hero 与模式切换 */
   .spotlight-hero {
-    padding: 18px 14px 16px;
+    padding: 14px 12px 12px;
+    margin-bottom: 12px;
     border-radius: var(--radius-lg);
   }
 
   .spotlight-top-bar {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
   }
 
   .eyebrow {
     justify-content: center;
+    font-size: 10px;
+    padding: 4px 10px;
+    text-align: center;
   }
 
   .mode-tabs {
     width: 100%;
+    padding: 3px;
+    gap: 3px;
   }
 
   .mode-tab {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     justify-content: center;
+    padding: 8px 6px;
+    font-size: 12.5px;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .mode-tab svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  .mode-tab small {
+    padding: 1px 6px;
+    font-size: 10.5px;
+  }
+
+  .spotlight-headline h1 {
+    font-size: clamp(21px, 6.2vw, 28px);
+    margin: 10px 0 6px;
+  }
+
+  .subtitle {
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin-bottom: 8px;
+  }
+
+  .hero-kun-egg {
+    font-size: 11.5px;
+    padding: 4px 10px;
+  }
+
+  /* 搜索与排序舱：隐藏无用的 / 键位提示，严控最小宽度防撑出卡片，防 iOS 聚焦放大 */
+  .spotlight-command-box {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    padding: 10px;
+    border-radius: 16px;
+    margin-top: 8px;
   }
 
   .search-row {
-    grid-template-columns: 1fr;
-  }
-
-  .search-controls-group {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    width: 100%;
-  }
-
-  .topbar-metrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     gap: 8px;
   }
 
+  .search-input-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-leading-icon {
+    left: 13px;
+  }
+
+  .search-row input[type="search"] {
+    width: 100%;
+    min-width: 0;
+    font-size: 16px;
+    padding: 10px 38px 10px 40px;
+  }
+
+  .search-kbd {
+    display: none;
+  }
+
+  .search-controls-group {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-controls-group select {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 13px;
+    padding: 8px 26px 8px 10px;
+    min-height: 40px;
+  }
+
+  .search-controls-group .search-submit {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  #sortSelect[hidden] + .search-submit {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .search-assist-row {
+    margin-top: 8px;
+    gap: 8px;
+  }
+
+  .search-hint {
+    font-size: 11.5px;
+  }
+
+  .hot-queries {
+    gap: 5px;
+  }
+
+  .hot-query-btn,
+  .share-link-chip {
+    padding: 4px 9px;
+    font-size: 11.5px;
+  }
+
+  /* 三联指标压缩为单行 3 等列，极大提升首屏可见度 */
+  .topbar-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding-top: 10px;
+    margin-top: 10px;
+  }
+
+  .metric-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    padding: 8px 6px;
+    border-radius: 12px;
+    min-width: 0;
+  }
+
+  .metric-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .metric-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .metric-copy {
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+  }
+
+  .metric-copy span {
+    font-size: 10.5px;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .metric-copy strong {
+    font-size: 17px;
+    line-height: 1.15;
+  }
+
+  /* 品牌雷达与主筛选条 */
+  .workspace-grid {
+    gap: 12px;
+  }
+
+  .brand-rail {
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  .controls-bar {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
   .product-controls-wrap {
-    display: contents;
-  }
-
-  .product-controls-wrap .custom-price-range {
-    grid-column: 1 / -1;
-  }
-
-  .product-controls-wrap .filter-actions {
-    grid-column: 1;
-    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
   }
 
   .filter-selects {
     width: 100%;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .filter-field {
     min-width: 0;
   }
 
-  .custom-price-range {
+  .filter-field select,
+  .shop-controls select {
     width: 100%;
-    justify-content: space-between;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .custom-price-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 8px;
+  }
+
+  .custom-price-label {
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .custom-price-range input[type="number"] {
-    flex: 1;
-    width: auto;
+    flex: 1 1 0;
+    width: 0;
     min-width: 0;
+    font-size: 16px;
+    padding: 5px 7px;
   }
 
-  .controls-bar {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 10px;
+  .custom-price-range .quick-chip {
+    flex-shrink: 0;
+    padding: 6px 12px;
+  }
+
+  .product-controls-wrap .filter-actions {
+    display: flex;
+    justify-content: flex-start;
   }
 
   .controls-bar > .more-filters-panel,
@@ -2744,22 +3011,85 @@ html[data-theme="dark"] .toast-item {
     margin-top: 0;
   }
 
+  .facet-note-bar,
+  .filter-notice-bar {
+    font-size: 11.5px;
+    line-height: 1.5;
+    padding: 8px 10px;
+  }
+
   .shop-controls {
     grid-column: 1 / -1;
     align-items: stretch;
+    gap: 8px;
   }
 
   .shop-controls .filter-field {
     width: 100%;
   }
 
+  .shop-stock-filter {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+  }
+
   .shop-system-note {
     margin-left: 0;
     width: 100%;
+    font-size: 11.5px;
+  }
+
+  /* 移动端强制单列显示，隐藏无效的双列切换器 */
+  .view-mode-switch {
+    display: none;
+  }
+
+  .list-toolbar {
+    gap: 6px;
+  }
+
+  /* 商品卡片与展开报价抽屉 */
+  .product-row {
+    border-radius: 16px;
   }
 
   .product-summary {
     grid-template-columns: 1fr;
+  }
+
+  .product-main-cell {
+    padding: 13px 14px 11px;
+    gap: 10px;
+  }
+
+  .product-title {
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .product-meta-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .group-toggle {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .row-mini-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .row-mini-actions .mini-icon-btn {
+    justify-content: center;
+    min-height: 32px;
   }
 
   .price-ticket {
@@ -2769,7 +3099,8 @@ html[data-theme="dark"] .toast-item {
     justify-content: space-between;
     align-items: center;
     text-align: left;
-    padding: 12px 16px 12px 20px;
+    padding: 10px 14px;
+    gap: 8px;
   }
 
   .price-ticket::before,
@@ -2779,57 +3110,273 @@ html[data-theme="dark"] .toast-item {
 
   .price-col {
     align-items: flex-start;
+    font-size: 19px;
+  }
+
+  .lead-shop-col {
+    max-width: 52%;
+    min-width: 0;
+    text-align: right;
+  }
+
+  .offer-hint {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .offer-panel {
+    padding: 10px;
+    gap: 8px;
   }
 
   .offer-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "shop price"
+      "action action";
+    gap: 8px 10px;
+    padding: 10px 11px;
+    align-items: center;
+  }
+
+  .offer-shop-cell {
+    grid-area: shop;
+    min-width: 0;
   }
 
   .offer-price-cell {
-    text-align: left;
+    grid-area: price;
+    text-align: right;
+    align-self: start;
   }
 
   .offer-action-cell {
-    justify-content: flex-start;
+    grid-area: action;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
   }
 
+  /* 店铺卡片：把操作区定位到右上角，释放标题下方徽章全宽空间 */
   .shop-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .shop-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .shop-card-top {
+    position: relative;
+    display: block;
+  }
+
+  .shop-identity {
+    display: block;
+    min-width: 0;
+  }
+
+  .shop-avatar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .shop-title-wrap {
+    min-width: 0;
+  }
+
+  .shop-name-line {
+    padding-left: 46px;
+    padding-right: 98px;
+    min-height: 36px;
+    margin-bottom: 8px;
+    align-items: center;
+    gap: 4px 8px;
+  }
+
+  .shop-name-line h3 {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .shop-quick-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    gap: 4px;
+  }
+
+  .shop-quick-actions .mini-icon-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .shop-badges {
+    gap: 5px;
+  }
+
+  .badge,
+  .integration-code {
+    max-width: 100%;
+    font-size: 11px;
+  }
+
+  .integration-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .integration-code code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .integration-code svg,
+  .badge svg {
+    flex-shrink: 0;
+  }
+
+  .shop-url-row {
+    gap: 6px;
+  }
+
+  .shop-url-text {
+    font-size: 11.5px;
   }
 
   .signal-grid {
     grid-template-columns: 1fr;
   }
 
+  /* 模态弹窗与工作台 */
+  .modal {
+    padding: 8px;
+  }
+
   .modal-dialog {
-    padding: 18px 16px;
+    padding: 16px 14px;
+    border-radius: 18px;
+    max-height: 88dvh;
+  }
+
+  #profileBody {
+    padding-top: 30px;
+  }
+
+  .profile-open-store {
+    top: 16px;
+    right: 52px;
+    font-size: 12.5px;
   }
 
   .profile-visit-btn {
     width: 100%;
   }
 
+  .workbench-header {
+    padding-right: 38px;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .workbench-tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workbench-tab {
+    justify-content: center;
+    padding: 7px 6px;
+    font-size: 12px;
+  }
+
+  .submit-shop-dialog {
+    width: calc(100vw - 20px);
+    padding: 18px 16px;
+  }
+
+  .submit-shop-dialog input {
+    font-size: 16px;
+  }
+
+  /* 页脚、同台比价浮条、回顶部按钮与 Toast */
+  .site-footer {
+    margin-top: 24px;
+    padding: 16px 6px 8px;
+    gap: 10px;
+  }
+
   .site-footer-sep {
     display: none;
   }
 
+  .site-footer-links {
+    gap: 6px 12px;
+  }
+
   .compare-dock {
-    bottom: 12px;
-    border-radius: 18px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: calc(100vw - 16px);
+    border-radius: 16px;
     padding: 10px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .compare-dock-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
+  .compare-dock-actions .btn-primary {
+    justify-content: center;
   }
 
   .back-to-top {
-    right: 14px;
-    bottom: 76px;
+    width: 38px;
+    height: 38px;
+    right: 12px;
+    bottom: 16px;
+    font-size: 15px;
+    background: var(--surface-glass);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 
+  /* 移动端 Toast 放在顶部居中，不遮挡卡片标题与操作按钮 */
   .toast-stack {
-    top: 64px;
-    right: 14px;
-    left: 14px;
-    align-items: flex-end;
+    top: 10px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    align-items: center;
+    width: max-content;
+    max-width: calc(100vw - 24px);
   }
 }
 
@@ -2838,44 +3385,26 @@ html[data-theme="dark"] .toast-item {
     display: none;
   }
 
-  .masthead {
-    padding: 6px 8px;
-    gap: 6px;
-  }
-
-  .wordmark {
-    gap: 6px;
-  }
-
-  .wordmark-mark {
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-  }
-
-  .wordmark-mark svg {
-    width: 17px;
-    height: 17px;
-  }
-
   .wordmark-text strong {
     font-size: 13.5px;
   }
 
-  .masthead-actions {
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .nav-pill,
-  .masthead-cta {
-    padding: 5px 7px;
-    font-size: 11px;
+  .mode-tab {
+    font-size: 11.5px;
+    padding: 8px 4px;
     gap: 4px;
   }
 
-  .nav-pill-icon {
-    padding: 5px 6px;
+  .mode-tab svg {
+    display: none;
+  }
+
+  .metric-copy span {
+    font-size: 10px;
+  }
+
+  .metric-copy strong {
+    font-size: 16px;
   }
 }
 

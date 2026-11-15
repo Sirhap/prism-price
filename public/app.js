@@ -47,8 +47,43 @@ const GROUP_DISPLAY_NAMES = {
   工具教程: "工具与教程",
 };
 
+function isEn() {
+  return window.PrismI18n ? window.PrismI18n.isEn() : document.documentElement.lang === "en";
+}
+
+function L(zh, en) {
+  return isEn() ? en : zh;
+}
+
+const GROUP_DISPLAY_NAMES_EN = {
+  智谱: "Zhipu AI",
+  千问: "Qwen",
+  AI视频: "AI Video",
+  AI绘图: "AI Image",
+  AI音乐: "AI Music",
+  AI创作: "AI Video / Creative",
+  中转: "API Relay",
+  虚拟卡: "Virtual Cards",
+  代理IP: "Proxy / IP",
+  邮箱账号: "Email Accounts",
+  平台账号: "Platform Accounts",
+  影音会员: "Streaming",
+  社交会员: "Social Media",
+  网盘服务: "Cloud Drive",
+  手机卡: "SIM Cards",
+  接码服务: "SMS Verification",
+  云手机: "Cloud Phones",
+  游戏商品: "Gaming",
+  生活优惠: "Lifestyle Deals",
+  软件工具: "Software & Tools",
+  数字素材: "Digital Assets",
+  工具教程: "Tools & Guides",
+  其它: "Others",
+};
+
 const GROUP_CANONICAL_MAP = new Map([
   ...BRAND_GROUP_ORDER.map((group) => [group.toLowerCase(), group]),
+  ...Object.entries(GROUP_DISPLAY_NAMES_EN).map(([group, enLabel]) => [enLabel.toLowerCase(), group]),
   ["ai 视频 / 创作", "AI创作"],
   ["ai视频/创作", "AI创作"],
   ["中转额度", "中转"],
@@ -103,6 +138,17 @@ const FILTER_DIMENSIONS = [
   },
 ];
 
+const FILTER_SHORT_LABELS_EN = {
+  type: "Type",
+  plan: "Plan",
+  duration: "Duration",
+};
+
+function formatFilterShortLabel(key, fallback = "") {
+  if (isEn() && FILTER_SHORT_LABELS_EN[key]) return FILTER_SHORT_LABELS_EN[key];
+  return fallback || FILTER_DIMENSIONS.find((d) => d.key === key)?.shortLabel || key;
+}
+
 const PRICE_OPTIONS = [
   { value: "under-10", label: "10 元以下" },
   { value: "10-50", label: "10 - 50 元" },
@@ -110,6 +156,14 @@ const PRICE_OPTIONS = [
   { value: "150-500", label: "150 - 500 元" },
   { value: "500-plus", label: "500 元及以上" },
 ];
+
+const PRICE_LABELS_EN = {
+  "under-10": "Under ¥10",
+  "10-50": "¥10 – ¥50",
+  "50-150": "¥50 – ¥150",
+  "150-500": "¥150 – ¥500",
+  "500-plus": "¥500+",
+};
 
 const SORT_OPTIONS = new Set(["relevance", "price-asc", "updated-desc"]);
 const SHOP_SORT_OPTIONS = new Set(["default", "products-desc", "sales-desc", "updated-desc"]);
@@ -123,6 +177,36 @@ const LIST_PAGE_SIZE = 6;
 
 const HOT_PRODUCT_QUERIES = ["ChatGPT", "Plus", "Pro", "Claude", "Codex", "Gemini", "API", "接码"];
 const HOT_SHOP_QUERIES = ["联动小铺", "源头", "对接码", "独角", "API"];
+
+const HOT_QUERY_LABELS_EN = {
+  接码: "SMS",
+  联动小铺: "LDXP",
+  源头: "Direct",
+  对接码: "Sync Code",
+  独角: "Dujiao",
+};
+
+const SHOP_SYSTEM_EN = {
+  ldxp: "LDXP",
+  catfk: "CatFK",
+  16688: "16688 Platform",
+  "acg-faka": "ACG Faka",
+  dujiaoka: "Dujiaoka",
+  other: "Other",
+  unknown: "Third-party (Unknown)",
+};
+
+const SHOP_SYSTEM_LABEL_EN = {
+  联动小铺: "LDXP",
+  "联动小铺 店铺": "LDXP Store",
+  云猫寄售: "CatFK",
+  "16688交易平台": "16688 Platform",
+  二次元发卡: "ACG Faka",
+  独角数卡: "Dujiaoka",
+  其它: "Other",
+  待识别: "Unknown",
+  "第三方自建站（待确认）": "Third-party (Unknown)",
+};
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #4f46e5, #7c3aed)",
@@ -268,6 +352,61 @@ const OFFICIAL_REFERENCE_PRICES = {
   },
 };
 
+const OFFICIAL_REFERENCE_PRICES_EN = {
+  ChatGPT: {
+    headline: "ChatGPT Official Reference",
+    plans: {
+      free: "Free tier (usage limits apply)",
+      plus: "Plus $20/mo (~¥143)",
+      pro: "Pro $200/mo (~¥1,430)",
+      team: "Team/Business $25–30/seat/mo",
+    },
+    defaultSummary: "Plus $20/mo (~¥143) · Team $25–30/seat/mo · Pro $200/mo (~¥1,430)",
+  },
+  Codex: {
+    headline: "Codex Official Reference",
+    plans: {
+      plus: "Included with ChatGPT Plus ($20/mo)",
+      pro: "Higher quota with ChatGPT Pro ($200/mo)",
+    },
+    defaultSummary: "Included in ChatGPT Plus ($20/mo) / Pro ($200/mo)",
+  },
+  Claude: {
+    headline: "Claude Official Reference",
+    plans: {
+      free: "Free tier (usage limits apply)",
+      pro: "Pro $20/mo (~¥143)",
+      pro5: "Max 5x $100/mo (~¥715)",
+      pro20: "Max 20x $200/mo (~¥1,430)",
+      team: "Team $25–30/seat/mo",
+    },
+    defaultSummary: "Pro $20/mo (~¥143) · Max 5x $100/mo · Max 20x $200/mo",
+  },
+  Gemini: {
+    headline: "Google AI / Gemini Official Reference",
+    plans: {
+      pro: "Google AI Pro $19.99/mo (~¥143)",
+      ultra: "Google AI Ultra $249.99/mo (~¥1,787)",
+    },
+    defaultSummary: "AI Pro $19.99/mo (~¥143) · AI Ultra $249.99/mo (~¥1,787)",
+  },
+  Cursor: {
+    headline: "Cursor Official Reference",
+    plans: {
+      free: "Hobby free trial (limited quota)",
+      pro: "Pro $20/mo (~¥143)",
+      ultra: "Ultra $200/mo (~¥1,430)",
+      team: "Teams $40/seat/mo",
+    },
+    defaultSummary: "Pro $20/mo (~¥143) · Pro+ $60/mo · Ultra $200/mo",
+  },
+  Grok: {
+    headline: "Grok / xAI Official Reference",
+    plans: {},
+    defaultSummary: "SuperGrok $30/mo (~¥215)",
+  },
+};
+
 /** 各操作触发零结果自愈时允许清理的下游维度（从最下游排到最上游） */
 const DOWNSTREAM_CLEAN_SCOPES = {
   q: ["price", "duration", "plan", "type", "group"],
@@ -321,16 +460,75 @@ const CARD_BADGE_LABELS = {
   },
 };
 
+const CARD_BADGE_LABELS_EN = {
+  type: {
+    ready: "Ready Account",
+    recharge: "Top-up / Redeem",
+    cdk: "Top-up / Redeem",
+    api: "API / Relay",
+    "sms-service": "SMS Verification",
+    tutorial: "Tutorial",
+  },
+  plan: {
+    free: "Free Tier",
+    plus: "Plus",
+    pro: "Pro",
+    ultra: "Ultra",
+    team: "Team / Business",
+    business: "Team / Business",
+    pro5: "Pro / Max 5x",
+    pro20: "Pro / Max 20x",
+  },
+  duration: {
+    day: "1 Day",
+    week: "1 Week",
+    month: "1 Month",
+    quarter: "Quarter",
+    "half-year": "6 Months",
+    year: "1 Year",
+  },
+  sms: {
+    done: "SMS Verified",
+    pending: "No SMS",
+  },
+  region: {
+    us: "US",
+    jp: "JP",
+    hk: "HK",
+    tw: "TW",
+    uk: "UK",
+    tr: "TR",
+    ph: "PH",
+    random: "Random Region",
+  },
+};
+
+function formatBadgeLabel(kind, value) {
+  if (!value) return "";
+  if (isEn()) return CARD_BADGE_LABELS_EN[kind]?.[value] || CARD_BADGE_LABELS[kind]?.[value] || "";
+  return CARD_BADGE_LABELS[kind]?.[value] || "";
+}
+
 const DIM_OPTION_LABEL_MAP = buildOptionLabelMap();
 
 const SHOP_RISK_NOTICE_TEXT =
   "本站仅做公开店铺信息收录，不参与交易，也不对店铺商品、售后和风险负责。使用前请自行甄别。";
+
+const SHOP_RISK_NOTICE_TEXT_EN =
+  "We only index public store listings. We do not facilitate transactions and assume no liability for products, support, or risks. Please verify carefully before purchasing.";
 
 const SHOP_SORT_LABELS = {
   default: "综合推荐",
   "products-desc": "收录商品最多",
   "sales-desc": "参考销量优先",
   "updated-desc": "最近更新优先",
+};
+
+const SHOP_SORT_LABELS_EN = {
+  default: "Recommended",
+  "products-desc": "Most items",
+  "sales-desc": "Top sales",
+  "updated-desc": "Recently updated",
 };
 
 const state = {
@@ -482,15 +680,15 @@ function safeUrl(rawUrl) {
 }
 
 function formatPrice(val) {
-  if (val === null || val === undefined || val === "") return "待确认";
+  if (val === null || val === undefined || val === "") return L("待确认", "TBD");
   const num = Number(val);
-  return Number.isFinite(num) ? `¥${num.toFixed(2)}` : "待确认";
+  return Number.isFinite(num) ? `¥${num.toFixed(2)}` : L("待确认", "TBD");
 }
 
 /**
  * 将 ISO 时间格式化为含年份的完整时间格式 YYYY-MM-DD HH:mm
  */
-function formatFullDateTime(iso, emptyText = "未记录") {
+function formatFullDateTime(iso, emptyText = L("未记录", "Not recorded")) {
   if (!iso) return emptyText;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
@@ -498,21 +696,22 @@ function formatFullDateTime(iso, emptyText = "未记录") {
 }
 
 function formatGroupLabel(groupKey) {
+  if (isEn()) return GROUP_DISPLAY_NAMES_EN[groupKey] || groupKey;
   return GROUP_DISPLAY_NAMES[groupKey] || groupKey;
 }
 
 function formatAdapterBadge(adapterType) {
-  if (adapterType === "push_ingest") return "推送收录";
-  if (adapterType === "manual") return "人工收录";
-  return "接口收录";
+  if (adapterType === "push_ingest") return L("推送收录", "Push Ingest");
+  if (adapterType === "manual") return L("人工收录", "Manual");
+  return L("接口收录", "API Sync");
 }
 
 function formatStockText(stockCount, stockStatus) {
   if (stockCount !== null && stockCount !== undefined) {
-    if (Number(stockCount) <= 0) return "采集时缺货，库存以店铺为准";
-    return `余 ${stockCount}`;
+    if (Number(stockCount) <= 0) return L("采集时缺货，库存以店铺为准", "Out of stock at sync; check store");
+    return L(`余 ${stockCount}`, `Stock ${stockCount}`);
   }
-  return "库存以店铺为准";
+  return L("库存以店铺为准", "Check store stock");
 }
 
 function normalizeGroupValue(raw) {
@@ -550,19 +749,38 @@ function formatCustomPriceSummary() {
   return "";
 }
 
+function formatFilterOptionLabel(key, value, fallbackLabel = "") {
+  if (key === "price") {
+    return (isEn() && PRICE_LABELS_EN[value]) || fallbackLabel || PRICE_OPTIONS.find((opt) => opt.value === value)?.label || value;
+  }
+  return formatBadgeLabel(key, value) || fallbackLabel || DIM_OPTION_LABEL_MAP[key]?.[value] || value;
+}
+
 function filterValueLabel(key, value) {
   if (key === "group") return formatGroupLabel(value);
-  if (key === "price") return PRICE_OPTIONS.find((opt) => opt.value === value)?.label || value;
+  if (key === "price") {
+    return (isEn() && PRICE_LABELS_EN[value]) || PRICE_OPTIONS.find((opt) => opt.value === value)?.label || value;
+  }
+  if (isEn()) return formatBadgeLabel(key, value) || DIM_OPTION_LABEL_MAP[key]?.[value] || value;
   return DIM_OPTION_LABEL_MAP[key]?.[value] || value;
 }
 
 function describeClearedFilter(key, value) {
-  if (key === "group") return `品牌（${formatGroupLabel(value)}）`;
-  if (key === "price") return `价格（${value === "custom" ? formatCustomPriceSummary() : filterValueLabel("price", value)}）`;
-  if (key === "shopSystemType") return `卡网系统（${state.shopSystemLabels[value] || value}）`;
+  if (key === "group") {
+    const groupLabel = formatGroupLabel(value);
+    return L(`品牌（${groupLabel}）`, `Brand (${groupLabel})`);
+  }
+  if (key === "price") {
+    const valText = value === "custom" ? formatCustomPriceSummary() : filterValueLabel("price", value);
+    return L(`价格（${valText}）`, `Price (${valText})`);
+  }
+  if (key === "shopSystemType") {
+    const sysText = formatShopSystemLabel(state.shopSystemLabels[value] || value, value);
+    return L(`卡网系统（${sysText}）`, `Platform (${sysText})`);
+  }
   const dim = FILTER_DIMENSIONS.find((item) => item.key === key);
   const label = filterValueLabel(key, value);
-  return dim ? `${dim.shortLabel}（${label}）` : label;
+  return dim ? L(`${dim.shortLabel}（${label}）`, `${formatFilterShortLabel(dim.key, dim.shortLabel)} (${label})`) : label;
 }
 
 /**
@@ -606,7 +824,7 @@ function renderFilterNotice() {
     return;
   }
   els.filterNoticeBar.hidden = false;
-  els.filterNoticeBar.innerHTML = `<span>${escapeHtml(state.filterNotice)}</span><button type="button" class="filter-notice-close" aria-label="关闭提示">×</button>`;
+  els.filterNoticeBar.innerHTML = `<span>${escapeHtml(state.filterNotice)}</span><button type="button" class="filter-notice-close" aria-label="${escapeHtml(L("关闭提示", "Dismiss notice"))}">×</button>`;
 }
 
 /** 显示全局右上角轻提示（最多保留 2 条，避免遮挡操作区） */
@@ -625,24 +843,31 @@ function showToast(message) {
 }
 
 /** 兼容旧版收藏及短缓存中的系统显示名称。 */
-function formatShopSystemLabel(label) {
-  return label || "第三方自建站（待确认）";
+function formatShopSystemLabel(label, systemKey = "") {
+  if (isEn()) {
+    if (systemKey && SHOP_SYSTEM_EN[systemKey]) return SHOP_SYSTEM_EN[systemKey];
+    if (label && SHOP_SYSTEM_LABEL_EN[label]) return SHOP_SYSTEM_LABEL_EN[label];
+  }
+  return label || L("第三方自建站（待确认）", "Third-party storefront (Unknown)");
 }
 
 /** 旧版收藏仍可能含联系信息，展示时同样隐藏。 */
 function hideSavedTelegram(text = "") {
-  return String(text).replace(/(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/[^\s<>"'，。；）)]+/gi, "[联系方式已隐藏]")
-    .replace(/(?<![\w.])@[A-Za-z0-9_]{4,32}\b/g, "[联系方式已隐藏]");
+  const hiddenTag = L("[联系方式已隐藏]", "[Contact hidden]");
+  return String(text).replace(/(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/[^\s<>"'，。；）)]+/gi, hiddenTag)
+    .replace(/(?<![\w.])@[A-Za-z0-9_]{4,32}\b/g, hiddenTag);
 }
 
 /** 对接码直接复制原始字符串，不附带标签或店名。 */
 function renderIntegrationCodes(codes) {
   return (Array.isArray(codes) ? codes : []).map((code) =>
-    `<button type="button" class="copy-inline-btn integration-code" aria-label="复制对接码 ${escapeHtml(code)}" data-copy-text="${escapeHtml(code)}" data-copy-label="对接码" title="点击复制对接码">对接码 <code>${escapeHtml(code)}</code> ⧉</button>`).join(" ");
+    `<button type="button" class="copy-inline-btn integration-code" aria-label="${escapeHtml(L("复制对接码 ", "Copy integration code "))}${escapeHtml(code)}" data-copy-text="${escapeHtml(code)}" data-copy-label="对接码" data-copy-label-i18n="integrationCode" title="${escapeHtml(L("点击复制对接码", "Click to copy integration code"))}">${escapeHtml(L("对接码", "Code"))} <code>${escapeHtml(code)}</code> ⧉</button>`).join(" ");
 }
 
 /** 复制文本并给出反馈 */
-async function copyTextWithFeedback(text, label = "内容") {
+async function copyTextWithFeedback(text, label = "") {
+  const tr = typeof L === "function" ? L : (zh) => zh;
+  const labelText = label || tr("内容", "content");
   const content = String(text || "").trim();
   if (!content) return;
   try {
@@ -660,10 +885,12 @@ async function copyTextWithFeedback(text, label = "内容") {
       textarea.remove();
       if (!copied) throw new Error("Copy rejected");
     }
-    showToast(`已复制${label}`);
-    if (label === '对接码') document.dispatchEvent(new CustomEvent('integration-code-copied'));
+    showToast(tr(`已复制${labelText}`, `Copied ${labelText}`));
+    if (labelText === "对接码" || labelText === "integration code") {
+      document.dispatchEvent(new CustomEvent("integration-code-copied"));
+    }
   } catch {
-    showToast(`复制${label}失败，请手动复制`);
+    showToast(tr(`复制${labelText}失败，请手动复制`, `Failed to copy ${labelText}; please copy manually`));
   }
 }
 
@@ -679,7 +906,7 @@ function shopAvatarGradient(shopName) {
 
 function shopInitialChar(shopName) {
   const trimmed = String(shopName || "").trim();
-  if (!trimmed) return "店";
+  if (!trimmed) return L("店", "S");
   return trimmed.slice(0, 1).toUpperCase();
 }
 
@@ -759,13 +986,13 @@ function toggleProductFavorite(productId) {
   const existingIdx = state.favorites.products.findIndex((p) => p.id === productId);
   if (existingIdx >= 0) {
     state.favorites.products.splice(existingIdx, 1);
-    showToast("已取消收藏商品");
+    showToast(L("已取消收藏商品", "Removed from saved items"));
   } else {
     const found = state.allItems.find((p) => p.id === productId);
     if (!found) return;
     state.favorites.products.unshift(compactProductRecord(found));
     if (state.favorites.products.length > 60) state.favorites.products.length = 60;
-    showToast("已收藏该商品");
+    showToast(L("已收藏该商品", "Item saved"));
   }
   saveFavoritesToStorage();
   renderWorkbenchIndicators();
@@ -778,7 +1005,7 @@ function toggleShopFavorite(shopObj) {
   const existingIdx = state.favorites.shops.findIndex((s) => s.id === shopObj.id);
   if (existingIdx >= 0) {
     state.favorites.shops.splice(existingIdx, 1);
-    showToast("已取消收藏店铺");
+    showToast(L("已取消收藏店铺", "Removed from saved stores"));
   } else {
     state.favorites.shops.unshift({
       id: shopObj.id,
@@ -791,7 +1018,7 @@ function toggleShopFavorite(shopObj) {
       const removed = state.favorites.shops.splice(60);
       for (const item of removed) syncShopFavorite(item.id, false);
     }
-    showToast(`已收藏店铺：${shopObj.shopName}`);
+    showToast(L(`已收藏店铺：${shopObj.shopName}`, `Saved store: ${shopObj.shopName}`));
   }
   saveFavoritesToStorage();
   syncShopFavorite(shopObj.id, isShopFavorited(shopObj.id));
@@ -811,7 +1038,12 @@ async function refreshPublicSettings() {
     favoriteRecordingEnabled = config.favoritesEnabled === true;
     configuredOpenStoreTypes = new Set(config.openStoreTypes || ['ldxp']);
     const submit = document.querySelector('#submitShopBtn');
-    if (submit) { submit.disabled = !config.submissionsEnabled; submit.title = config.submissionsEnabled ? '添加收录店铺' : '暂不接受新店提交'; }
+    if (submit) {
+      submit.disabled = !config.submissionsEnabled;
+      submit.title = config.submissionsEnabled
+        ? L("添加收录店铺", "Submit a store")
+        : L("暂不接受新店提交", "Store submissions temporarily closed");
+    }
   } catch { /* Local favorites remain available while the service is unavailable. */ }
 }
 function syncShopFavorite(shopId, favorite) {
@@ -839,16 +1071,16 @@ function toggleProductCompare(productId) {
   const existingIdx = state.compareItems.findIndex((p) => p.id === productId);
   if (existingIdx >= 0) {
     state.compareItems.splice(existingIdx, 1);
-    showToast("已移出对比清单");
+    showToast(L("已移出对比清单", "Removed from compare list"));
   } else {
     if (state.compareItems.length >= 4) {
-      showToast("最多支持同时对比 4 款商品，请先清理 1 项");
+      showToast(L("最多支持同时对比 4 款商品，请先清理 1 项", "Compare supports up to 4 items; remove one first"));
       return;
     }
     const found = state.allItems.find((p) => p.id === productId) || state.favorites.products.find((p) => p.id === productId);
     if (!found) return;
     state.compareItems.push(compactProductRecord(found));
-    showToast("已加入同台对比");
+    showToast(L("已加入同台对比", "Added to compare list"));
   }
   saveCompareToStorage();
   renderWorkbenchIndicators();
@@ -894,7 +1126,11 @@ function toggleTheme() {
   const currentDark = document.documentElement.dataset.theme === "dark";
   const next = currentDark ? "light" : "dark";
   applyTheme(next);
-  showToast(next === "dark" ? "已切换深色黑曜石模式" : "已切换浅色极光模式");
+  showToast(
+    next === "dark"
+      ? L("已切换深色黑曜石模式", "Switched to dark theme")
+      : L("已切换浅色极光模式", "Switched to light theme"),
+  );
 }
 
 function loadViewModeFromStorage() {
@@ -978,11 +1214,21 @@ function readStateFromUrl() {
 
   const clearedByContext = enforceProductContextConstraints();
   const discardedParams = [];
-  if (rawGroup && rawGroup.trim().toLowerCase() !== "all" && state.group === "all") discardedParams.push(`品牌（${rawGroup}）`);
-  if (rawType && rawType !== "all" && rawType !== "cdk" && state.type === "all") discardedParams.push(`商品类型（${rawType}）`);
-  if (rawPlan && rawPlan !== "all" && rawPlan !== "business" && state.plan === "all") discardedParams.push(`套餐（${rawPlan}）`);
-  if (rawDuration && rawDuration !== "all" && state.duration === "all") discardedParams.push(`时长（${rawDuration}）`);
-  if (rawPrice && rawPrice !== "all" && !hasCustomPriceFilter() && state.price === "all") discardedParams.push(`价格（${rawPrice}）`);
+  if (rawGroup && rawGroup.trim().toLowerCase() !== "all" && state.group === "all") {
+    discardedParams.push(L(`品牌（${rawGroup}）`, `Brand (${rawGroup})`));
+  }
+  if (rawType && rawType !== "all" && rawType !== "cdk" && state.type === "all") {
+    discardedParams.push(L(`商品类型（${rawType}）`, `Type (${rawType})`));
+  }
+  if (rawPlan && rawPlan !== "all" && rawPlan !== "business" && state.plan === "all") {
+    discardedParams.push(L(`套餐（${rawPlan}）`, `Plan (${rawPlan})`));
+  }
+  if (rawDuration && rawDuration !== "all" && state.duration === "all") {
+    discardedParams.push(L(`时长（${rawDuration}）`, `Duration (${rawDuration})`));
+  }
+  if (rawPrice && rawPrice !== "all" && !hasCustomPriceFilter() && state.price === "all") {
+    discardedParams.push(L(`价格（${rawPrice}）`, `Price (${rawPrice})`));
+  }
   for (const deprecatedKey of ["warranty", "region"]) {
     const val = (params.get(deprecatedKey) || "").trim();
     if (val && val !== "all") discardedParams.push(`${deprecatedKey}=${val}`);
@@ -995,14 +1241,21 @@ function readStateFromUrl() {
   state.initialClearedLabels = state.mode === "product" ? allCleared : [];
   state.filterNotice =
     state.mode === "product" && allCleared.length > 0
-      ? `已自动忽略或清除无效/冲突的筛选条件：${allCleared.join("、")}`
+      ? L(
+          `已自动忽略或清除无效/冲突的筛选条件：${allCleared.join("、")}`,
+          `Ignored/cleared invalid or conflicting filters: ${allCleared.join(", ")}`,
+        )
       : "";
 
   state.page = 1;
   state.shopPage = 1;
 }
 
-const DEFAULT_DOCUMENT_TITLE = typeof document !== "undefined" ? document.title : "棱镜比价 - 卡网商品比价与店铺收录导航";
+function getDefaultDocumentTitle() {
+  return isEn()
+    ? "PRISM Parity | AI Subscriptions & Digital Store Price Comparison"
+    : "棱镜比价 - 卡网商品比价与店铺收录导航";
+}
 
 /**
  * 根据当前筛选状态同步浏览器标签页标题，提升用户检索感知与页面可分享性。
@@ -1012,22 +1265,24 @@ function syncDocumentTitle() {
   const parts = [];
   if (state.q && state.q.trim()) parts.push(state.q.trim());
   if (state.mode === "shop") {
-    if (state.shopHasIntegrationCode) parts.push("支持店铺对接码");
-    if (state.shopSystemType && state.shopSystemType !== "all") parts.push(state.shopSystemType);
+    if (state.shopHasIntegrationCode) parts.push(L("支持店铺对接码", "Integration Code"));
+    if (state.shopSystemType && state.shopSystemType !== "all") {
+      parts.push(formatShopSystemLabel(state.shopSystemLabels[state.shopSystemType] || state.shopSystemType, state.shopSystemType));
+    }
     if (!parts.length) {
-      document.title = DEFAULT_DOCUMENT_TITLE;
+      document.title = getDefaultDocumentTitle();
       return;
     }
-    document.title = `${parts.join(" · ")} - 卡网店铺收录 · 棱镜比价`;
+    document.title = `${parts.join(" · ")} - ${L("卡网店铺收录 · 棱镜比价", "Stores · PRISM Parity")}`;
     return;
   }
-  if (state.group && state.group !== "all") parts.push(state.group);
-  if (state.type && state.type !== "all") parts.push(state.type);
+  if (state.group && state.group !== "all") parts.push(formatGroupLabel(state.group));
+  if (state.type && state.type !== "all") parts.push(formatBadgeLabel("type", state.type) || state.type);
   if (!parts.length) {
-    document.title = DEFAULT_DOCUMENT_TITLE;
+    document.title = getDefaultDocumentTitle();
     return;
   }
-  document.title = `${parts.join(" · ")} - 卡网多店比价 · 棱镜比价`;
+  document.title = `${parts.join(" · ")} - ${L("卡网多店比价 · 棱镜比价", "Price Comparison · PRISM Parity")}`;
 }
 
 /**
@@ -1076,11 +1331,12 @@ function renderHotQueries() {
   const list = state.mode === "shop" ? HOT_SHOP_QUERIES : HOT_PRODUCT_QUERIES;
   const activeQuery = state.searchDraft.trim().toLowerCase();
   els.hotQueries.innerHTML =
-    '<span class="hot-queries-label">热门搜：</span>' +
+    `<span class="hot-queries-label">${escapeHtml(L("热门搜：", "Trending: "))}</span>` +
     list
       .map((word) => {
         const isActive = activeQuery === word.toLowerCase();
-        return `<button type="button" class="hot-query-chip${isActive ? " is-active" : ""}" data-hot-query="${escapeHtml(word)}">${escapeHtml(word)}</button>`;
+        const label = (isEn() && HOT_QUERY_LABELS_EN[word]) || word;
+        return `<button type="button" class="hot-query-chip${isActive ? " is-active" : ""}" data-hot-query="${escapeHtml(word)}">${escapeHtml(label)}</button>`;
       })
       .join("");
 }
@@ -1143,8 +1399,14 @@ function switchMode(mode) {
 
   const isProduct = state.mode === "product";
   els.searchInput.placeholder = isProduct
-    ? "搜索 ChatGPT Plus、Claude Pro、Codex、美区，或输入店铺名称…"
-    : "搜索店铺名称、主营类别、系统类型或网址…";
+    ? L(
+        "搜索 ChatGPT Plus、Claude Pro、Codex、美区，或输入店铺名称…",
+        "Search ChatGPT Plus, Claude Pro, Codex, or store name…",
+      )
+    : L(
+        "搜索店铺名称、主营类别、系统类型或网址…",
+        "Search store name, category, platform, or URL…",
+      );
   els.sortSelect.hidden = !isProduct;
   els.activeFilters.hidden = false;
   els.requestMessage.hidden = true;
@@ -1368,7 +1630,12 @@ async function reconcileZeroProductResult(initialData, cleanScope, signal, seq) 
           bestData = tryData;
           applyAppliedFilters(tryData);
         } else {
-          clearedLabels.push(`价格（${savedCustomMin || "0"} - ${savedCustomMax || "∞"}）`);
+          clearedLabels.push(
+            L(
+              `价格（${savedCustomMin || "0"} - ${savedCustomMax || "∞"}）`,
+              `Price (${savedCustomMin || "0"} - ${savedCustomMax || "∞"})`,
+            ),
+          );
           state.minPrice = "";
           state.maxPrice = "";
         }
@@ -1456,7 +1723,7 @@ async function fetchProducts(append = false, reuseStats = false, options = {}) {
 
   if (append) {
     els.loadMoreBtn.disabled = true;
-    els.loadMoreBtn.textContent = "加载中...";
+    els.loadMoreBtn.textContent = L("加载中...", "Loading...");
   }
 
   try {
@@ -1501,10 +1768,20 @@ async function fetchProducts(append = false, reuseStats = false, options = {}) {
 
     const combinedCleared = [...new Set([...carriedClearedLabels, ...reconciledCleared])];
     if (reconciledCleared.length > 0) {
-      setFilterNotice(`已自动清除当前条件下不适用的筛选：${combinedCleared.join("、")}`);
+      setFilterNotice(
+        L(
+          `已自动清除当前条件下不适用的筛选：${combinedCleared.join("、")}`,
+          `Auto-cleared incompatible filters: ${combinedCleared.join(", ")}`,
+        ),
+      );
     } else if (carriedClearedLabels.length > 0) {
       if (!(options.preserveNotice && state.filterNotice)) {
-        setFilterNotice(`已自动清除当前条件下不适用的筛选：${combinedCleared.join("、")}`);
+        setFilterNotice(
+          L(
+            `已自动清除当前条件下不适用的筛选：${combinedCleared.join("、")}`,
+            `Auto-cleared incompatible filters: ${combinedCleared.join(", ")}`,
+          ),
+        );
       }
     } else if (!options.preserveNotice) {
       setFilterNotice("");
@@ -1535,19 +1812,36 @@ async function fetchProducts(append = false, reuseStats = false, options = {}) {
     renderBrandChips();
     renderOfficialPriceAnchor();
     renderProducts(append);
-    if (data._stale) showRequestError("当前展示缓存信息，请到店铺核实价格和库存。", false, true);
+    if (data._stale) {
+      showRequestError(
+        L("当前展示缓存信息，请到店铺核实价格和库存。", "Showing cached data. Verify live price & stock at the store."),
+        false,
+        true,
+      );
+    }
   } catch (err) {
     if (err.name === "AbortError" || seq !== state.requestSeq) return;
     if (append) state.page = Math.max(1, state.page - 1);
     else if (state.allItems.length === 0) els.productList.innerHTML = "";
-    showRequestError(err.code === "D1_DAILY_LIMIT" ? "今日数据查询暂时受限，可直接进入店铺核实，稍后再试。" : "商品加载失败，请重试。当前结果可能不是最新的。", err.code !== "D1_DAILY_LIMIT");
+    showRequestError(
+      err.code === "D1_DAILY_LIMIT"
+        ? L(
+            "今日数据查询暂时受限，可直接进入店铺核实，稍后再试。",
+            "Daily query quota reached. Open the store directly and try again later.",
+          )
+        : L(
+            "商品加载失败，请重试。当前结果可能不是最新的。",
+            "Failed to load items. Results may be outdated; please retry.",
+          ),
+      err.code !== "D1_DAILY_LIMIT",
+    );
     console.error("加载商品数据失败:", err);
   } finally {
     if (seq === state.requestSeq) {
       state.productLoading = false;
       els.productView.setAttribute("aria-busy", "false");
       els.loadMoreBtn.disabled = false;
-      els.loadMoreBtn.textContent = "显示更多商品";
+      els.loadMoreBtn.textContent = L("显示更多商品", "Show more items");
       updateResultStatus();
     }
   }
@@ -1584,7 +1878,7 @@ async function fetchShops(append = false, options = {}) {
 
   if (append) {
     els.shopLoadMoreBtn.disabled = true;
-    els.shopLoadMoreBtn.textContent = "加载中...";
+    els.shopLoadMoreBtn.textContent = L("加载中...", "Loading...");
   }
 
   try {
@@ -1595,7 +1889,7 @@ async function fetchShops(append = false, options = {}) {
     const data = await readPublicJson(res);
     if (seq !== state.shopRequestSeq) return;
 
-    state.shopSystemLabels = Object.fromEntries(Object.entries(data.systemTypes || {}).map(([key, label]) => [key, formatShopSystemLabel(label)]));
+    state.shopSystemLabels = Object.fromEntries(Object.entries(data.systemTypes || {}).map(([key, label]) => [key, label]));
     state.shopSystemFacets = data.facets?.systemTypes || {};
     state.shopSystemType = data.appliedSystemType || "all";
     state.shopSort = SHOP_SORT_OPTIONS.has(data.appliedSort) ? data.appliedSort : "default";
@@ -1603,7 +1897,12 @@ async function fetchShops(append = false, options = {}) {
     state.shopHasIntegrationCode = Boolean(data.appliedHasIntegrationCode);
 
     if (requestedSystemType !== "all" && state.shopSystemType === "all") {
-      setFilterNotice(`卡网系统参数“${requestedSystemType}”无效，已自动重置为全部系统`);
+      setFilterNotice(
+        L(
+          `卡网系统参数“${requestedSystemType}”无效，已自动重置为全部系统`,
+          `Invalid store platform "${requestedSystemType}"; reset to all systems`,
+        ),
+      );
     } else if (
       autoClean && !data._stale &&
       Number(data.total ?? 0) === 0 &&
@@ -1613,7 +1912,12 @@ async function fetchShops(append = false, options = {}) {
     ) {
       const clearedLabel = describeClearedFilter("shopSystemType", state.shopSystemType);
       state.shopSystemType = "all";
-      setFilterNotice(`已自动清除当前条件下无匹配店铺的筛选：${clearedLabel}`);
+      setFilterNotice(
+        L(
+          `已自动清除当前条件下无匹配店铺的筛选：${clearedLabel}`,
+          `Auto-cleared store filter with no matches: ${clearedLabel}`,
+        ),
+      );
       syncControlsFromState();
       syncStateToUrl();
       return fetchShops(false, { allowAutoClean: false, preserveNotice: true });
@@ -1644,19 +1948,36 @@ async function fetchShops(append = false, options = {}) {
     els.shopCount.textContent = String(state.shopTotalAll);
     els.tabShopCount.textContent = String(state.shopTotalAll);
     renderShops(append);
-    if (data._stale) showRequestError("当前展示缓存信息，请到店铺核实价格和库存。", false, true);
+    if (data._stale) {
+      showRequestError(
+        L("当前展示缓存信息，请到店铺核实价格和库存。", "Showing cached data. Verify live price & stock at the store."),
+        false,
+        true,
+      );
+    }
   } catch (err) {
     if (err.name === "AbortError" || seq !== state.shopRequestSeq) return;
     if (append) state.shopPage = Math.max(1, state.shopPage - 1);
     else if (state.shopsData.length === 0) els.shopList.innerHTML = "";
-    showRequestError(err.code === "D1_DAILY_LIMIT" ? "今日数据查询暂时受限，可直接进入店铺核实，稍后再试。" : "店铺加载失败，请重试。当前结果可能不是最新的。", err.code !== "D1_DAILY_LIMIT");
+    showRequestError(
+      err.code === "D1_DAILY_LIMIT"
+        ? L(
+            "今日数据查询暂时受限，可直接进入店铺核实，稍后再试。",
+            "Daily query quota reached. Open the store directly and try again later.",
+          )
+        : L(
+            "店铺加载失败，请重试。当前结果可能不是最新的。",
+            "Failed to load stores. Results may be outdated; please retry.",
+          ),
+      err.code !== "D1_DAILY_LIMIT",
+    );
     console.error("加载店铺列表失败:", err);
   } finally {
     if (seq === state.shopRequestSeq) {
       state.shopLoading = false;
       els.shopView.setAttribute("aria-busy", "false");
       els.shopLoadMoreBtn.disabled = false;
-      els.shopLoadMoreBtn.textContent = "显示更多店铺";
+      els.shopLoadMoreBtn.textContent = L("显示更多店铺", "Show more stores");
       updateResultStatus();
     }
   }
@@ -1670,14 +1991,20 @@ async function fetchFullOffersForGroup(groupKey) {
   try {
     const res = await fetch(`/api/products?offerKey=${encodeURIComponent(groupKey)}`);
     const data = await readPublicJson(res);
-    if (data._stale) showRequestError("当前展示缓存信息，请到店铺核实价格和库存。", false, true);
+    if (data._stale) {
+      showRequestError(
+        L("当前展示缓存信息，请到店铺核实价格和库存。", "Showing cached data. Verify live price & stock at the store."),
+        false,
+        true,
+      );
+    }
     const matched = (data.items || [])[0];
     if (matched && Array.isArray(matched.offers)) {
       if (state.fullOffersCache.size >= 50) state.fullOffersCache.delete(state.fullOffersCache.keys().next().value);
       state.fullOffersCache.set(groupKey, matched.offers);
     }
   } catch (err) {
-    showRequestError("完整报价加载失败，可点击展开按钮重试。");
+    showRequestError(L("完整报价加载失败，可点击展开按钮重试。", "Failed to load full offers. Click expand to retry."));
     console.error("展开完整报价失败:", err);
   } finally {
     state.loadingOfferKeys.delete(groupKey);
@@ -1694,7 +2021,11 @@ function renderProductHeaderMetrics() {
 }
 
 function regionLabel(type = "") {
-  return type === "sms-service" ? "号码地区" : type ? "账号地区" : "账号 / 号码地区";
+  return type === "sms-service"
+    ? L("号码地区", "Phone Region")
+    : type
+      ? L("账号地区", "Account Region")
+      : L("账号 / 号码地区", "Account / Number Region");
 }
 
 /**
@@ -1704,14 +2035,16 @@ function createDimensionSelectHtml(dim, facetCounts) {
   const current = state[dim.key] || "all";
   const choices = dim.options.filter((opt) => Number(facetCounts[opt.value] || 0) > 0 || current === opt.value);
   const options = [
-    `<option value="all"${current === "all" ? " selected" : ""}>全部</option>`,
+    `<option value="all"${current === "all" ? " selected" : ""}>${escapeHtml(L("全部", "All"))}</option>`,
     ...choices.map((opt) => {
       const count = Number(facetCounts[opt.value] || 0);
-      return `<option value="${escapeHtml(opt.value)}"${current === opt.value ? " selected" : ""}>${escapeHtml(opt.label)} (${count})</option>`;
+      const optLabel = formatFilterOptionLabel(dim.key, opt.value, opt.label);
+      return `<option value="${escapeHtml(opt.value)}"${current === opt.value ? " selected" : ""}>${escapeHtml(optLabel)} (${count})</option>`;
     }),
   ];
   const cls = current !== "all" ? ' class="is-selected"' : "";
-  return `<label class="filter-field"><span>${escapeHtml(dim.shortLabel)}</span><select data-filter-key="${dim.key}"${cls} aria-label="${escapeHtml(dim.shortLabel)}筛选">${options.join("")}</select></label>`;
+  const shortLabel = formatFilterShortLabel(dim.key, dim.shortLabel);
+  return `<label class="filter-field"><span>${escapeHtml(shortLabel)}</span><select data-filter-key="${dim.key}"${cls} aria-label="${escapeHtml(shortLabel)}${escapeHtml(L("筛选", " filter"))}">${options.join("")}</select></label>`;
 }
 
 /**
@@ -1726,14 +2059,15 @@ function createPriceSelectHtml() {
     return "";
   }
   const options = [
-    `<option value="all"${state.price === "all" ? " selected" : ""}>全部价格</option>`,
+    `<option value="all"${state.price === "all" ? " selected" : ""}>${escapeHtml(L("全部价格", "All prices"))}</option>`,
     ...visiblePrices.map((opt) => {
       const count = Number(prices[opt.value] || 0);
-      return `<option value="${opt.value}"${state.price === opt.value ? " selected" : ""}>${opt.label} (${count})</option>`;
+      const priceLabel = formatFilterOptionLabel("price", opt.value, opt.label);
+      return `<option value="${opt.value}"${state.price === opt.value ? " selected" : ""}>${escapeHtml(priceLabel)} (${count})</option>`;
     }),
   ];
   const cls = state.price !== "all" ? ' class="is-selected"' : "";
-  return `<label class="filter-field"><span>预设价格</span><select data-filter-key="price"${cls} aria-label="价格筛选" title="区间含下限、不含上限；500元及以上无上限">${options.join("")}</select></label>`;
+  return `<label class="filter-field"><span>${escapeHtml(L("预设价格", "Price Range"))}</span><select data-filter-key="price"${cls} aria-label="${escapeHtml(L("价格筛选", "Price filter"))}" title="${escapeHtml(L("区间含下限、不含上限；500元及以上无上限", "Lower bound inclusive, upper exclusive; ¥500+ has no upper limit"))}">${options.join("")}</select></label>`;
 }
 
 function renderFilterControls() {
@@ -1767,31 +2101,49 @@ function renderFilterControls() {
   els.moreFiltersPanel.hidden = !state.moreFiltersOpen || more.length === 0;
   els.moreFiltersPanel.hidden = true;
   els.facetNoteBar.hidden = false;
-  els.facetNoteBar.textContent =
-    "计数：保留其他条件、替换本项后的商品组数；切换品牌或类型会自动清除不兼容筛选。预设价格区间含下限、不含上限。";
+  els.facetNoteBar.textContent = L(
+    "计数：保留其他条件、替换本项后的商品组数；切换品牌或类型会自动清除不兼容筛选。预设价格区间含下限、不含上限。",
+    "Counts show matching items if only this filter changes. Incompatible filters auto-clear on brand/type change. Price ranges include lower bound only.",
+  );
   syncControlsFromState();
 }
 
 function updateResultStatus() {
   const product = state.mode === "product";
   const note = document.querySelector('.results-note');
-  if (note) note.textContent = product
-    ? '点击卡片报价可直查商家档案 · 实际价格以店铺页为准'
-    : '排名规则：后台推荐优先，其次按收藏数；零收藏时同步较新的店铺靠前';
+  if (note) {
+    note.textContent = product
+      ? L(
+          "点击卡片报价可直查商家档案 · 实际价格以店铺页为准",
+          "Click any store pill on an offer to view its profile · Verify live prices on the store page",
+        )
+      : L(
+          "排名规则：后台推荐优先，其次按收藏数；零收藏时同步较新的店铺靠前",
+          "Ranking: Featured first, then favorites; fresher-synced stores rank higher when tied",
+        );
+  }
   const loading = product ? state.productLoading : state.shopLoading;
   const submit = document.querySelector('#searchForm .search-submit');
   if (submit) {
     submit.disabled = loading;
     submit.setAttribute('aria-busy', String(loading));
-    submit.querySelector('.search-submit-label').textContent = loading ? '正在检索…' : '立即检索';
+    submit.querySelector('.search-submit-label').textContent = loading
+      ? L("正在检索…", "Searching…")
+      : L("立即检索", "Search");
     submit.querySelector('.search-spinner').hidden = !loading;
     submit.querySelector('svg').hidden = loading;
   }
   els.resultStatus.textContent = loading
-    ? "正在查找，请稍候…"
+    ? L("正在查找，请稍候…", "Searching, please wait…")
     : product
-      ? `找到 ${state.productsData?.total ?? 0} 组商品 · 已展示 ${state.allItems.length} 组`
-      : `找到 ${state.shopTotal} 家店铺 · 已展示 ${state.shopsData.length} 家`;
+      ? L(
+          `找到 ${state.productsData?.total ?? 0} 组商品 · 已展示 ${state.allItems.length} 组`,
+          `Found ${state.productsData?.total ?? 0} items · Showing ${state.allItems.length}`,
+        )
+      : L(
+          `找到 ${state.shopTotal} 家店铺 · 已展示 ${state.shopsData.length} 家`,
+          `Found ${state.shopTotal} stores · Showing ${state.shopsData.length}`,
+        );
 }
 
 function showRequestError(message, retryable = true, informational = false) {
@@ -1805,20 +2157,27 @@ function showRequestError(message, retryable = true, informational = false) {
 function renderActiveFilters() {
   const tags = [];
   if (state.q.trim()) {
-    tags.push(["q", `搜索：${state.q.trim()}`]);
+    tags.push(["q", L(`搜索：${state.q.trim()}`, `Search: ${state.q.trim()}`)]);
   }
   if (state.mode === "shop") {
     if (state.shopSystemType !== "all") {
-      tags.push(["shopSystemType", `系统：${state.shopSystemLabels[state.shopSystemType] || state.shopSystemType}`]);
+      const sysDisplay = formatShopSystemLabel(
+        state.shopSystemLabels[state.shopSystemType] || state.shopSystemType,
+        state.shopSystemType,
+      );
+      tags.push(["shopSystemType", L(`系统：${sysDisplay}`, `System: ${sysDisplay}`)]);
     }
     if (state.shopSort !== "default") {
-      tags.push(["shopSort", `排序：${SHOP_SORT_LABELS[state.shopSort] || state.shopSort}`]);
+      const sortDisplay = isEn()
+        ? SHOP_SORT_LABELS_EN[state.shopSort] || SHOP_SORT_LABELS[state.shopSort] || state.shopSort
+        : SHOP_SORT_LABELS[state.shopSort] || state.shopSort;
+      tags.push(["shopSort", L(`排序：${sortDisplay}`, `Sort: ${sortDisplay}`)]);
     }
     if (state.shopOnlyInStock) {
-      tags.push(["shopOnlyInStock", "仅看有收录商品"]);
+      tags.push(["shopOnlyInStock", L("仅看有收录商品", "With indexed items")]);
     }
     if (state.shopHasIntegrationCode) {
-      tags.push(["shopHasIntegrationCode", "仅看有对接码"]);
+      tags.push(["shopHasIntegrationCode", L("仅看有对接码", "With integration code")]);
     }
   } else {
     if (state.group !== "all") {
@@ -1830,7 +2189,7 @@ function renderActiveFilters() {
       }
     }
     if (hasCustomPriceFilter()) {
-      tags.push(["customPrice", `自定义价：${formatCustomPriceSummary()}`]);
+      tags.push(["customPrice", L(`自定义价：${formatCustomPriceSummary()}`, `Custom price: ${formatCustomPriceSummary()}`)]);
     } else if (state.price !== "all") {
       tags.push(["price", filterValueLabel("price", state.price)]);
     }
@@ -1838,7 +2197,7 @@ function renderActiveFilters() {
   els.activeFilters.innerHTML = tags
     .map(
       ([key, label]) =>
-        `<button class="active-filter" type="button" data-remove-filter="${escapeHtml(key)}" aria-label="移除${escapeHtml(label)}">${escapeHtml(label)} <span aria-hidden="true">×</span></button>`,
+        `<button class="active-filter" type="button" data-remove-filter="${escapeHtml(key)}" aria-label="${escapeHtml(L("移除", "Remove "))}${escapeHtml(label)}">${escapeHtml(label)} <span aria-hidden="true">×</span></button>`,
     )
     .join("");
 }
@@ -1851,9 +2210,9 @@ function renderBrandChips() {
   const baseline = state.catalogGroupCounts;
   const totalAll = Object.values(facets).reduce((sum, n) => sum + Number(n || 0), 0);
   const sections = [
-    ["AI 对话与编程", BRAND_GROUP_ORDER.slice(0, 15)],
-    ["AI 视频与创作", BRAND_GROUP_ORDER.slice(15, 19)],
-    ["数字账号与基建", BRAND_GROUP_ORDER.slice(19)],
+    [L("AI 对话与编程", "AI Chat & Coding"), BRAND_GROUP_ORDER.slice(0, 15)],
+    [L("AI 视频与创作", "AI Video & Creative"), BRAND_GROUP_ORDER.slice(15, 19)],
+    [L("数字账号与基建", "Digital Accounts & Infra"), BRAND_GROUP_ORDER.slice(19)],
   ];
   const hasNonQueryFilters =
     state.type !== "all" ||
@@ -1865,14 +2224,14 @@ function renderBrandChips() {
     const isZeroFiltered = g !== "all" && count === 0 && state.group !== g;
     const titleAttr = isZeroFiltered
       ? hasNonQueryFilters
-        ? ' title="当前筛选条件下暂无匹配，点击将切换品牌并自动清除冲突条件"'
-        : ' title="当前搜索词下该品牌暂无匹配，点击将切换至此品牌"'
+        ? ` title="${escapeHtml(L("当前筛选条件下暂无匹配，点击将切换品牌并自动清除冲突条件", "No matches with current filters; click to switch brand and clear conflicting filters"))}"`
+        : ` title="${escapeHtml(L("当前搜索词下该品牌暂无匹配，点击将切换至此品牌", "No matches for this brand under current search; click to switch"))}"`
       : "";
     return `<button type="button" class="chip ${state.group === g ? "is-active" : ""}${isZeroFiltered ? " is-filtered-zero" : ""}" style="${getGroupBrandStyle(g)}" data-group="${escapeHtml(g)}" aria-pressed="${state.group === g}"${titleAttr}><span class="chip-icon" aria-hidden="true">${getGroupIconHtml(g)}</span><span class="chip-label">${escapeHtml(label)}</span><small>${count}</small></button>`;
   };
 
   els.brandChips.innerHTML =
-    `<div class="brand-section">${chip("all", "全部品类", totalAll)}</div>` +
+    `<div class="brand-section">${chip("all", L("全部品类", "All Categories"), totalAll)}</div>` +
     sections
       .map(([label, groups]) => {
         const visibleGroups = groups.filter((g) => {
@@ -1882,7 +2241,7 @@ function renderBrandChips() {
           return true;
         });
         if (visibleGroups.length === 0) return "";
-        return `<div class="brand-section"><span class="brand-section-label">${label}</span>${visibleGroups
+        return `<div class="brand-section"><span class="brand-section-label">${escapeHtml(label)}</span>${visibleGroups
           .map((g) => chip(g, formatGroupLabel(g), Number(facets[g] || 0)))
           .join("")}</div>`;
       })
@@ -1896,23 +2255,30 @@ function buildAttributeBadges(item) {
   const attrs = item.attributes || {};
   const tags = [];
 
-  if (attrs.type && CARD_BADGE_LABELS.type[attrs.type]) {
-    tags.push(`<span class="badge">${escapeHtml(CARD_BADGE_LABELS.type[attrs.type])}</span>`);
+  const typeBadge = attrs.type ? formatBadgeLabel("type", attrs.type) : "";
+  if (typeBadge) {
+    tags.push(`<span class="badge">${escapeHtml(typeBadge)}</span>`);
   }
-  if (attrs.plan && CARD_BADGE_LABELS.plan[attrs.plan]) {
-    tags.push(`<span class="badge">${escapeHtml(CARD_BADGE_LABELS.plan[attrs.plan])}</span>`);
+  const planBadge = attrs.plan ? formatBadgeLabel("plan", attrs.plan) : "";
+  if (planBadge) {
+    tags.push(`<span class="badge">${escapeHtml(planBadge)}</span>`);
   }
-  if (attrs.duration && CARD_BADGE_LABELS.duration[attrs.duration]) {
-    tags.push(`<span class="badge">${escapeHtml(CARD_BADGE_LABELS.duration[attrs.duration])}</span>`);
+  const durationBadge = attrs.duration ? formatBadgeLabel("duration", attrs.duration) : "";
+  if (durationBadge) {
+    tags.push(`<span class="badge">${escapeHtml(durationBadge)}</span>`);
   }
-  if (attrs.sms && CARD_BADGE_LABELS.sms[attrs.sms]) {
-    tags.push(`<span class="badge">${escapeHtml(CARD_BADGE_LABELS.sms[attrs.sms])}</span>`);
+  const smsBadge = attrs.sms ? formatBadgeLabel("sms", attrs.sms) : "";
+  if (smsBadge) {
+    tags.push(`<span class="badge">${escapeHtml(smsBadge)}</span>`);
   }
-  if (attrs.region && CARD_BADGE_LABELS.region[attrs.region]) {
-    tags.push(`<span class="badge">${escapeHtml(regionLabel(attrs.type))}：${escapeHtml(CARD_BADGE_LABELS.region[attrs.region])}</span>`);
+  const regionBadge = attrs.region ? formatBadgeLabel("region", attrs.region) : "";
+  if (regionBadge) {
+    tags.push(`<span class="badge">${escapeHtml(regionLabel(attrs.type))}${escapeHtml(L("：", ": "))}${escapeHtml(regionBadge)}</span>`);
   }
   if (item.warrantyText) {
-    tags.push(`<span class="badge badge-warranty" title="标题原始售后条款">原文：${escapeHtml(item.warrantyText)}</span>`);
+    tags.push(
+      `<span class="badge badge-warranty" title="${escapeHtml(L("标题原始售后条款", "Original warranty terms in listing title"))}">${escapeHtml(L("原文：", "Raw: "))}${escapeHtml(item.warrantyText)}</span>`,
+    );
   }
   return tags.join("");
 }
@@ -1937,9 +2303,9 @@ function renderOfferPanel(item) {
       const shopLink = safeUrl(offer.shopUrl);
       const isBest = idx === 0 && offers.length > 1;
       const shopNameHtml = offer.shopId
-        ? `<button type="button" class="offer-shop-btn" data-open-shop="${escapeHtml(offer.shopId)}" title="点击查看店铺信息与风险提示">
+        ? `<button type="button" class="offer-shop-btn" data-open-shop="${escapeHtml(offer.shopId)}" title="${escapeHtml(L("点击查看店铺信息与风险提示", "View store profile & risk notice"))}">
              <span>${escapeHtml(offer.shopName)}</span>
-             <span class="offer-shop-intro-pill">店铺信息</span>
+             <span class="offer-shop-intro-pill">${escapeHtml(L("店铺信息", "Store Info"))}</span>
            </button>`
         : `<strong>${escapeHtml(offer.shopName)}</strong>`;
 
@@ -1947,21 +2313,21 @@ function renderOfferPanel(item) {
         <div class="offer-row">
           <div class="offer-shop-cell">
             ${shopNameHtml}
-            ${browserRefreshSupported(shopLink) ? `<button type="button" class="copy-inline-btn" data-browser-refresh="offer" data-shop-id="${escapeHtml(offer.shopId || '')}" data-shop-url="${escapeHtml(shopLink)}" data-item-url="${escapeHtml(link || '')}" title="使用当前网络读取源站">↻ 刷新参考</button>` : ''}
-            ${isBest ? `<span class="offer-tag is-best">★ 当前最低</span>` : ""}
+            ${browserRefreshSupported(shopLink) ? `<button type="button" class="copy-inline-btn" data-browser-refresh="offer" data-shop-id="${escapeHtml(offer.shopId || '')}" data-shop-url="${escapeHtml(shopLink)}" data-item-url="${escapeHtml(link || '')}" title="${escapeHtml(L("使用当前网络读取源站", "Fetch live source via your network"))}">${escapeHtml(L("↻ 刷新参考", "↻ Refresh"))}</button>` : ''}
+            ${isBest ? `<span class="offer-tag is-best">${escapeHtml(L("★ 当前最低", "★ Best Price"))}</span>` : ""}
             <span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>
           </div>
           <div class="offer-price-cell">${formatPrice(offer.price)}</div>
           <div class="offer-action-cell">
             ${
               link
-                ? `<a class="offer-action-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">前往购买 →</a>`
-                : `<span class="offer-hint">暂无商品直链</span>`
+                ? `<a class="offer-action-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L("前往购买 →", "Buy →"))}</a>`
+                : `<span class="offer-hint">${escapeHtml(L("暂无商品直链", "No direct link"))}</span>`
             }
             ${
               shopLink
-                ? `<a class="offer-action-link offer-shop-link" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer" title="进入店铺核实库存及商品状态">进入店铺 ↗</a>`
-                : `<span class="offer-hint">暂无店铺链接</span>`
+                ? `<a class="offer-action-link offer-shop-link" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(L("进入店铺核实库存及商品状态", "Open store to verify stock & status"))}">${escapeHtml(L("进入店铺 ↗", "Visit Store ↗"))}</a>`
+                : `<span class="offer-hint">${escapeHtml(L("暂无店铺链接", "No store link"))}</span>`
             }
           </div>
         </div>
@@ -1973,7 +2339,11 @@ function renderOfferPanel(item) {
     !isLoadedFull && item.offersTruncated && remaining > 0
       ? `<div class="offer-expand-wrap">
            <button type="button" class="btn btn-secondary btn-compact" data-load-offers="${escapeHtml(item.id)}"${isLoading ? " disabled" : ""}>
-             ${isLoading ? "正在加载完整报价..." : `展开剩余报价 (${remaining})`}
+             ${escapeHtml(
+               isLoading
+                 ? L("正在加载完整报价...", "Loading full offers...")
+                 : L(`展开剩余报价 (${remaining})`, `Show ${remaining} more offers`),
+             )}
            </button>
          </div>`
       : "";
@@ -1987,16 +2357,16 @@ function renderProductRow(item) {
   const isCompared = isProductCompared(item.id);
   const rangeNote =
     item.minPrice !== item.maxPrice
-      ? `<small>均 ${formatPrice(item.medianPrice)} ~ ${formatPrice(item.maxPrice)}</small>`
+      ? `<small>${escapeHtml(L("均", "Med"))} ${formatPrice(item.medianPrice)} ~ ${formatPrice(item.maxPrice)}</small>`
       : "";
   const spreadDiff = Number(item.maxPrice) - Number(item.minPrice);
   const savePill =
     item.offerCount > 1 && Number.isFinite(spreadDiff) && spreadDiff >= 1
-      ? `<span class="price-save-pill">立省 ¥${spreadDiff.toFixed(0)}</span>`
+      ? `<span class="price-save-pill">${escapeHtml(L("立省", "Save"))} ¥${spreadDiff.toFixed(0)}</span>`
       : "";
   const multiShopBadge =
     item.shopCount > 1
-      ? `<span class="badge badge-brand">${item.shopCount} 家同款比价</span>`
+      ? `<span class="badge badge-brand">${escapeHtml(L(`${item.shopCount} 家同款比价`, `${item.shopCount} stores compared`))}</span>`
       : `<span class="badge">${escapeHtml(item.shopName)}</span>`;
   const itemLink = safeUrl(item.itemUrl);
   const titleHtml = itemLink
@@ -2021,18 +2391,24 @@ function renderProductRow(item) {
           </div>
           <div class="product-meta-actions">
             <button type="button" class="group-toggle" aria-expanded="${expanded}" data-toggle-key="${escapeHtml(item.id)}">
-              ${
+              ${escapeHtml(
                 item.offerCount > 1
-                  ? `${expanded ? "▾ 收起报价" : "▸ 展开比价"}（${item.offerCount} 个报价 · ${item.shopCount} 家店铺）`
-                  : `${expanded ? "▾ 收起明细" : "▸ 查看店铺与库存"}`
-              }
+                  ? L(
+                      `${expanded ? "▾ 收起报价" : "▸ 展开比价"}（${item.offerCount} 个报价 · ${item.shopCount} 家店铺）`,
+                      `${expanded ? "▾ Hide offers" : "▸ Compare offers"} (${item.offerCount} offers · ${item.shopCount} stores)`,
+                    )
+                  : L(
+                      `${expanded ? "▾ 收起明细" : "▸ 查看店铺与库存"}`,
+                      `${expanded ? "▾ Hide details" : "▸ Store & stock"}`,
+                    ),
+              )}
             </button>
             <div class="row-mini-actions">
               <button type="button" class="mini-icon-btn${isFaved ? " is-active" : ""}" data-fav-product="${escapeHtml(item.id)}" aria-pressed="${isFaved}">
-                ${isFaved ? "★ 已收藏" : "☆ 收藏"}
+                ${escapeHtml(isFaved ? L("★ 已收藏", "★ Saved") : L("☆ 收藏", "☆ Save"))}
               </button>
               <button type="button" class="mini-icon-btn${isCompared ? " is-active" : ""}" data-compare-product="${escapeHtml(item.id)}" aria-pressed="${isCompared}">
-                ${isCompared ? "✓ 已加对比" : "⚖ 对比"}
+                ${escapeHtml(isCompared ? L("✓ 已加对比", "✓ Added") : L("⚖ 对比", "⚖ Compare"))}
               </button>
             </div>
           </div>
@@ -2044,7 +2420,7 @@ function renderProductRow(item) {
             ${savePill}
           </div>
           <div class="lead-shop-col">
-            ${item.shopName ? `<span class="offer-hint" title="最低报价店铺">领衔：${escapeHtml(item.shopName)}</span>` : ""}
+            ${item.shopName ? `<span class="offer-hint" title="${escapeHtml(L("最低报价店铺", "Lowest price store"))}">${escapeHtml(L("领衔：", "Best: "))}${escapeHtml(item.shopName)}</span>` : ""}
           </div>
         </div>
       </div>
@@ -2075,7 +2451,7 @@ function renderProductGroup(key) {
  */
 function renderOfficialPriceAnchor() {
   if (!els.officialPriceAnchor) return;
-  const entry = OFFICIAL_REFERENCE_PRICES[state.group];
+  const entry = (isEn() && OFFICIAL_REFERENCE_PRICES_EN[state.group]) || OFFICIAL_REFERENCE_PRICES[state.group];
   if (
     state.mode !== "product" ||
     !entry ||
@@ -2092,7 +2468,7 @@ function renderOfficialPriceAnchor() {
   els.officialPriceAnchor.innerHTML = `
     <span class="ref-price-label">${escapeHtml(entry.headline)}</span>
     <span class="ref-price-value">${escapeHtml(summary)}</span>
-    <span class="ref-price-note">按站内参考汇率 1 USD ≈ ¥7.15 粗算；远低于官方直购价多为拼车共享、短期体验或促销渠道，请按需甄别</span>
+    <span class="ref-price-note">${escapeHtml(L("按站内参考汇率 1 USD ≈ ¥7.15 粗算；远低于官方直购价多为拼车共享、短期体验或促销渠道，请按需甄别", "Approx. ref rate 1 USD ≈ ¥7.15; prices far below official retail are usually shared seats, short trials, or promos — verify carefully."))}</span>
   `;
   els.officialPriceAnchor.hidden = false;
 }
@@ -2119,7 +2495,10 @@ function renderProducts(append = false) {
 
   if (state.page < totalPages && items.length < total) {
     els.loadMoreWrap.hidden = false;
-    els.loadMoreBtn.textContent = `显示更多商品（已展示 ${items.length} / ${total} 组）`;
+    els.loadMoreBtn.textContent = L(
+      `显示更多商品（已展示 ${items.length} / ${total} 组）`,
+      `Show more (${items.length} / ${total} items)`,
+    );
   } else {
     els.loadMoreWrap.hidden = true;
   }
@@ -2128,9 +2507,9 @@ function renderProducts(append = false) {
 /** 访客仅展示商品记录，不展示后台采集状态。 */
 function buildShopStatusBadge(shop) {
   if (Number(shop.productCount || 0) > 0) {
-    return `<span class="badge badge-success">商品 ${Number(shop.productCount)} 件</span>`;
+    return `<span class="badge badge-success">${escapeHtml(L(`商品 ${Number(shop.productCount)} 件`, `${Number(shop.productCount)} items`))}</span>`;
   }
-  return '<span class="badge">暂无商品记录</span>';
+  return `<span class="badge">${escapeHtml(L("暂无商品记录", "No items"))}</span>`;
 }
 
 function hasValidCount(value) {
@@ -2139,16 +2518,16 @@ function hasValidCount(value) {
 
 function formatShopSellSummary(shop) {
   if (hasValidCount(shop.shopSellCount)) {
-    return `参考总销量 ${Number(shop.shopSellCount)}`;
+    return L(`参考总销量 ${Number(shop.shopSellCount)}`, `Ref. sales ${Number(shop.shopSellCount)}`);
   }
-  return "源站未公开总销量";
+  return L("源站未公开总销量", "Total sales unlisted");
 }
 
 function formatSalesTrendText(shop) {
   const trend = shop.salesTrend;
   if (trend) {
     if (trend.status === "init") {
-      return `${trend.currentCount}（首日观测，待连续对比）`;
+      return L(`${trend.currentCount}（首日观测，待连续对比）`, `${trend.currentCount} (Day 1 baseline)`);
     }
     if (trend.status === "growing") {
       return `${trend.firstCount} → ${trend.currentCount}（+${trend.change}）`;
@@ -2159,23 +2538,30 @@ function formatSalesTrendText(shop) {
     return `${trend.firstCount} → ${trend.currentCount}（${trend.change}）`;
   }
   if (hasValidCount(shop.shopSellCount)) {
-    return `参考总销量 ${Number(shop.shopSellCount)}（暂无连续趋势）`;
+    return L(
+      `参考总销量 ${Number(shop.shopSellCount)}（暂无连续趋势）`,
+      `Ref. sales ${Number(shop.shopSellCount)} (no streak yet)`,
+    );
   }
-  return "源站未公开销量";
+  return L("源站未公开销量", "Sales unlisted");
 }
 
 /** 渲染店铺系统下拉（统一隐藏计数为 0 的系统项，保留全部系统与当前选中项） */
 function renderShopSystemControls() {
   const selected = state.shopSystemType;
-  const options = ['<option value="all">全部系统</option>'];
+  const options = [`<option value="all">${escapeHtml(L("全部系统", "All systems"))}</option>`];
   const entries = Object.entries(state.shopSystemLabels);
   if (entries.length === 0 && selected !== "all") {
-    options.push(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`);
+    options.push(
+      `<option value="${escapeHtml(selected)}" selected>${escapeHtml(formatShopSystemLabel(selected, selected))}</option>`,
+    );
   }
   for (const [key, label] of entries) {
     const count = Number(state.shopSystemFacets[key] || 0);
     if (count <= 0 && key !== selected) continue;
-    options.push(`<option value="${escapeHtml(key)}"${key === selected ? " selected" : ""}>${escapeHtml(label)} (${count})</option>`);
+    options.push(
+      `<option value="${escapeHtml(key)}"${key === selected ? " selected" : ""}>${escapeHtml(formatShopSystemLabel(label, key))} (${count})</option>`,
+    );
   }
   els.shopSystemSelect.innerHTML = options.join("");
   els.shopSystemSelect.value = selected;
@@ -2188,16 +2574,16 @@ function renderShopSystemControls() {
 function renderMainCategoryBadges(mainCategories, productCount, maxCount = 5) {
   if (!Array.isArray(mainCategories) || mainCategories.length === 0) {
     return Number(productCount || 0) > 0
-      ? "<span class='badge'>暂无主营类别统计</span>"
-      : "<span class='badge'>暂无收录商品</span>";
+      ? `<span class='badge'>${escapeHtml(L("暂无主营类别统计", "No category stats yet"))}</span>`
+      : `<span class='badge'>${escapeHtml(L("暂无收录商品", "No indexed items"))}</span>`;
   }
   const visible = maxCount > 0 ? mainCategories.slice(0, maxCount) : mainCategories;
-  const badges = visible.map(
-    (cat) =>
-      `<span class="badge badge-category" style="${getGroupBrandStyle(cat.group)}">${getGroupIconHtml(cat.group)}<span>${escapeHtml(cat.label || formatGroupLabel(cat.group))} (${Number(cat.count || 0)})</span></span>`,
-  );
+  const badges = visible.map((cat) => {
+    const catLabel = isEn() ? formatGroupLabel(cat.group) : (cat.label || formatGroupLabel(cat.group));
+    return `<span class="badge badge-category" style="${getGroupBrandStyle(cat.group)}">${getGroupIconHtml(cat.group)}<span>${escapeHtml(catLabel)} (${Number(cat.count || 0)})</span></span>`;
+  });
   if (maxCount > 0 && mainCategories.length > maxCount) {
-    badges.push(`<span class="badge">+${mainCategories.length - maxCount} 类</span>`);
+    badges.push(`<span class="badge">+${mainCategories.length - maxCount} ${escapeHtml(L("类", "more"))}</span>`);
   }
   return badges.join("");
 }
@@ -2223,9 +2609,10 @@ function renderShops(append = false) {
     .filter((shop) => !renderedIds.has(shop.id))
     .map((s) => {
       const shopLink = safeUrl(s.canonicalUrl) || safeUrl(s.shopUrl);
-      const displayUrl = shopLink || s.canonicalUrl || s.shopUrl || "未记录网址";
+      const rawUrl = shopLink || s.canonicalUrl || s.shopUrl || "";
+      const displayUrl = rawUrl || L("未记录网址", "No URL");
       const depositMoney = Number(s.ldxpProfile?.depositMoney || 0);
-      const depositText = depositMoney > 0 ? ` · 保证金 ¥${escapeHtml(depositMoney)}` : "";
+      const depositText = depositMoney > 0 ? ` · ${escapeHtml(L("保证金", "Deposit"))} ¥${escapeHtml(depositMoney)}` : "";
       const categoryBadges = renderMainCategoryBadges(s.mainCategories, s.productCount, 5);
       const isFaved = isShopFavorited(s.id);
       const avatarGrad = shopAvatarGradient(s.shopName);
@@ -2236,20 +2623,20 @@ function renderShops(append = false) {
             <div class="shop-identity">
               <span class="shop-avatar" style="background:${avatarGrad}" aria-hidden="true">${escapeHtml(shopInitialChar(s.shopName))}</span>
               <div class="shop-title-wrap">
-                <div class="shop-name-line"><h3>${escapeHtml(hideSavedTelegram(s.shopName))}</h3>${s.manualRecommended ? '<span class="badge badge-system">后台推荐 · 背后有人 🐔</span>' : ''}</div>
-                <div class="shop-badges">${s.rank ? `<span class="badge">排名 #${escapeHtml(s.rank)}</span>` : ''}<span class="badge">★ ${escapeHtml(s.favoriteCount ?? 0)} 收藏</span></div>
+                <div class="shop-name-line"><h3>${escapeHtml(hideSavedTelegram(s.shopName))}</h3>${s.manualRecommended ? `<span class="badge badge-system">${escapeHtml(L("后台推荐 · 背后有人 🐔", "Featured · Staff Pick 🐔"))}</span>` : ""}</div>
+                <div class="shop-badges">${s.rank ? `<span class="badge">${escapeHtml(L("排名", "Rank"))} #${escapeHtml(s.rank)}</span>` : ""}<span class="badge">★ ${escapeHtml(s.favoriteCount ?? 0)} ${escapeHtml(L("收藏", "favs"))}</span></div>
                 ${renderIntegrationCodes(s.integrationCodes)}
                 <div class="shop-badges">
-                  <span class="badge badge-system" title="卡网系统类型">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))}</span>
+                  <span class="badge badge-system" title="${escapeHtml(L("卡网系统类型", "Storefront platform"))}">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel, s.systemType))}</span>
                   <span class="badge">${escapeHtml(formatAdapterBadge(s.adapterType))}</span>
                   ${buildShopStatusBadge(s)}
                 </div>
               </div>
             </div>
             <div class="shop-quick-actions">
-              ${browserRefreshSupported(shopLink) ? `<button type="button" class="mini-icon-btn" data-browser-refresh="shop" data-shop-id="${escapeHtml(s.id)}" data-shop-url="${escapeHtml(shopLink)}" aria-label="使用当前网络刷新店铺参考" title="使用当前网络刷新店铺参考">↻</button>` : ''}
-              ${shopLink ? `<a class="mini-icon-btn shop-visit-link" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer" aria-label="进入店铺：${escapeHtml(hideSavedTelegram(s.shopName))}" title="进入店铺（新标签打开）">↗</a>` : ""}
-              <button type="button" class="mini-icon-btn${isFaved ? " is-active" : ""}" data-fav-shop="${escapeHtml(s.id)}" aria-pressed="${isFaved}" title="收藏店铺">
+              ${browserRefreshSupported(shopLink) ? `<button type="button" class="mini-icon-btn" data-browser-refresh="shop" data-shop-id="${escapeHtml(s.id)}" data-shop-url="${escapeHtml(shopLink)}" aria-label="${escapeHtml(L("使用当前网络刷新店铺参考", "Refresh store snapshot from your browser"))}" title="${escapeHtml(L("使用当前网络刷新店铺参考", "Refresh store snapshot from your browser"))}">↻</button>` : ""}
+              ${shopLink ? `<a class="mini-icon-btn shop-visit-link" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(L("进入店铺：", "Visit store: "))}${escapeHtml(hideSavedTelegram(s.shopName))}" title="${escapeHtml(L("进入店铺（新标签打开）", "Visit store (new tab)"))}">↗</a>` : ""}
+              <button type="button" class="mini-icon-btn${isFaved ? " is-active" : ""}" data-fav-shop="${escapeHtml(s.id)}" aria-pressed="${isFaved}" title="${escapeHtml(L("收藏店铺", "Favorite store"))}">
                 ${isFaved ? "★" : "☆"}
               </button>
             </div>
@@ -2258,16 +2645,16 @@ function renderShops(append = false) {
             <div class="shop-meta-line">
               <span class="shop-url-text" title="${escapeHtml(displayUrl)}">${escapeHtml(displayUrl)}</span>
               ${
-                displayUrl !== "未记录网址"
-                  ? `<button type="button" class="copy-inline-btn" data-copy-text="${escapeHtml(displayUrl)}" data-copy-label="店铺网址">复制</button>`
+                rawUrl
+                  ? `<button type="button" class="copy-inline-btn" data-copy-text="${escapeHtml(displayUrl)}" data-copy-label="店铺网址" data-copy-label-i18n="shopUrl">${escapeHtml(L("复制", "Copy"))}</button>`
                   : ""
               }
             </div>
             <span>${escapeHtml(formatShopSellSummary(s))}${depositText}</span>
           </div>
-          <div class="shop-preview-list" aria-label="主营类别">${categoryBadges}</div>
+          <div class="shop-preview-list" aria-label="${escapeHtml(L("主营类别", "Main categories"))}">${categoryBadges}</div>
           <div class="shop-card-actions">
-            <button type="button" class="btn btn-secondary" data-open-shop="${escapeHtml(s.id)}">查看店铺信息 →</button>
+            <button type="button" class="btn btn-secondary" data-open-shop="${escapeHtml(s.id)}">${escapeHtml(L("查看店铺信息 →", "View store info →"))}</button>
           </div>
         </article>
       `;
@@ -2282,7 +2669,10 @@ function renderShops(append = false) {
 
   if (state.shopPage < totalPages && shops.length < total) {
     els.shopLoadMoreWrap.hidden = false;
-    els.shopLoadMoreBtn.textContent = `显示更多店铺（已展示 ${shops.length} / ${total} 家）`;
+    els.shopLoadMoreBtn.textContent = L(
+      `显示更多店铺（已展示 ${shops.length} / ${total} 家）`,
+      `Show more stores (${shops.length} / ${total})`,
+    );
   } else {
     els.shopLoadMoreWrap.hidden = true;
   }
@@ -2293,8 +2683,9 @@ async function openShopProfile(shopId) {
   state.profileController?.abort();
   const controller = new AbortController();
   state.profileController = controller;
+  state.activeProfileShopId = shopId;
   state.profileTrigger = document.activeElement;
-  els.profileBody.innerHTML = '<h2 id="profileModalTitle">正在加载店铺信息…</h2>';
+  els.profileBody.innerHTML = `<h2 id="profileModalTitle">${escapeHtml(L("正在加载店铺信息…", "Loading store details…"))}</h2>`;
   els.profileModal.hidden = false;
   document.body.style.overflow = "hidden";
   els.profileModal.querySelector(".modal-close").focus();
@@ -2307,29 +2698,35 @@ async function openShopProfile(shopId) {
     const openStore = document.querySelector('#profileModal .profile-open-store');
     if (openStore) { const type = s?.systemType || 'unknown'; openStore.hidden = !configuredOpenStoreTypes.has(type); openStore.href = `/go/open-store?type=${encodeURIComponent(type)}`; }
     if (!s) {
-      els.profileBody.innerHTML = '<h2 id="profileModalTitle">未找到该店铺信息</h2><p>请关闭后重试。</p>';
+      els.profileBody.innerHTML = `<h2 id="profileModalTitle">${escapeHtml(L("未找到该店铺信息", "Store not found"))}</h2><p>${escapeHtml(L("请关闭后重试。", "Please close and try again."))}</p>`;
       return;
     }
 
     const sig = s.shopSignals || {};
     const shopLink = safeUrl(s.canonicalUrl || s.shopUrl);
-    const displayUrl = shopLink || s.canonicalUrl || s.shopUrl || "未记录网址";
+    const rawUrl = shopLink || s.canonicalUrl || s.shopUrl || "";
+    const displayUrl = rawUrl || L("未记录网址", "No URL");
     const hasCategories = Array.isArray(s.mainCategories) && s.mainCategories.length > 0;
     const depositMoney = Number(s.ldxpProfile?.depositMoney || 0);
 
     const observeText =
       Number(sig.observedDays || 0) > 0
-        ? `已采样 ${sig.observedDays} 天（有货 ${sig.activeDayStreak || 0} 天 · 全店无货 ${sig.outOfStockDays || 0} 天）`
-        : "暂无每日观察记录";
+        ? L(
+            `已采样 ${sig.observedDays} 天（有货 ${sig.activeDayStreak || 0} 天 · 全店无货 ${sig.outOfStockDays || 0} 天）`,
+            `Observed ${sig.observedDays}d (in stock ${sig.activeDayStreak || 0}d · out of stock ${sig.outOfStockDays || 0}d)`,
+          )
+        : L("暂无每日观察记录", "No daily observation records yet");
 
     const visitControlHtml = shopLink
-      ? `<a class="btn btn-primary profile-visit-btn" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer">前往店铺 <span aria-hidden="true">↗</span></a>`
-      : `<button type="button" class="btn btn-primary profile-visit-btn" disabled>前往店铺（暂无有效链接）</button>`;
+      ? `<a class="btn btn-primary profile-visit-btn" href="${escapeHtml(shopLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L("前往店铺", "Visit Store"))} <span aria-hidden="true">↗</span></a>`
+      : `<button type="button" class="btn btn-primary profile-visit-btn" disabled>${escapeHtml(L("前往店铺（暂无有效链接）", "Visit Store (No valid URL)"))}</button>`;
 
     const copyUrlBtnHtml =
-      displayUrl !== "未记录网址"
-        ? `<button type="button" class="btn btn-compact" data-copy-text="${escapeHtml(displayUrl)}" data-copy-label="店铺网址">复制网址</button>`
+      rawUrl
+        ? `<button type="button" class="btn btn-compact" data-copy-text="${escapeHtml(displayUrl)}" data-copy-label="店铺网址" data-copy-label-i18n="shopUrl">${escapeHtml(L("复制网址", "Copy URL"))}</button>`
         : "";
+
+    const notRecordedLabel = L("未记录（早期收录）", "Not recorded (early index)");
 
     els.profileBody.innerHTML = `
       <div class="profile-header">
@@ -2338,54 +2735,56 @@ async function openShopProfile(shopId) {
           <div>
             <h2 id="profileModalTitle">${escapeHtml(hideSavedTelegram(s.shopName))}</h2>
             ${renderIntegrationCodes(s.integrationCodes)}
-            <p class="profile-url-line">源站地址：${escapeHtml(displayUrl)}</p>
+            <p class="profile-url-line">${escapeHtml(L("源站地址：", "Source URL: "))}${escapeHtml(displayUrl)}</p>
           </div>
         </div>
         <div class="profile-meta-badges">
-          <span class="badge badge-system">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))}</span>
+          <span class="badge badge-system">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel, s.systemType))}</span>
           <span class="badge">${escapeHtml(formatAdapterBadge(s.adapterType))}</span>
           ${buildShopStatusBadge(s)}
         </div>
       </div>
 
-      ${data._stale ? '<div class="profile-alert-banner is-warn" role="status">当前展示缓存信息，请到店铺核实价格和库存。</div>' : ""}
+      ${data._stale ? `<div class="profile-alert-banner is-warn" role="status">${escapeHtml(L("当前展示缓存信息，请到店铺核实价格和库存。", "Showing cached data. Verify live price & stock at the store."))}</div>` : ""}
 
-      <section class="profile-section" aria-label="主营类别">
-        <h3 class="profile-section-title">主营类别</h3>
+      <section class="profile-section" aria-label="${escapeHtml(L("主营类别", "Main Categories"))}">
+        <h3 class="profile-section-title">${escapeHtml(L("主营类别", "Main Categories"))}</h3>
         ${
           hasCategories
             ? `<div class="profile-categories-list">${renderMainCategoryBadges(s.mainCategories, s.productCount, 0)}</div>`
-            : `<p class="profile-empty-note" style="margin:0;font-size:13px;">${
-                Number(s.productCount || 0) > 0 ? "暂无主营类别统计" : "暂无收录商品，暂无法统计主营类别"
-              }</p>`
+            : `<p class="profile-empty-note" style="margin:0;font-size:13px;">${escapeHtml(
+                Number(s.productCount || 0) > 0
+                  ? L("暂无主营类别统计", "No category stats yet")
+                  : L("暂无收录商品，暂无法统计主营类别", "No indexed items; cannot compute main categories"),
+              )}</p>`
         }
       </section>
 
       <div class="signal-grid">
         <div class="signal-box">
-          <span>店铺系统</span>
-          <strong>${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))}</strong>
+          <span>${escapeHtml(L("店铺系统", "Store System"))}</span>
+          <strong>${escapeHtml(formatShopSystemLabel(s.systemTypeLabel, s.systemType))}</strong>
         </div>
         <div class="signal-box">
-          <span>收录商品</span>
-          <strong>${Number(s.productCount || 0)} 件</strong>
+          <span>${escapeHtml(L("收录商品", "Indexed Items"))}</span>
+          <strong>${escapeHtml(L(`${Number(s.productCount || 0)} 件`, `${Number(s.productCount || 0)} items`))}</strong>
         </div>
         <div class="signal-box">
-          <span>收录时间</span>
-          <strong>${escapeHtml(s.createdAt ? formatFullDateTime(s.createdAt, "未记录（早期收录）") : "未记录（早期收录）")}</strong>
+          <span>${escapeHtml(L("收录时间", "Indexed At"))}</span>
+          <strong>${escapeHtml(s.createdAt ? formatFullDateTime(s.createdAt, notRecordedLabel) : notRecordedLabel)}</strong>
         </div>
         <div class="signal-box">
-          <span>总销量观察趋势</span>
+          <span>${escapeHtml(L("总销量观察趋势", "Sales Trend"))}</span>
           <strong>${escapeHtml(formatSalesTrendText(s))}</strong>
         </div>
         <div class="signal-box">
-          <span>每日观察（30天窗口）</span>
+          <span>${escapeHtml(L("每日观察（30天窗口）", "Daily Watch (30d)"))}</span>
           <strong>${escapeHtml(observeText)}</strong>
         </div>
         ${
           depositMoney > 0
             ? `<div class="signal-box">
-                <span>源站保证金</span>
+                <span>${escapeHtml(L("源站保证金", "Source Deposit"))}</span>
                 <strong>¥${escapeHtml(depositMoney)}</strong>
               </div>`
             : ""
@@ -2393,25 +2792,26 @@ async function openShopProfile(shopId) {
       </div>
 
       <div class="profile-action-box">
-        <p class="profile-risk-notice" role="note">${escapeHtml(SHOP_RISK_NOTICE_TEXT)}</p>
+        <p class="profile-risk-notice" role="note">${escapeHtml(L(SHOP_RISK_NOTICE_TEXT, SHOP_RISK_NOTICE_TEXT_EN))}</p>
         <div class="profile-visit-row">
           ${visitControlHtml}
           ${copyUrlBtnHtml}
-          <span class="profile-visit-hint">实际选购与下单将在第三方店铺页面完成</span>
+          <span class="profile-visit-hint">${escapeHtml(L("实际选购与下单将在第三方店铺页面完成", "Actual checkout and purchase happen on the third-party storefront"))}</span>
         </div>
       </div>
     `;
   } catch (error) {
     if (error.name !== "AbortError") {
       els.profileBody.innerHTML = error.code === "D1_DAILY_LIMIT"
-        ? '<h2 id="profileModalTitle">店铺信息暂不可用</h2><p>今日数据查询暂时受限，可通过店铺卡片右上角直接进店核实。</p>'
-        : '<h2 id="profileModalTitle">加载店铺信息失败</h2><p>请关闭后重试。</p>';
+        ? `<h2 id="profileModalTitle">${escapeHtml(L("店铺信息暂不可用", "Store details temporarily unavailable"))}</h2><p>${escapeHtml(L("今日数据查询暂时受限，可通过店铺卡片右上角直接进店核实。", "Daily query quota reached. Open the storefront via the top-right link on its card."))}</p>`
+        : `<h2 id="profileModalTitle">${escapeHtml(L("加载店铺信息失败", "Failed to load store details"))}</h2><p>${escapeHtml(L("请关闭后重试。", "Please close and try again."))}</p>`;
     }
   }
 }
 
 function closeShopProfile() {
   state.profileController?.abort();
+  state.activeProfileShopId = null;
   els.profileModal.hidden = true;
   if (els.workbenchModal.hidden) {
     document.body.style.overflow = "";
@@ -2447,8 +2847,12 @@ function renderWorkbenchBody() {
   if (state.workbenchTab === "compare") {
     const list = state.compareItems;
     if (list.length === 0) {
-      els.workbenchBody.innerHTML =
-        '<p class="empty-tip">暂无待对比商品。在商品列表点击「⚖ 对比」，即可最多加入 4 款商品进行横向比价。</p>';
+      els.workbenchBody.innerHTML = `<p class="empty-tip">${escapeHtml(
+        L(
+          "暂无待对比商品。在商品列表点击「⚖ 对比」，即可最多加入 4 款商品进行横向比价。",
+          "No items in compare tray. Click \"⚖ Compare\" on any product card to add up to 4 items.",
+        ),
+      )}</p>`;
       return;
     }
 
@@ -2460,41 +2864,50 @@ function renderWorkbenchBody() {
         (item) =>
           `<td class="compare-col-head">
              <div>${escapeHtml(item.name)}</div>
-             <button type="button" class="mini-icon-btn" style="margin-top:6px" data-wb-remove-compare="${escapeHtml(item.id)}">移出对比</button>
+             <button type="button" class="mini-icon-btn" style="margin-top:6px" data-wb-remove-compare="${escapeHtml(item.id)}">${escapeHtml(L("移出对比", "Remove"))}</button>
            </td>`,
       )
       .join("");
 
     const makeRow = (label, fn) =>
-      `<tr><th>${label}</th>${list.map((item) => `<td>${fn(item)}</td>`).join("")}</tr>`;
+      `<tr><th>${escapeHtml(label)}</th>${list.map((item) => `<td>${fn(item)}</td>`).join("")}</tr>`;
 
     els.workbenchBody.innerHTML = `
       <div class="compare-table-wrap">
         <table class="compare-table">
           <thead>
-            <tr><th>对比维度</th>${headCells}</tr>
+            <tr><th>${escapeHtml(L("对比维度", "Metric"))}</th>${headCells}</tr>
           </thead>
           <tbody>
-            ${makeRow("最低报价", (item) => {
+            ${makeRow(L("最低报价", "Lowest Price"), (item) => {
               const isBest = bestMin !== null && Number(item.minPrice) === bestMin;
-              return `<span class="${isBest ? "compare-best-cell" : ""}">${formatPrice(item.minPrice)}${isBest && list.length > 1 ? "（本组最低）" : ""}</span>`;
+              return `<span class="${isBest ? "compare-best-cell" : ""}">${formatPrice(item.minPrice)}${
+                isBest && list.length > 1 ? escapeHtml(L("（本组最低）", " (Lowest)")) : ""
+              }</span>`;
             })}
-            ${makeRow("均价 / 最高", (item) => `${formatPrice(item.medianPrice)} / ${formatPrice(item.maxPrice)}`)}
-            ${makeRow("收录店铺数", (item) => `${Number(item.shopCount || 0)} 家（${Number(item.offerCount || 0)} 条报价）`)}
-            ${makeRow("主分类", (item) => escapeHtml(formatGroupLabel(item.group || "其它")))}
-            ${makeRow("商品类型", (item) => escapeHtml(CARD_BADGE_LABELS.type[item.attributes?.type] || "—"))}
-            ${makeRow("套餐 / 时长", (item) => {
-              const p = CARD_BADGE_LABELS.plan[item.attributes?.plan] || "—";
-              const d = CARD_BADGE_LABELS.duration[item.attributes?.duration] || "—";
+            ${makeRow(L("均价 / 最高", "Median / High"), (item) => `${formatPrice(item.medianPrice)} / ${formatPrice(item.maxPrice)}`)}
+            ${makeRow(L("收录店铺数", "Shops & Offers"), (item) =>
+              escapeHtml(
+                L(
+                  `${Number(item.shopCount || 0)} 家（${Number(item.offerCount || 0)} 条报价）`,
+                  `${Number(item.shopCount || 0)} shops (${Number(item.offerCount || 0)} offers)`,
+                ),
+              ),
+            )}
+            ${makeRow(L("主分类", "Brand / Group"), (item) => escapeHtml(formatGroupLabel(item.group || "其它")))}
+            ${makeRow(L("商品类型", "Type"), (item) => escapeHtml(formatBadgeLabel("type", item.attributes?.type) || "—"))}
+            ${makeRow(L("套餐 / 时长", "Plan / Duration"), (item) => {
+              const p = formatBadgeLabel("plan", item.attributes?.plan) || "—";
+              const d = formatBadgeLabel("duration", item.attributes?.duration) || "—";
               return `${escapeHtml(p)} · ${escapeHtml(d)}`;
             })}
-            ${makeRow("售后原文", (item) => escapeHtml(item.warrantyText || "—"))}
-            ${makeRow("领衔店铺", (item) => escapeHtml(item.shopName || "—"))}
-            ${makeRow("直达购买", (item) => {
+            ${makeRow(L("售后原文", "Warranty Note"), (item) => escapeHtml(item.warrantyText || "—"))}
+            ${makeRow(L("领衔店铺", "Lead Store"), (item) => escapeHtml(item.shopName || "—"))}
+            ${makeRow(L("直达购买", "Direct Link"), (item) => {
               const url = safeUrl(item.itemUrl);
               return url
-                ? `<a class="offer-action-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">前往查看 ↗</a>`
-                : "暂无直链";
+                ? `<a class="offer-action-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L("前往查看 ↗", "View Offer ↗"))}</a>`
+                : escapeHtml(L("暂无直链", "No direct link"));
             })}
           </tbody>
         </table>
@@ -2506,32 +2919,42 @@ function renderWorkbenchBody() {
   // 我的收藏 Tab
   const { products, shops } = state.favorites;
   if (products.length === 0 && shops.length === 0) {
-    els.workbenchBody.innerHTML =
-      '<p class="empty-tip">暂无收藏内容。在商品或店铺卡片点击「☆ 收藏」，可保存到本地浏览器方便下次直达。</p>';
+    els.workbenchBody.innerHTML = `<p class="empty-tip">${escapeHtml(
+      L(
+        "暂无收藏内容。在商品或店铺卡片点击「☆ 收藏」，可保存到本地浏览器方便下次直达。",
+        "No saved items yet. Click \"☆ Save\" on any product or shop card to bookmark it locally.",
+      ),
+    )}</p>`;
     return;
   }
 
   const productCards =
     products.length > 0
       ? `<section class="fav-section">
-           <h3>已收藏商品 (${products.length})</h3>
+           <h3>${escapeHtml(L(`已收藏商品 (${products.length})`, `Saved Products (${products.length})`))}</h3>
            <div class="fav-list">
              ${products
                .map((item) => {
                  const link = safeUrl(item.itemUrl);
                  const compared = isProductCompared(item.id);
+                 const metaText = L(
+                   `${formatGroupLabel(item.group || "")} · 最低 ${formatPrice(item.minPrice)} · ${Number(item.shopCount || 0)} 家店收录`,
+                   `${formatGroupLabel(item.group || "")} · From ${formatPrice(item.minPrice)} · ${Number(item.shopCount || 0)} shops`,
+                 );
                  return `
                    <article class="fav-item-card">
                      <strong>${escapeHtml(item.name)}</strong>
-                     <div class="fav-item-meta">${escapeHtml(formatGroupLabel(item.group || ""))} · 最低 ${formatPrice(item.minPrice)} · ${Number(item.shopCount || 0)} 家店收录</div>
+                     <div class="fav-item-meta">${escapeHtml(metaText)}</div>
                      <div class="fav-item-actions">
                        ${
                          link
-                           ? `<a class="offer-action-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">前往 ↗</a>`
+                           ? `<a class="offer-action-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L("前往 ↗", "Visit ↗"))}</a>`
                            : ""
                        }
-                       <button type="button" class="mini-icon-btn${compared ? " is-active" : ""}" data-wb-compare-fav="${escapeHtml(item.id)}">${compared ? "✓ 已在对比" : "⚖ 加入对比"}</button>
-                       <button type="button" class="mini-icon-btn" data-wb-remove-fav-product="${escapeHtml(item.id)}">移除</button>
+                       <button type="button" class="mini-icon-btn${compared ? " is-active" : ""}" data-wb-compare-fav="${escapeHtml(item.id)}">${escapeHtml(
+                         compared ? L("✓ 已在对比", "✓ Compared") : L("⚖ 加入对比", "⚖ Compare"),
+                       )}</button>
+                       <button type="button" class="mini-icon-btn" data-wb-remove-fav-product="${escapeHtml(item.id)}">${escapeHtml(L("移除", "Remove"))}</button>
                      </div>
                    </article>
                  `;
@@ -2544,17 +2967,19 @@ function renderWorkbenchBody() {
   const shopCards =
     shops.length > 0
       ? `<section class="fav-section">
-           <h3>已收藏店铺 (${shops.length})</h3>
+           <h3>${escapeHtml(L(`已收藏店铺 (${shops.length})`, `Saved Shops (${shops.length})`))}</h3>
            <div class="fav-list">
              ${shops
                .map(
                  (s) => `
                    <article class="fav-item-card">
                      <strong>${escapeHtml(hideSavedTelegram(s.shopName))}</strong>
-                     <div class="fav-item-meta">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))} · 收录 ${Number(s.productCount || 0)} 件</div>
+                     <div class="fav-item-meta">${escapeHtml(formatShopSystemLabel(s.systemTypeLabel))} · ${escapeHtml(
+                       L(`收录 ${Number(s.productCount || 0)} 件`, `${Number(s.productCount || 0)} items`),
+                     )}</div>
                      <div class="fav-item-actions">
-                       <button type="button" class="btn btn-secondary btn-compact" data-wb-open-shop="${escapeHtml(s.id)}">店铺信息</button>
-                       <button type="button" class="mini-icon-btn" data-wb-remove-fav-shop="${escapeHtml(s.id)}">移除</button>
+                       <button type="button" class="btn btn-secondary btn-compact" data-wb-open-shop="${escapeHtml(s.id)}">${escapeHtml(L("店铺信息", "Shop Info"))}</button>
+                       <button type="button" class="mini-icon-btn" data-wb-remove-fav-shop="${escapeHtml(s.id)}">${escapeHtml(L("移除", "Remove"))}</button>
                      </div>
                    </article>
                  `,
@@ -2603,7 +3028,7 @@ function applyCustomPriceFilter() {
   let maxVal = sanitizeCustomPriceInput(els.customMaxPrice.value);
   if (minVal !== "" && maxVal !== "" && Number(minVal) > Number(maxVal)) {
     [minVal, maxVal] = [maxVal, minVal];
-    showToast("最低价高于最高价，已自动交换范围");
+    showToast(L("最低价高于最高价，已自动交换范围", "Min price exceeded max price; swapped automatically"));
   }
   state.minPrice = minVal;
   state.maxPrice = maxVal;
@@ -2685,11 +3110,11 @@ function bindEvents() {
     saveCompareToStorage();
     renderWorkbenchIndicators();
     if (state.mode === "product" && state.allItems.length > 0) renderProducts(false);
-    showToast("已清空对比清单");
+    showToast(L("已清空对比清单", "Compare tray cleared"));
   });
 
   els.shareFiltersBtn?.addEventListener("click", () => {
-    copyTextWithFeedback(window.location.href, "当前筛选链接");
+    copyTextWithFeedback(window.location.href, L("当前筛选链接", "current filter link"));
   });
 
   document.querySelectorAll(".mode-tab").forEach((btn) => {
@@ -2841,7 +3266,12 @@ function bindEvents() {
     }
     const staticCleared = enforceProductContextConstraints();
     if (staticCleared.length > 0) {
-      setFilterNotice(`已自动清除当前条件下不适用的筛选：${staticCleared.join("、")}`);
+      setFilterNotice(
+        L(
+          `已自动清除当前条件下不适用的筛选：${staticCleared.join("、")}`,
+          `Cleared incompatible filters: ${staticCleared.join(", ")}`,
+        ),
+      );
     } else {
       setFilterNotice("");
     }
@@ -2867,7 +3297,12 @@ function bindEvents() {
     state.group = nextGroup;
     const staticCleared = enforceProductContextConstraints();
     if (staticCleared.length > 0) {
-      setFilterNotice(`已自动清除当前条件下不适用的筛选：${staticCleared.join("、")}`);
+      setFilterNotice(
+        L(
+          `已自动清除当前条件下不适用的筛选：${staticCleared.join("、")}`,
+          `Cleared incompatible filters: ${staticCleared.join(", ")}`,
+        ),
+      );
     } else {
       setFilterNotice("");
     }
@@ -2932,7 +3367,12 @@ function bindEvents() {
   els.shopList.addEventListener("click", (event) => {
     const copyBtn = event.target.closest("[data-copy-text]");
     if (copyBtn) {
-      copyTextWithFeedback(copyBtn.dataset.copyText, copyBtn.dataset.copyLabel || "内容");
+      const label = copyBtn.dataset.copyLabelI18n === "integrationCode"
+        ? L("对接码", "integration code")
+        : copyBtn.dataset.copyLabelI18n === "shopUrl"
+          ? L("店铺网址", "shop URL")
+          : copyBtn.dataset.copyLabel || L("内容", "content");
+      copyTextWithFeedback(copyBtn.dataset.copyText, label);
       return;
     }
     const favBtn = event.target.closest("[data-fav-shop]");
@@ -2948,7 +3388,12 @@ function bindEvents() {
   els.profileBody.addEventListener("click", (event) => {
     const copyBtn = event.target.closest("[data-copy-text]");
     if (copyBtn) {
-      copyTextWithFeedback(copyBtn.dataset.copyText, copyBtn.dataset.copyLabel || "内容");
+      const label = copyBtn.dataset.copyLabelI18n === "integrationCode"
+        ? L("对接码", "integration code")
+        : copyBtn.dataset.copyLabelI18n === "shopUrl"
+          ? L("店铺网址", "shop URL")
+          : copyBtn.dataset.copyLabel || L("内容", "content");
+      copyTextWithFeedback(copyBtn.dataset.copyText, label);
     }
   });
 
@@ -3092,6 +3537,14 @@ const KUN_EGG_LINES = [
   "🎤 唱、跳、rap、篮球，挑店还得看售后。",
   "🐣 真爱粉与小黑子都能进，钱包由自己守护。",
 ];
+const KUN_EGG_LINES_EN = [
+  "🐔 Kun Trainee online: 2.5 years of parity practice.",
+  "🏀 Dribbling through deals: prices bounce, stay on budget.",
+  "🕶️ Caught ya! Always verify live stock on the seller's page.",
+  "👖 Suspenders ready — compare rationally today.",
+  "🎤 Singing, dancing, rap & basketball — check warranty before buying.",
+  "🐣 Fans & skeptics welcome alike; guard your own wallet.",
+];
 let kunEggIndex = 0;
 let lastKunEggAt = 0;
 
@@ -3099,7 +3552,12 @@ let lastKunEggAt = 0;
 function triggerKunEgg(secret = false) {
   if (Date.now() - lastKunEggAt < 350) return;
   lastKunEggAt = Date.now();
-  showToast(secret ? "🏀 IKUN 隐藏练习室已解锁！小黑子也欢迎围观。" : KUN_EGG_LINES[kunEggIndex++ % KUN_EGG_LINES.length]);
+  const lines = isEn() ? KUN_EGG_LINES_EN : KUN_EGG_LINES;
+  showToast(
+    secret
+      ? L("🏀 IKUN 隐藏练习室已解锁！小黑子也欢迎围观。", "🏀 IKUN secret studio unlocked! Everyone is welcome to watch.")
+      : lines[kunEggIndex++ % lines.length],
+  );
   const button = document.querySelector("#kunEggBtn");
   button?.classList.remove("kun-bounce");
   if (button) {
@@ -3155,22 +3613,33 @@ document.addEventListener("keydown", (event) => {
   const preview = document.querySelector('#previewShopNetwork');
   if (!dialog || !open || !form || !input || !result || !next || !back || !close || !preview) return;
   let confirmedUrl = ''; let submittedShopId = '';
-  const reset = () => { confirmedUrl = ''; submittedShopId = ''; input.readOnly = false; input.hidden = false; back.hidden = true; next.hidden = false; next.textContent = '确认'; result.textContent = ''; preview.hidden = true; };
+  const reset = () => {
+    confirmedUrl = ''; submittedShopId = ''; input.readOnly = false; input.hidden = false;
+    back.hidden = true; next.hidden = false; next.textContent = L('确认', 'Submit'); result.textContent = ''; preview.hidden = true;
+  };
   open.addEventListener('click', () => { form.reset(); reset(); dialog.showModal(); input.focus(); });
   close.addEventListener('click', () => dialog.close());
   back.addEventListener('click', () => { reset(); input.focus(); });
   async function syncSubmittedShop() {
-    preview.hidden = true; preview.disabled = true; result.textContent = '正在通过你的网络读取源站商品…';
+    preview.hidden = true; preview.disabled = true;
+    result.textContent = L('正在通过你的网络读取源站商品…', 'Reading storefront listings via your browser...');
     try {
       const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
       const { snapshot, result: saved } = await syncShopFromBrowser(submittedShopId, confirmedUrl);
-      result.textContent = `同步成功：${snapshot.name}，读取 ${snapshot.count} 件，已写入 ${saved.itemCount} 件收录商品。`;
+      result.textContent = L(
+        `同步成功：${snapshot.name}，读取 ${snapshot.count} 件，已写入 ${saved.itemCount} 件收录商品。`,
+        `Synced: ${snapshot.name}. Read ${snapshot.count} items, saved ${saved.itemCount} indexed products.`,
+      );
     } catch (error) {
-      result.textContent = `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`;
-      const link = document.createElement('a'); link.href = confirmedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = '打开源站店铺';
+      result.textContent = L(
+        `浏览器读取失败：${error instanceof Error ? error.message : '请稍后重试'}`,
+        `Browser fetch failed: ${error instanceof Error ? error.message : 'please retry later'}`,
+      );
+      const link = document.createElement('a'); link.href = confirmedUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      link.textContent = L('打开源站店铺', 'Open Source Store');
       result.append(' ', link);
       preview.hidden = false;
-      preview.textContent = '重试同步';
+      preview.textContent = L('重试同步', 'Retry Sync');
     }
     finally { preview.disabled = false; }
   }
@@ -3179,22 +3648,22 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (next.disabled) return;
     try { const u = new URL(input.value.trim()); if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error(); confirmedUrl = u.href; }
-    catch { result.textContent = '请输入有效的店铺网址'; return; }
-    next.disabled = true; back.disabled = true; result.textContent = '正在提交…';
+    catch { result.textContent = L('请输入有效的店铺网址', 'Please enter a valid shop URL'); return; }
+    next.disabled = true; back.disabled = true; result.textContent = L('正在提交…', 'Submitting...');
     try {
       const response = await fetch('/api/shops/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopUrl: confirmedUrl, integrationCode: integrationCode?.value.trim() || "" }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '提交失败');
+      if (!response.ok) throw new Error(data.error || L('提交失败', 'Submission failed'));
       submittedShopId = data.shopId || '';
       next.hidden = true; back.hidden = true; preview.hidden = true;
-      if (data.existing) { result.textContent = '该店铺已收录，无需重复添加。'; return; }
+      if (data.existing) { result.textContent = L('该店铺已收录，无需重复添加。', 'This shop is already indexed.'); return; }
       if (state.mode === 'shop') fetchShops(false);
       if (submittedShopId && browserRefreshSupported(confirmedUrl)) {
         await syncSubmittedShop();
       } else {
-        result.textContent = '店铺已收录，暂不支持自动同步。';
+        result.textContent = L('店铺已收录，暂不支持自动同步。', 'Shop added. Automatic sync is not yet supported for this URL.');
       }
-    } catch (error) { result.textContent = error instanceof Error ? error.message : '提交失败，请稍后重试'; }
+    } catch (error) { result.textContent = error instanceof Error ? error.message : L('提交失败，请稍后重试', 'Submission failed, please retry later'); }
     finally { next.disabled = false; back.disabled = false; }
   });
 })();
@@ -3206,7 +3675,7 @@ document.addEventListener('click', async (event) => {
   if (!button || button.disabled) return;
   button.disabled = true;
   const label = button.textContent;
-  button.textContent = '读取中…';
+  button.textContent = L('读取中…', 'Loading...');
   try {
     const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
     const { snapshot } = await syncShopFromBrowser(button.dataset.shopId, button.dataset.shopUrl);
@@ -3219,14 +3688,29 @@ document.addEventListener('click', async (event) => {
       let key = '';
       try { key = decodeURIComponent(new URL(target).pathname.split('/').filter(Boolean).at(-1) || ''); } catch {}
       const item = snapshot.items.find(x => String(x.link || '') === target || (key && String(x.goods_key || '') === key));
-      if (!item) status.textContent = '本次未在源站找到该商品，请进入店铺核实。';
+      if (!item) status.textContent = L('本次未在源站找到该商品，请进入店铺核实。', 'Item not found on source store; visit the store to verify.');
       else {
         const price = Number(item.price); const stock = item.extend?.stock_count;
-        status.textContent = `源站参考：${Number.isFinite(price) ? `¥${price.toFixed(2)}` : '价格未提供'} · ${typeof stock === 'number' && stock <= 0 ? '当前缺货' : '库存以店铺为准'}（已同步）`;
+        const pricePart = Number.isFinite(price) ? `¥${price.toFixed(2)}` : L('价格未提供', 'Price N/A');
+        const stockPart = typeof stock === 'number' && stock <= 0 ? L('当前缺货', 'Out of stock') : L('库存以店铺为准', 'Verify stock in store');
+        status.textContent = L(
+          `源站参考：${pricePart} · ${stockPart}（已同步）`,
+          `Source ref: ${pricePart} · ${stockPart} (synced)`,
+        );
       }
-    } else status.textContent = `源站当前返回 ${snapshot.count} 件商品（已同步，具体库存请进入店铺核实）。`;
-  } catch (error) { showToast(`读取源站失败：${error instanceof Error ? error.message : '请稍后再试'}`); }
-  finally { button.disabled = false; button.textContent = label; }
+    } else {
+      status.textContent = L(
+        `源站当前返回 ${snapshot.count} 件商品（已同步，具体库存请进入店铺核实）。`,
+        `Source returned ${snapshot.count} items (synced; verify stock on seller site).`,
+      );
+    }
+  } catch (error) {
+    showToast(L(
+      `读取源站失败：${error instanceof Error ? error.message : '请稍后再试'}`,
+      `Failed to fetch source store: ${error instanceof Error ? error.message : 'please retry'}`,
+    ));
+  }
+  finally { button.disabled = false; button.textContent = button.dataset.browserRefresh === 'offer' ? L('↻ 刷新参考', '↻ Refresh') : label; }
 });
 
 // 同一浏览器 30 分钟内只计一次访问，跨北京时间日期仍计入新的一天。
@@ -3249,7 +3733,7 @@ document.addEventListener('click', async (event) => {
   const next = dialog.querySelector('[data-guide-next]');
   const floating = document.querySelector('#guideFloating');
   const shade = document.querySelector('#guideSpotlightShade');
-  let step = 0, lastFocus = null;
+  let step = 0, lastFocus = null, copiedState = false;
   function hideFloating() {
     floating.hidden = true; shade.hidden = true;
     els.shopControlsWrap.classList.remove('guide-spotlight');
@@ -3259,12 +3743,22 @@ document.addEventListener('click', async (event) => {
   function reopen(target) {
     hideFloating(); step = target; render(); dialog.showModal(); dialog.querySelector('[data-guide-close]').focus();
   }
+  function renderFloatingCopy() {
+    if (floating.hidden) return;
+    if (copiedState) {
+      floating.querySelector('strong').textContent = L('对接码已复制', 'Integration code copied');
+      floating.querySelector('p').textContent = L('现在可以继续，在商家后台粘贴对接码。', 'Proceed to paste the code in your merchant dashboard.');
+    } else {
+      floating.querySelector('strong').textContent = L('已为你筛选有对接码的店铺', 'Filtered shops with integration codes');
+      floating.querySelector('p').textContent = L('点击店铺名称旁的对接码复制，完成后继续下一步。', 'Click any code badge next to a shop name to copy, then continue.');
+    }
+  }
   function render() {
     pages.forEach((page, index) => { page.hidden = index !== step; });
     tabs.forEach((tab, index) => { if (index === step) tab.setAttribute('aria-current','step'); else tab.removeAttribute('aria-current'); });
     dialog.querySelector('#guideStepCount').textContent = `0${step + 1} / 03`;
     back.hidden = step === 0;
-    next.textContent = step === pages.length - 1 ? '完成' : '下一步 →';
+    next.textContent = step === pages.length - 1 ? L('完成', 'Done') : L('下一步 →', 'Next →');
     dialog.querySelector('#guideContent').scrollTop = 0;
   }
   trigger.addEventListener('click', event => { event.preventDefault(); hideFloating(); lastFocus = document.activeElement; render(); dialog.showModal(); dialog.querySelector('[data-guide-close]').focus(); });
@@ -3278,10 +3772,10 @@ document.addEventListener('click', async (event) => {
   dialog.querySelector('[data-guide-find]').addEventListener('click', () => {
     dialog.close(); state.q = ''; state.searchDraft = ''; els.searchInput.value = '';
     state.shopSystemType = 'all'; state.shopOnlyInStock = false; state.shopHasIntegrationCode = true;
+    copiedState = false;
     switchMode('shop'); syncControlsFromState(); syncStateToUrl(); fetchShops(false, { allowAutoClean:true });
     shade.hidden = false; floating.hidden = false;
-    floating.querySelector('strong').textContent = '已为你筛选有对接码的店铺';
-    floating.querySelector('p').textContent = '点击店铺名称旁的对接码复制，完成后继续下一步。';
+    renderFloatingCopy();
     document.querySelector('.layout')?.classList.add('guide-spotlight-parent');
     els.shopControlsWrap.classList.add('guide-spotlight'); els.shopList.classList.add('guide-spotlight');
     els.shopControlsWrap.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',block:'start'});
@@ -3291,8 +3785,37 @@ document.addEventListener('click', async (event) => {
   floating.querySelector('[data-guide-float-next]').addEventListener('click', () => reopen(2));
   document.addEventListener('integration-code-copied', () => {
     if (floating.hidden) return;
-    floating.querySelector('strong').textContent = '对接码已复制';
-    floating.querySelector('p').textContent = '现在可以继续，在商家后台粘贴对接码。';
+    copiedState = true;
+    renderFloatingCopy();
     floating.querySelector('[data-guide-float-next]').focus({preventScroll:true});
   });
+  window.addEventListener('prism:langchange', () => {
+    render();
+    renderFloatingCopy();
+  });
 })();
+
+window.addEventListener("prism:langchange", () => {
+  if (els.searchInput) {
+    els.searchInput.placeholder =
+      state.mode === "shop"
+        ? L("搜索店铺名称、主营类别、系统类型或网址…", "Search shop name, main categories, platform, or URL...")
+        : L("搜索 ChatGPT Plus、Claude Pro、Codex、美区，或输入店铺名称…", "Search ChatGPT Plus, Claude Pro, Codex, US region, or shop name...");
+  }
+  syncDocumentTitle();
+  renderHotQueries();
+  syncControlsFromState();
+  if (state.mode === "shop") {
+    renderShopSystemControls();
+    if (state.shopsData.length > 0 || !els.shopEmpty.hidden) renderShops(false);
+  } else {
+    renderFilterControls();
+    renderBrandChips();
+    renderOfficialPriceAnchor();
+    if (state.allItems.length > 0 || !els.productEmpty.hidden) renderProducts(false);
+  }
+  updateResultStatus();
+  if (!els.workbenchModal.hidden) renderWorkbenchBody();
+  if (!els.profileModal.hidden && state.activeProfileShopId) openShopProfile(state.activeProfileShopId);
+  refreshPublicSettings();
+});

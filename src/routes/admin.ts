@@ -61,6 +61,7 @@ const regionDisplay = typeof Intl !== 'undefined' && typeof Intl.DisplayNames ==
 
 export interface VisitorGeo {
   country: string;
+  countryCode?: string;
   region: string;
   city: string;
   location: string;
@@ -89,7 +90,7 @@ function resolveCountryLabel(rawCountry: string): string {
 }
 
 /** 按代理可信优先级提取客户端 IP。 */
-function extractClientIp(req: Request): string {
+export function extractClientIp(req: Request): string {
   const candidates = [
     req.headers.get('CF-Connecting-IP'),
     req.headers.get('True-Client-IP'),
@@ -123,7 +124,7 @@ function isLocalOrPrivateIp(ip: string): boolean {
 }
 
 /** 识别文档/测试保留段与链路本地地址，避免对外发起无效查询。 */
-function isNonPublicLookupIp(ip: string): boolean {
+export function isNonPublicLookupIp(ip: string): boolean {
   if (!ip || ip === 'unknown' || isLocalOrPrivateIp(ip)) return true;
   const normalized = ip.replace(/^::ffff:/i, '').toLowerCase();
   if (
@@ -163,6 +164,8 @@ function normalizeGeoPlaceKey(name: string): string {
 
 function buildVisitorGeo(rawCountry: string, rawRegion: string, rawCity: string, ip: string): VisitorGeo {
   const countryLabel = resolveCountryLabel(rawCountry);
+  const rawUpper = rawCountry.trim().toUpperCase();
+  const countryCode = /^[A-Z]{2}$/.test(rawUpper) && rawUpper !== 'XX' ? rawUpper : '';
   const region = rawRegion.trim().slice(0, 64);
   const city = rawCity.trim().slice(0, 64);
 
@@ -178,16 +181,16 @@ function buildVisitorGeo(rawCountry: string, rawRegion: string, rawCity: string,
     parts.push(clean);
   }
   if (parts.length > 0) {
-    return { country: countryLabel || rawCountry.trim().toUpperCase(), region, city, location: parts.join(' · ') };
+    return { country: countryLabel || rawUpper, countryCode, region, city, location: parts.join(' · ') };
   }
   if (isLocalOrPrivateIp(ip)) {
-    return { country: 'LOCAL', region: '', city: '', location: '本地 / 内网' };
+    return { country: 'LOCAL', countryCode: 'LOCAL', region: '', city: '', location: '本地 / 内网' };
   }
-  return { country: '', region: '', city: '', location: '未知地区' };
+  return { country: '', countryCode: '', region: '', city: '', location: '未知地区' };
 }
 
 /** 优先从可信代理请求头提取地区；仅在非 Miniflare 模拟环境下补充 request.cf。 */
-function extractVisitorGeo(req: Request, ip: string): VisitorGeo {
+export function extractVisitorGeo(req: Request, ip: string): VisitorGeo {
   const cf = (req as Request & { cf?: Record<string, unknown> }).cf;
   const headerCountry = String(
     req.headers.get('CF-IPCountry') ||

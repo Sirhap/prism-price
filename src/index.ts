@@ -10,6 +10,7 @@ import { observeD1 } from "./observability/d1Metrics";
 import { runSyncBatch } from "./collector/scheduler";
 import { handleApiRequest } from "./routes/api";
 import { handleAdminRoute } from "./routes/admin";
+import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 export default {
   /**
@@ -52,6 +53,9 @@ export default {
         if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method Not Allowed", { status: 405 });
         return await withPublicResponseCache(request, () => handleLlmsFullTxt(url, env));
       }
+      if (url.pathname === "/api/locale") {
+        return await handleLocaleApi(request);
+      }
       if (url.pathname.startsWith("/api/")) {
         return await withPublicResponseCache(request, async () => {
           const observed = observeD1(env.DB);
@@ -71,7 +75,12 @@ export default {
           }
         });
       }
-      return await env.ASSETS.fetch(request);
+      const assetResponse = await env.ASSETS.fetch(request);
+      if ((request.method === "GET" || request.method === "HEAD") && isLocalizedHtmlPath(url.pathname)) {
+        const resolved = await resolveRequestLocale(request, { lookupPublicIp: true });
+        return applyHtmlLocale(assetResponse, url.pathname, resolved);
+      }
+      return assetResponse;
     } catch (error) {
       if (isDailyD1Limit(error)) return quotaUnavailable();
       const message = error instanceof Error ? error.message : "Internal server error";

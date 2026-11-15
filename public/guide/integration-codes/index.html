@@ -18,40 +18,42 @@
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"卡网店铺对接码（分销码）查询与标注指南","url":"https://parity.sirhao.top/guide/integration-codes/","inLanguage":"zh-CN","author":{"@type":"Organization","name":"棱镜比价"},"publisher":{"@type":"Organization","name":"棱镜比价","url":"https://parity.sirhao.top/"}}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"棱镜比价首页","item":"https://parity.sirhao.top/"},{"@type":"ListItem","position":2,"name":"使用指南","item":"https://parity.sirhao.top/guide/"},{"@type":"ListItem","position":3,"name":"店铺对接码指南","item":"https://parity.sirhao.top/guide/integration-codes/"}]}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"什么是卡网店铺对接码（分销码）？","acceptedAnswer":{"@type":"Answer","text":"店铺对接码（又称分销码、对接代码）是联动小铺等卡网系统提供的货源对接标识。下游店主在自己后台填入上游店铺的对接码后，可快速同步或分销对方的商品货源。"}},{"@type":"Question","name":"棱镜比价如何识别并保留对接码格式？","acceptedAnswer":{"@type":"Answer","text":"系统会从店铺名称与公开店铺简介中识别「对接码」「对接代码」「分销码」「对接：」「分销：」等标签后的内容，并严格保留原始大小写、前导零（如 000001）以及内部空格，不会改写格式。"}},{"@type":"Question","name":"如何只筛选出提供对接码的店铺？","acceptedAnswer":{"@type":"Answer","text":"在首页切换至「看收录店铺」后勾选「仅看有对接码」（URL 参数 hasIntegrationCode=1），或直接访问 /catalog/integration-codes/ 目录页即可查看全部含对接码的店铺并复制。"}}]}</script>
-  <style>body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fd;color:#19233b;margin:0;line-height:1.8}main{max-width:860px;margin:2.5rem auto;padding:0 1.25rem}.topnav{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin-bottom:1rem;font-size:.94rem}.topnav a{color:#4f46e5;text-decoration:none;font-weight:500}article{background:white;border:1px solid #e1e8f4;border-radius:20px;padding:clamp(1.2rem,5vw,2.5rem)}h1{font-size:clamp(1.5rem,4vw,2.1rem);line-height:1.35;margin-top:0}h2{font-size:1.25rem;margin-top:2rem;border-bottom:1px solid #edf1f8;padding-bottom:.3rem}a{color:#4f46e5}code{background:#f1f5f9;padding:.15rem .4rem;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}pre{background:#0f172a;color:#e2e8f0;padding:1rem 1.2rem;border-radius:12px;overflow-x:auto;font-size:.9rem}.cta-row{display:flex;flex-wrap:wrap;gap:.75rem;margin:1.25rem 0}.btn{display:inline-block;padding:.5rem 1.05rem;border-radius:10px;background:#4f46e5;color:#fff;text-decoration:none;font-weight:500}.btn-sec{background:#eef2ff;color:#3730a3}footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #edf1f8;color:#66758e;font-size:.9rem}</style>
+  <style>*{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7fd;color:#19233b;margin:0;line-height:1.8}main{max-width:860px;margin:2.5rem auto;padding:0 1.25rem}.topnav{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;margin-bottom:1rem;font-size:.94rem}.topnav a{color:#4f46e5;text-decoration:none;font-weight:500}.lang-btn{margin-left:auto;border:1px solid #cbd5e1;background:#fff;color:#1e293b;border-radius:999px;padding:.24rem .72rem;font-size:.82rem;font-weight:700;cursor:pointer;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.lang-btn:hover{border-color:#4f46e5;color:#4f46e5}article{background:white;border:1px solid #e1e8f4;border-radius:20px;padding:clamp(1.2rem,5vw,2.5rem)}h1{font-size:clamp(1.42rem,4vw,2.1rem);line-height:1.35;margin-top:0}h2{font-size:1.25rem;margin-top:2rem;border-bottom:1px solid #edf1f8;padding-bottom:.3rem}a{color:#4f46e5;overflow-wrap:anywhere}code{background:#f1f5f9;padding:.15rem .4rem;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;overflow-wrap:anywhere}pre{background:#0f172a;color:#e2e8f0;padding:1rem 1.2rem;border-radius:12px;overflow-x:auto;font-size:.86rem}.cta-row{display:flex;flex-wrap:wrap;gap:.75rem;margin:1.25rem 0}.btn{display:inline-flex;align-items:center;justify-content:center;padding:.5rem 1.05rem;border-radius:10px;background:#4f46e5;color:#fff;text-decoration:none;font-weight:500}.btn-sec{background:#eef2ff;color:#3730a3}footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #edf1f8;color:#66758e;font-size:.9rem}@media(max-width:640px){main{margin:1rem auto 2.5rem;padding:0 .75rem}.topnav{gap:.4rem;font-size:.82rem}.topnav a{padding:.22rem .6rem;border-radius:999px;background:#fff;border:1px solid #e2e8f0}article{padding:1.1rem .95rem;border-radius:16px}.btn{width:100%}}</style>
+  <script src="/i18n.js?v=20261115-i18n" defer></script>
 </head>
 <body><main>
   <nav class="topnav" aria-label="站点导航">
-    <a href="/">棱镜比价首页</a>
-    <a href="/guide/">使用指南</a>
-    <a href="/guide/ai-pricing/">AI 比价对照</a>
-    <a href="/guide/open-store/">联动小铺开店</a>
-    <a href="/catalog/integration-codes/">店铺对接码目录</a>
-    <a href="/catalog/shops/">店铺目录</a>
+    <a href="/" data-i18n="nav.home">棱镜比价首页</a>
+    <a href="/guide/" data-i18n="nav.guide">使用指南</a>
+    <a href="/guide/ai-pricing/" data-i18n="nav.aiPricing">AI 比价对照</a>
+    <a href="/guide/open-store/" data-i18n="nav.openStore">联动小铺开店</a>
+    <a href="/catalog/integration-codes/" data-i18n="nav.codeDirectory">店铺对接码目录</a>
+    <a href="/catalog/shops/" data-i18n="nav.catalogShops">店铺目录</a>
+    <button class="lang-btn" type="button" data-lang-toggle aria-label="Switch to English">EN</button>
   </nav>
-  <nav aria-label="面包屑"><a href="/">棱镜比价首页</a> / <a href="/guide/">使用指南</a> / 店铺对接码指南</nav>
+  <nav aria-label="面包屑"><a href="/" data-i18n="nav.breadcrumbHome">棱镜比价首页</a> / <a href="/guide/" data-i18n="guide.crumb">使用指南</a> / <span data-i18n="codeGuide.crumb">店铺对接码指南</span></nav>
   <article>
-    <h1>卡网店铺对接码（分销码）查询与标注指南</h1>
-    <p>对于数字商品分销与多店比价而言，<strong>店铺对接码</strong>（也称分销码、对接代码）是连接上游货源店铺与下游分销店铺的核心凭证。棱镜比价自动提取公开店铺名称与简介中的对接码，并在店铺卡片、店铺介绍页及专属目录中展示，支持一键复制。</p>
+    <h1 data-i18n="codeGuide.h1">卡网店铺对接码（分销码）查询与标注指南</h1>
+    <p data-i18n-html="codeGuide.leadHtml">对于数字商品分销与多店比价而言，<strong>店铺对接码</strong>（也称分销码、对接代码）是连接上游货源店铺与下游分销店铺的核心凭证。棱镜比价自动提取公开店铺名称与简介中的对接码，并在店铺卡片、店铺介绍页及专属目录中展示，支持一键复制。</p>
 
     <div class="cta-row">
-      <a class="btn" href="/catalog/integration-codes/">浏览店铺对接码目录 →</a>
-      <a class="btn btn-sec" href="/?mode=shop&hasIntegrationCode=1">在首页筛选含对接码店铺</a>
+      <a class="btn" href="/catalog/integration-codes/" data-i18n="codeGuide.cta1">浏览店铺对接码目录 →</a>
+      <a class="btn btn-sec" href="/?mode=shop&hasIntegrationCode=1" data-i18n="codeGuide.cta2">在首页筛选含对接码店铺</a>
     </div>
 
-    <h2>如何在棱镜比价查找店铺对接码？</h2>
+    <h2 data-i18n="codeGuide.s1h">如何在棱镜比价查找店铺对接码？</h2>
     <ol>
-      <li><strong>桌面端/手机端筛选</strong>：访问<a href="/">棱镜比价首页</a>，点击顶部「看收录店铺」选项卡，勾选筛选栏中的「仅看有对接码」，即可筛选全部已识别到对接码的商家，点击卡片上的对接码胶囊即可复制。</li>
-      <li><strong>静态目录直达</strong>：直接浏览 <a href="/catalog/integration-codes/">店铺对接码专题目录</a>，查看每家店铺的系统类型（如联动小铺）、收录商品数量与对应对接码。</li>
-      <li><strong>关键词检索</strong>：在店铺模式搜索框输入「对接码」或目标店铺名/关键词，快速锁定支持分销的源头店铺。</li>
+      <li data-i18n-html="codeGuide.s1li1Html"><strong>桌面端/手机端筛选</strong>：访问<a href="/">棱镜比价首页</a>，点击顶部「看收录店铺」选项卡，勾选筛选栏中的「仅看有对接码」，即可筛选全部已识别到对接码的商家，点击卡片上的对接码胶囊即可复制。</li>
+      <li data-i18n-html="codeGuide.s1li2Html"><strong>静态目录直达</strong>：直接浏览 <a href="/catalog/integration-codes/">店铺对接码专题目录</a>，查看每家店铺的系统类型（如联动小铺）、收录商品数量与对应对接码。</li>
+      <li data-i18n-html="codeGuide.s1li3Html"><strong>关键词检索</strong>：在店铺模式搜索框输入「对接码」或目标店铺名/关键词，快速锁定支持分销的源头店铺。</li>
     </ol>
 
-    <h2>商家如何标注对接码才能被自动识别？</h2>
-    <p>系统遵循严格的规则识别公开标注的对接码，支持简体与繁体中文标签。建议卡网店主在<strong>店铺名称</strong>或<strong>店铺简介</strong>中使用清晰且独立的格式标注：</p>
+    <h2 data-i18n="codeGuide.s2h">商家如何标注对接码才能被自动识别？</h2>
+    <p data-i18n="codeGuide.s2p">系统遵循严格的规则识别公开标注的对接码，支持简体与繁体中文标签。建议卡网店主在<strong>店铺名称</strong>或<strong>店铺简介</strong>中使用清晰且独立的格式标注：</p>
     <ul>
-      <li><strong>支持完整标签</strong>：<code>对接码</code>、<code>对接代码</code>、<code>分销码</code>（可跟冒号、空格或「为 / 是」）。</li>
-      <li><strong>支持带冒号简称</strong>：<code>对接：</code>、<code>分销：</code>（简称须紧跟冒号或等号 <code>:</code> / <code>：</code> / <code>=</code>）。</li>
-      <li><strong>格式原样保留</strong>：系统会将对接码严格按字符串保存，保留字母大小写、前导零（例如 <code>000001</code>）与独立成行时的中间空格（例如 <code>Lucky plus</code>）。</li>
+      <li data-i18n-html="codeGuide.s2li1Html"><strong>支持完整标签</strong>：<code>对接码</code>、<code>对接代码</code>、<code>分销码</code>（可跟冒号、空格或「为 / 是」）。</li>
+      <li data-i18n-html="codeGuide.s2li2Html"><strong>支持带冒号简称</strong>：<code>对接：</code>、<code>分销：</code>（简称须紧跟冒号或等号 <code>:</code> / <code>：</code> / <code>=</code>）。</li>
+      <li data-i18n-html="codeGuide.s2li3Html"><strong>格式原样保留</strong>：系统会将对接码严格按字符串保存，保留字母大小写、前导零（例如 <code>000001</code>）与独立成行时的中间空格（例如 <code>Lucky plus</code>）。</li>
     </ul>
 
     <pre><code># 推荐标注示例（建议在店铺简介中单独成行）
@@ -59,13 +61,13 @@
 对接码：your_code_01
 分销码：「my_shop_code」</code></pre>
 
-    <h2>为什么有些店铺的对接码与链接后缀不同？</h2>
-    <p>在联动小铺等卡网系统中，店铺访问路径标识（如 <code>/shop/xxxx</code>）与商户后台设置的实际分销对接码可以相同，也可以由店主自定义为不同字符。棱镜比价优先提取店主在名称或简介中最新公开标注的对接码，并在采集同步后自动更新。</p>
+    <h2 data-i18n="codeGuide.s3h">为什么有些店铺的对接码与链接后缀不同？</h2>
+    <p data-i18n-html="codeGuide.s3pHtml">在联动小铺等卡网系统中，店铺访问路径标识（如 <code>/shop/xxxx</code>）与商户后台设置的实际分销对接码可以相同，也可以由店主自定义为不同字符。棱镜比价优先提取店主在名称或简介中最新公开标注的对接码，并在采集同步后自动更新。</p>
 
-    <h2>还没有自己的发卡店铺？</h2>
-    <p>如果您希望开设自己的卡网店铺并开启商品分销或接入比价收录，可查看<a href="/guide/open-store/">卡网开店与联动小铺开店指南</a>。</p>
+    <h2 data-i18n="codeGuide.s4h">还没有自己的发卡店铺？</h2>
+    <p data-i18n-html="codeGuide.s4pHtml">如果您希望开设自己的卡网店铺并开启商品分销或接入比价收录，可查看<a href="/guide/open-store/">卡网开店与联动小铺开店指南</a>。</p>
 
-    <footer>棱镜比价 PRISM · <a href="/catalog/integration-codes/">查看对接码目录</a> · <a href="/catalog/shops/">查看全部店铺</a></footer>
+    <footer data-i18n-html="codeGuide.footerHtml">棱镜比价 PRISM · <a href="/catalog/integration-codes/">查看对接码目录</a> · <a href="/catalog/shops/">查看全部店铺</a></footer>
   </article>
 </main></body>
 </html>
