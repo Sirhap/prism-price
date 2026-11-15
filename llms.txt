@@ -1,0 +1,37 @@
+# PRISM Parity (棱镜比价)
+
+> Open-source multi-store price comparison engine and store directory for AI subscriptions (ChatGPT, Codex, Claude, Gemini, Cursor, DeepSeek, Grok), API relays, and digital goods. Built with TypeScript, Cloudflare Workers, Static Assets, and D1 SQLite (with self-hosted Miniflare/workerd support). Read-only price discovery; no payment processing or brokerage.
+
+## Live Service & Machine-Readable Endpoints
+
+- [Live Site (zh/en auto-detected)](https://parity.sirhao.top/): Interactive product price comparison & store directory
+- [Live Site LLMs Core Index](https://parity.sirhao.top/llms.txt): Concise entity and route guide for AI search agents
+- [Live Site LLMs Full Snapshot](https://parity.sirhao.top/llms-full.txt): Sanitized live brand counts, lowest reference prices, and integration code stores
+- [Live Catalog Overview](https://parity.sirhao.top/catalog/): Crawl-friendly HTML directories for brands, products, stores, and integration codes
+- [Live XML Sitemap](https://parity.sirhao.top/sitemap.xml): Dynamic sitemap index covering shops and normalized product groups
+
+## Repository Documentation
+
+- [README (English)](README.md): Architecture, supported categories, API endpoints, quick start, and FAQs
+- [README (简体中文)](README.zh-CN.md): Full Chinese guide for 棱镜比价 (AI 订阅与卡网多店比价)
+- [Brand Classification Rules](BRAND-RULES.md): Regex specification and editing workflow for `src/config/brand-rules.json`
+- [Integration Code Rules](INTEGRATION-CODES.md): Rules for extracting and displaying store distribution/supplier codes
+- [Self-Hosted Deployment Guide](deploy/huoshan/README.md): Miniflare/workerd systemd setup, online backups, and Nginx reverse proxy
+- [Security & Privacy Policy](SECURITY.md): Secret isolation and PII/Telegram redaction rules
+- [Contributing Guide](CONTRIBUTING.md): Development checks and pull request requirements
+
+## Key Source Modules
+
+- [Worker Entrypoint](src/index.ts): Main HTTP router, locale resolution middleware, and D1 observability
+- [Public & Admin APIs](src/routes/api.ts): Product group queries, shop directory queries, and authenticated ingest routes
+- [SEO Catalog SSR](src/routes/catalogSeo.ts): Semantic HTML pages and Schema.org JSON-LD (`AggregateOffer`, `Product`, `BreadcrumbList`)
+- [SEO & LLMs Asset Generators](src/routes/seoAssets.ts): Dynamic `/sitemap*.xml`, `/llms.txt`, and `/llms-full.txt`
+- [Server Locale Resolver](src/i18n/locale.ts): `zh` / `en` detection from `?lang=`, cookie, `CF-IPCountry`, and `Accept-Language`
+- [Brand Rules Config](src/config/brand-rules.json): Declarative product categorization and deduplication rules
+- [Frontend i18n Dictionary](public/i18n.js): Bilingual UI translation map for web pages and comparison cards
+
+## Verification Commands
+
+- `npm test`: Run Vitest suite with `@cloudflare/vitest-pool-workers`
+- `npm run test:sync`: Run Node integration and sync checks (`tests/*.node-check.mjs`)
+- `npm run typecheck`: Run TypeScript compiler check (`tsc --noEmit`)
