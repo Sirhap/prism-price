@@ -51,7 +51,8 @@ git archive "$commit" src public migrations scripts local-sync deploy/huoshan pa
   printf '%s\n' "$commit" > RELEASE_COMMIT
   tar -czf "$work/release.tar.gz" .
 )
-checksum="$(shasum -a 256 "$work/release.tar.gz")"
+checksum="$(shasum -a 256 < "$work/release.tar.gz" | cut -d ' ' -f 1)"
+[[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
 printf 'Built %s from %s\n' "$name" "$commit"
 if ! "$apply"; then
   exit 0
@@ -59,14 +60,13 @@ fi
 
 # The release name, predecessor, and checksum are restricted to shell-safe names above.
 ssh -T -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 huoshan-server \
-  "bash -c '
-    set -euo pipefail
+  "set -e
     umask 077
     cd /opt/ldxp-cf-demo/backups
     mkdir $name
     cd $name
     cat > release.tar.gz
-    printf "%s  release.tar.gz\\n" ${checksum:0:64} | sha256sum -c -
+    echo '$checksum  release.tar.gz' | sha256sum -c -
     tar -xOzf release.tar.gz ./deploy/huoshan/activate-release.sh > activate-release.sh
     exec bash activate-release.sh $name $expected
-  '" < "$work/release.tar.gz"
+  " < "$work/release.tar.gz"
