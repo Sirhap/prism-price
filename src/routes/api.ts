@@ -42,6 +42,7 @@ import {
   type PushedShopEntry,
 } from "../collector/scheduler";
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
+import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
   calculateMedian,
   extractWarrantyText,
@@ -198,7 +199,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     }
     const { results: fullOffers } = await env.DB.prepare(
       `SELECT
-        o.id, o.shop_id, o.price, o.stock_count, o.stock_status, o.item_url, o.updated_at,
+        o.*,
         s.shop_name, s.shop_url, s.telegram, s.last_synced_at, s.stale_days, s.product_count AS shop_product_count
        FROM offers o
        INNER JOIN shops s ON s.id = o.shop_id
@@ -222,6 +223,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
             price: row.price,
             stockCount: row.stock_count,
             stockStatus: row.stock_status,
+            ...stockWarning({ stockWarningDay: stockWarningDay(row) }),
             itemUrl: row.item_url,
             updatedAt: row.updated_at,
             staleDays: computeStaleDays(
@@ -368,7 +370,10 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
   const items = (listRes.results || []).map((row) => {
     let offers: unknown[] = [];
     try {
-      offers = JSON.parse(row.offers_preview_json);
+      const parsed: unknown = JSON.parse(row.offers_preview_json);
+      if (Array.isArray(parsed)) {
+        offers = parsed.map(({ stockWarningDay, ...offer }) => ({ ...offer, ...stockWarning({ stockWarningDay }) }));
+      }
     } catch {
       offers = [];
     }
@@ -654,6 +659,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
         systemTypePersistence: caps.systemType,
         descriptionPersistence: caps.description,
         partialSnapshotSupport: true,
+        stockObservationSupport: await hasStockObservations(env.DB),
         shops: (results || []).map((s) => {
           const systemType = inferShopSystem(s.shop_url, s.canonical_url) !== "unknown" ? inferShopSystem(s.shop_url, s.canonical_url) : (normalizeShopSystem(s.system_type) ?? "unknown");
           return {
@@ -912,6 +918,7 @@ async function handleGetShopDetail(shopId: string, env: Env): Promise<Response> 
         price: o.price,
         stockCount: o.stock_count,
         stockStatus: o.stock_status,
+        ...stockWarning({ stockWarningDay: stockWarningDay(o) }),
         itemUrl: o.item_url,
         updatedAt: o.updated_at,
       })),
@@ -1106,7 +1113,7 @@ async function handleBrowserShopSync(request: Request, env: Env): Promise<Respon
     if (items.length > 2000) return Response.json({ error: '合并后商品超过 2000 件，请使用管理员同步' }, { status: 400 });
     const incomingName = typeof body.shopName === 'string' ? hideTelegramContacts(body.shopName.trim()).slice(0, 120) : '';
     const displayName = shop.id.startsWith('submitted-') && shop.sync_state === 'pending' && incomingName ? incomingName : shop.shop_name;
-    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, new Date().toISOString());
+    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, new Date().toISOString(), { observedItemKeys: keys });
     return Response.json({ ok:true, status:result.status, itemCount:result.itemCount });
   } finally { browserSyncInFlight.delete(id); }
 }

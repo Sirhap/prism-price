@@ -7,8 +7,8 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.1bcf46364e9f.css">
-  <script type="module" src="/admin/admin.3933cc81b8f9.js"></script>
+  <link rel="stylesheet" href="/admin/admin.4fc941930eeb.css">
+  <script type="module" src="/admin/admin.e2ea0e626f83.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -34,6 +34,7 @@
       <button type="button" class="admin-nav-item" data-panel="catalog"><span class="nav-symbol" aria-hidden="true">▤</span><span><strong>平台与品牌</strong><small>商家与商品结构</small></span></button>
       <button type="button" class="admin-nav-item" data-panel="sync"><span class="nav-symbol" aria-hidden="true">↻</span><span><strong>商品同步</strong><small>进度与采集批次</small></span></button>
       <button type="button" class="admin-nav-item" data-panel="ranking"><span class="nav-symbol" aria-hidden="true">≡</span><span><strong>店铺管理</strong><small>排序与推荐</small></span></button>
+      <button type="button" class="admin-nav-item" data-panel="sponsors"><span class="nav-symbol" aria-hidden="true">◇</span><span><strong>赞助推广</strong><small>投放与授权码</small></span></button>
       <button type="button" class="admin-nav-item" data-panel="settings"><span class="nav-symbol" aria-hidden="true">⚙</span><span><strong>站点设置</strong><small>收藏与收录</small></span></button>
       <button type="button" class="admin-nav-item" data-panel="security"><span class="nav-symbol" aria-hidden="true">⌘</span><span><strong>安全设置</strong><small>密码与密钥</small></span></button>
     </nav>
@@ -70,7 +71,7 @@
           <div class="card-head">
             <div>
               <h2>近 30 天访问趋势</h2>
-              <p class="muted">首页去重访问（30 分钟内同一浏览器计 1 次）</p>
+              <p class="muted">访问次数（30 分钟内同浏览器计 1 次）与实际访客人数（按 IP 去重）</p>
             </div>
             <button type="button" class="card-link" data-panel="visits">地区与 IP 明细 →</button>
           </div>
@@ -98,29 +99,49 @@
 
     <div class="admin-panel" id="panel-visits" hidden>
       <div class="overview-toolbar">
-        <span class="muted">北京时间 · 统计近 30 天首页去重流量、访客地区/终端画像与最近 50 条访问明细</span>
+        <span class="muted">北京时间 · 概览与趋势固定展示近 30 天，分布与访问明细可按日期筛选</span>
         <button id="refreshVisits" class="btn btn-secondary" type="button">↻ 刷新访客数据</button>
       </div>
+      <div id="visitUniqueStats" class="mini-stat-row visits-uv-row" aria-live="polite"></div>
       <div id="visitSummaryStats" class="mini-stat-row visits-kpi-row" aria-live="polite"></div>
       <section class="admin-card visits-trend-card">
         <div class="card-head">
           <div>
             <h2>最近 30 天每日访问量</h2>
-            <p class="muted">鼠标悬停柱状条可查看对应日期与访问次数</p>
+            <p class="muted">鼠标悬停柱状条可查看对应日期、实际访客人数与访问次数</p>
           </div>
         </div>
         <div id="visitTrendChart" class="trend-chart" aria-label="最近 30 天访问量柱状图"></div>
         <details class="visit-details">
-          <summary>查看按日访问计数</summary>
+          <summary>查看按日访问次数与实际人数（IP 去重）</summary>
           <div id="visitHistory" aria-live="polite">正在加载…</div>
         </details>
+      </section>
+      <section class="admin-card visit-range-card" aria-label="访客分布与访问记录筛选">
+        <form id="visitRangeForm" class="visit-range-form">
+          <label>时间范围（北京时间）
+            <select id="visitRange" name="range">
+              <option value="today">今天</option>
+              <option value="yesterday">昨天</option>
+              <option value="7d">近 7 天</option>
+              <option value="30d" selected>近 30 天</option>
+              <option value="custom">自定义日期</option>
+            </select>
+          </label>
+          <fieldset id="visitCustomRange" aria-label="自定义日期范围" hidden disabled>
+            <label>开始日期<input type="date" name="from" required></label>
+            <label>结束日期<input type="date" name="to" required></label>
+          </fieldset>
+          <button class="btn btn-primary" type="submit">应用筛选</button>
+        </form>
+        <p id="visitRangeStatus" class="muted" role="status">正在加载日期范围…</p>
       </section>
       <div class="overview-grid">
         <section class="admin-card">
           <div class="card-head">
             <div>
               <h2>访客地区分布（Top 8）</h2>
-              <p class="muted" id="visitSampleHint">基于近期去重访客明细聚合</p>
+              <p class="muted" id="visitSampleHint">按筛选范围内的访问日志聚合</p>
             </div>
           </div>
           <div id="visitGeoBreakdown" class="breakdown-list" aria-live="polite">正在加载…</div>
@@ -129,7 +150,7 @@
           <div class="card-head">
             <div>
               <h2>终端设备与浏览器分布</h2>
-              <p class="muted">识别桌面/手机终端及主流浏览器占比</p>
+              <p class="muted">设备占比按访问次数计算，访客数按各分组内的 IP 去重</p>
             </div>
           </div>
           <div id="visitDeviceBreakdown" class="breakdown-list" aria-live="polite">正在加载…</div>
@@ -140,10 +161,23 @@
         <div class="card-head">
           <div>
             <h2>最近访问记录（IP · 地区 · 设备）</h2>
-            <p class="muted">展示最近 50 条去重访客的客户端 IP、识别地区与终端环境</p>
+            <p class="muted" id="visitLogsHint">按访问时间倒序展示筛选范围内的最新 50 条</p>
           </div>
         </div>
         <div id="visitRecentLogs" class="visit-logs-wrap" aria-live="polite">正在加载…</div>
+      </section>
+      <section class="admin-card crawler-access-card">
+        <div class="card-head">
+          <div>
+            <h2>爬虫访问与拦截</h2>
+            <p class="muted">按所选时间范围展示最新 50 条。自动拦截可识别的爬虫和采集脚本并保留记录，不自动永久封 IP。已放行的索引爬虫仍可读取公开页面；伪装成普通浏览器的请求可能识别不到。</p>
+          </div>
+        </div>
+        <div id="crawlerAccessLogs" class="visit-logs-wrap" aria-live="polite">正在加载…</div>
+        <details class="visit-details">
+          <summary id="crawlerBlocklistTitle">手动 IP 黑名单</summary>
+          <div id="crawlerBlocklist" aria-live="polite"></div>
+        </details>
       </section>
     </div>
 
@@ -234,6 +268,57 @@
           <button id="previousPage" class="btn btn-secondary" type="button">上一页</button>
           <span id="pageInfo"></span>
           <button id="nextPage" class="btn btn-secondary" type="button">下一页</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="admin-panel" id="panel-sponsors" hidden>
+      <section class="admin-card sponsor-settings" aria-labelledby="sponsorEnabledLabel">
+        <label class="toggle-row sponsor-toggle-row" for="sponsorEnabled">
+          <span class="sponsor-toggle-copy"><strong id="sponsorEnabledLabel">启用赞助推广</strong><small id="sponsorEnabledHint">关闭后隐藏前台并暂停投稿，有效期照常计算。</small></span>
+          <span id="sponsorEnabledStatus" class="sponsor-status" role="status">加载中</span>
+          <input id="sponsorEnabled" type="checkbox" role="switch" disabled aria-labelledby="sponsorEnabledLabel" aria-describedby="sponsorEnabledHint sponsorEnabledStatus">
+        </label>
+      </section>
+      <section class="admin-card">
+        <h2>批量生成赞助授权码</h2>
+        <p class="muted">授权码一次性使用，可指定位置或由投稿人选，不提前占位。完整码只在生成时显示。</p>
+        <div id="sponsorCapacity" class="sponsor-capacity" role="status" aria-label="赞助位占用情况"></div>
+        <form id="sponsorGenerateForm">
+          <label>生成数量<input name="quantity" type="number" min="1" max="50" value="1" required></label>
+          <label>有效时长<input name="duration" type="number" min="1" max="365" value="30" required></label>
+          <label>单位<select name="unit"><option value="days">天</option><option value="months">自然月</option></select></label>
+          <label class="sponsor-placement-field">投放位置<select name="placement">
+            <option value="choose">投稿人选择轮播或固定</option>
+            <option value="carousel">顶部轮播（最多 4 张）</option><option value="fixed-1">固定位 1</option>
+            <option value="fixed-2">固定位 2</option><option value="fixed-3">固定位 3</option><option value="fixed-4">固定位 4</option>
+          </select></label>
+          <button type="submit" class="btn btn-primary">生成授权码</button>
+        </form>
+        <div id="sponsorGenerated" hidden>
+          <div class="sponsor-card-heading">
+            <label for="sponsorCodesOutput">本次生成 · 请复制保存</label>
+            <button type="button" class="btn btn-secondary" id="sponsorCopyBtn">复制全部授权码</button>
+          </div>
+          <textarea id="sponsorCodesOutput" rows="3" readonly aria-label="本次生成的完整授权码"></textarea>
+        </div>
+      </section>
+      <section class="admin-card">
+        <div class="sponsor-card-heading">
+          <h2>授权码管理</h2>
+          <div class="sponsor-admin-controls">
+            <select id="sponsorStatusFilter" aria-label="按状态筛选授权码">
+              <option value="all">全部状态</option><option value="unused">未使用</option><option value="active">已使用 · 有效</option>
+              <option value="expired">已到期</option><option value="revoked">已作废</option>
+            </select>
+            <button type="button" id="sponsorRefreshBtn" class="btn btn-secondary">刷新</button>
+          </div>
+        </div>
+        <div id="sponsorAdminRows" class="visit-logs-wrap" role="region" aria-label="授权码列表" aria-live="polite" tabindex="0"></div>
+        <div class="sponsor-admin-controls sponsor-pagination">
+          <button type="button" class="btn btn-secondary" id="sponsorPreviousBtn" disabled>上一页</button>
+          <span id="sponsorAdminPage" class="muted">第 1 页</span>
+          <button type="button" class="btn btn-secondary" id="sponsorNextBtn" disabled>下一页</button>
         </div>
       </section>
     </div>

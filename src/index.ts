@@ -10,6 +10,8 @@ import { observeD1 } from "./observability/d1Metrics";
 import { runSyncBatch } from "./collector/scheduler";
 import { handleApiRequest } from "./routes/api";
 import { handleAdminRoute } from "./routes/admin";
+import { checkCrawlerAccess } from "./routes/crawlerAccess";
+import { handleSponsorPublic } from "./routes/sponsors";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 export default {
@@ -20,6 +22,8 @@ export default {
     const url = new URL(request.url);
 
     try {
+      const crawlerResponse = await checkCrawlerAccess(request, url.pathname, env.DB, ctx);
+      if (crawlerResponse) return crawlerResponse;
       if (url.pathname === '/go/open-store') return (await handleAdminRoute(request, env)) ?? new Response('Not found', {status:404});
       if (url.pathname === '/admin') return Response.redirect(new URL('/admin/', url).href, 302);
       if (url.pathname.startsWith('/admin/')) {
@@ -55,6 +59,9 @@ export default {
       }
       if (url.pathname === "/api/locale") {
         return await handleLocaleApi(request);
+      }
+      if (url.pathname === "/api/sponsors" || url.pathname.startsWith("/api/sponsors/")) {
+        return (await handleSponsorPublic(request, env.DB)) ?? new Response(null, { status: 404 });
       }
       if (url.pathname.startsWith("/api/")) {
         return await withPublicResponseCache(request, async () => {

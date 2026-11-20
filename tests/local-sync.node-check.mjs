@@ -20,6 +20,22 @@ test('预览不写入；无变化跳过；失败不会上报', async () => {
   assert.equal(stats.unchanged, 1); assert.equal(stats.changed, 1); assert.equal(stats.failed, 1); assert.equal(pushes, 0); assert.equal(fs.existsSync(checkpoint), false);
 });
 
+test('目标支持缺货观察时，相同哈希的零库存快照仍会上报', async () => {
+  const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-')), 'state.json');
+  const zeroStock = { ...snapshot, items: [{ ...snapshot.items[0], stockCount: 0, stockStatus: 'low' }] };
+  const same = { ...shops[0], contentHashFull: computeSnapshotHash(zeroStock), description: '' };
+  const sent = [];
+  const deps = {
+    collect: async () => zeroStock,
+    push: async (entry) => { sent.push(entry); return result(entry.shopId); },
+  };
+  const old = await runSync(options(checkpoint, { apply: true }), { ...deps, load: async () => ({ shops: [same] }) });
+  assert.equal(old.unchanged, 1);
+  const supported = await runSync(options(checkpoint, { apply: true }), { ...deps, load: async () => ({ shops: [same], stockObservationSupport: true }) });
+  assert.equal(supported.pushed, 1);
+  assert.deepEqual(sent.map((entry) => entry.snapshot.items[0].stockCount), [0]);
+});
+
 test('推送只记录已确认完成的店铺，续跑失败店铺且拒绝不同目标', async () => {
   const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-')), 'state.json');
   const sent = [];

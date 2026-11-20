@@ -615,7 +615,6 @@ const els = {
   shareFiltersBtn: document.querySelector("#shareFiltersBtn"),
   primaryFilters: document.querySelector("#primaryFilters"),
   moreFiltersPanel: document.querySelector("#moreFiltersPanel"),
-  facetNoteBar: document.querySelector("#facetNoteBar"),
   filterNoticeBar: document.querySelector("#filterNoticeBar"),
   brandChips: document.querySelector("#brandChips"),
   productView: document.querySelector("#productView"),
@@ -680,9 +679,9 @@ function safeUrl(rawUrl) {
 }
 
 function formatPrice(val) {
-  if (val === null || val === undefined || val === "") return L("待确认", "TBD");
+  if (val === null || val === undefined || val === "") return L("未公开报价", "Price not listed");
   const num = Number(val);
-  return Number.isFinite(num) ? `¥${num.toFixed(2)}` : L("待确认", "TBD");
+  return Number.isFinite(num) ? `¥${num.toFixed(2)}` : L("未公开报价", "Price not listed");
 }
 
 /**
@@ -848,7 +847,8 @@ function formatShopSystemLabel(label, systemKey = "") {
     if (systemKey && SHOP_SYSTEM_EN[systemKey]) return SHOP_SYSTEM_EN[systemKey];
     if (label && SHOP_SYSTEM_LABEL_EN[label]) return SHOP_SYSTEM_LABEL_EN[label];
   }
-  return label || L("第三方自建站（待确认）", "Third-party storefront (Unknown)");
+  if (systemKey === "unknown" || label === "第三方自建站（待确认）") return L("第三方自建站", "Third-party storefront");
+  return label || L("第三方自建站", "Third-party storefront");
 }
 
 /** 旧版收藏仍可能含联系信息，展示时同样隐藏。 */
@@ -1359,6 +1359,7 @@ function syncControlsFromState() {
   els.resetFiltersBtn.hidden = !hasProductFilters;
 
   els.shopOnlyInStockInput.checked = state.shopOnlyInStock;
+  syncShopSystemSelection();
   if (els.shopHasIntegrationCodeInput) els.shopHasIntegrationCodeInput.checked = state.shopHasIntegrationCode;
   if (els.shopSortSelect) els.shopSortSelect.value = state.shopSort;
 
@@ -1373,6 +1374,7 @@ function syncControlsFromState() {
   syncSearchInputHelpers();
   renderFilterNotice();
   renderActiveFilters();
+  window.prismSelectPicker?.sync();
 }
 
 function cancelPendingLists() {
@@ -1404,8 +1406,8 @@ function switchMode(mode) {
         "Search ChatGPT Plus, Claude Pro, Codex, or store name…",
       )
     : L(
-        "搜索店铺名称、主营类别、系统类型或网址…",
-        "Search store name, category, platform, or URL…",
+        "搜索店铺、类别或网址…",
+        "Search shops or URLs…",
       );
   els.sortSelect.hidden = !isProduct;
   els.activeFilters.hidden = false;
@@ -1421,7 +1423,6 @@ function switchMode(mode) {
   if (els.viewLayoutSwitch) els.viewLayoutSwitch.hidden = !isProduct;
   if (!isProduct) {
     els.moreFiltersPanel.hidden = true;
-    els.facetNoteBar.hidden = true;
     renderShopSystemControls();
     syncControlsFromState();
   } else {
@@ -2044,7 +2045,7 @@ function createDimensionSelectHtml(dim, facetCounts) {
   ];
   const cls = current !== "all" ? ' class="is-selected"' : "";
   const shortLabel = formatFilterShortLabel(dim.key, dim.shortLabel);
-  return `<label class="filter-field"><span>${escapeHtml(shortLabel)}</span><select data-filter-key="${dim.key}"${cls} aria-label="${escapeHtml(shortLabel)}${escapeHtml(L("筛选", " filter"))}">${options.join("")}</select></label>`;
+  return `<div class="filter-field"><span>${escapeHtml(shortLabel)}</span><select data-filter-key="${dim.key}"${cls} aria-label="${escapeHtml(shortLabel)}${escapeHtml(L("筛选", " filter"))}">${options.join("")}</select></div>`;
 }
 
 /**
@@ -2067,11 +2068,14 @@ function createPriceSelectHtml() {
     }),
   ];
   const cls = state.price !== "all" ? ' class="is-selected"' : "";
-  return `<label class="filter-field"><span>${escapeHtml(L("预设价格", "Price Range"))}</span><select data-filter-key="price"${cls} aria-label="${escapeHtml(L("价格筛选", "Price filter"))}" title="${escapeHtml(L("区间含下限、不含上限；500元及以上无上限", "Lower bound inclusive, upper exclusive; ¥500+ has no upper limit"))}">${options.join("")}</select></label>`;
+  return `<div class="filter-field"><span>${escapeHtml(L("预设价格", "Price Range"))}</span><select data-filter-key="price"${cls} aria-label="${escapeHtml(L("价格筛选", "Price filter"))}" title="${escapeHtml(L("区间含下限、不含上限；500元及以上无上限", "Lower bound inclusive, upper exclusive; ¥500+ has no upper limit"))}">${options.join("")}</select></div>`;
 }
 
 function renderFilterControls() {
   if (state.mode !== "product") return;
+  const focusedSelect = document.activeElement?.matches("select[data-filter-key]")
+    ? document.activeElement : document.activeElement?.closest(".select-picker")?.querySelector("select[data-filter-key]");
+  const focusedKey = focusedSelect?.dataset.filterKey;
   const options = state.productsData?.facets?.options || {};
   const allowsPlan = !NON_PLAN_GROUPS.has(state.group) && state.type !== "sms-service" && state.type !== "api";
   const allowsDuration = !NON_DURATION_GROUPS.has(state.group);
@@ -2100,12 +2104,11 @@ function renderFilterControls() {
   els.moreFiltersPanel.innerHTML = more.join("");
   els.moreFiltersPanel.hidden = !state.moreFiltersOpen || more.length === 0;
   els.moreFiltersPanel.hidden = true;
-  els.facetNoteBar.hidden = false;
-  els.facetNoteBar.textContent = L(
-    "计数：保留其他条件、替换本项后的商品组数；切换品牌或类型会自动清除不兼容筛选。预设价格区间含下限、不含上限。",
-    "Counts show matching items if only this filter changes. Incompatible filters auto-clear on brand/type change. Price ranges include lower bound only.",
-  );
   syncControlsFromState();
+  if (focusedKey) {
+    const select = els.primaryFilters.querySelector(`select[data-filter-key="${CSS.escape(focusedKey)}"]`);
+    (select?.parentElement.querySelector(".select-picker-button") || select)?.focus({ preventScroll: true });
+  }
 }
 
 function updateResultStatus() {
@@ -2197,7 +2200,7 @@ function renderActiveFilters() {
   els.activeFilters.innerHTML = tags
     .map(
       ([key, label]) =>
-        `<button class="active-filter" type="button" data-remove-filter="${escapeHtml(key)}" aria-label="${escapeHtml(L("移除", "Remove "))}${escapeHtml(label)}">${escapeHtml(label)} <span aria-hidden="true">×</span></button>`,
+        `<button class="active-tag" type="button" data-remove-filter="${escapeHtml(key)}" aria-label="${escapeHtml(L("移除", "Remove "))}${escapeHtml(label)}">${escapeHtml(label)} <span aria-hidden="true">×</span></button>`,
     )
     .join("");
 }
@@ -2315,7 +2318,9 @@ function renderOfferPanel(item) {
             ${shopNameHtml}
             ${browserRefreshSupported(shopLink) ? `<button type="button" class="copy-inline-btn" data-browser-refresh="offer" data-shop-id="${escapeHtml(offer.shopId || '')}" data-shop-url="${escapeHtml(shopLink)}" data-item-url="${escapeHtml(link || '')}" title="${escapeHtml(L("使用当前网络读取源站", "Fetch live source via your network"))}">${escapeHtml(L("↻ 刷新参考", "↻ Refresh"))}</button>` : ''}
             ${isBest ? `<span class="offer-tag is-best">${escapeHtml(L("★ 当前最低", "★ Best Price"))}</span>` : ""}
-            <span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>
+            ${offer.longTermOutOfStock
+              ? `<span class="offer-tag" title="${escapeHtml(L("库存以店铺为准，购买前请核实", "Confirm current stock with the store before buying"))}">${escapeHtml(L("连续 7 天缺货", "Out of stock for 7+ days"))}</span>`
+              : `<span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>`}
           </div>
           <div class="offer-price-cell">${formatPrice(offer.price)}</div>
           <div class="offer-action-cell">
@@ -2368,6 +2373,11 @@ function renderProductRow(item) {
     item.shopCount > 1
       ? `<span class="badge badge-brand">${escapeHtml(L(`${item.shopCount} 家同款比价`, `${item.shopCount} stores compared`))}</span>`
       : `<span class="badge">${escapeHtml(item.shopName)}</span>`;
+  const stockBadge = item.offers?.[0]?.longTermOutOfStock
+    ? `<span class="badge badge-warn">${escapeHtml(item.offerCount > 1
+        ? L("最低价报价连续 7 天缺货", "Lowest offer out of stock for 7+ days")
+        : L("连续 7 天缺货", "Out of stock for 7+ days"))}</span>`
+    : "";
   const itemLink = safeUrl(item.itemUrl);
   const titleHtml = itemLink
     ? `<a class="product-title" href="${escapeHtml(itemLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a>`
@@ -2385,6 +2395,7 @@ function renderProductRow(item) {
                 <span>${escapeHtml(formatGroupLabel(item.group))}</span>
               </span>
               ${multiShopBadge}
+              ${stockBadge}
               ${buildAttributeBadges(item)}
             </div>
             ${titleHtml}
@@ -2394,8 +2405,8 @@ function renderProductRow(item) {
               ${escapeHtml(
                 item.offerCount > 1
                   ? L(
-                      `${expanded ? "▾ 收起报价" : "▸ 展开比价"}（${item.offerCount} 个报价 · ${item.shopCount} 家店铺）`,
-                      `${expanded ? "▾ Hide offers" : "▸ Compare offers"} (${item.offerCount} offers · ${item.shopCount} stores)`,
+                      expanded ? "▾ 收起报价" : `▸ 比价（${item.offerCount} 个报价）`,
+                      expanded ? "▾ Hide offers" : `▸ Compare (${item.offerCount} offers)`,
                     )
                   : L(
                       `${expanded ? "▾ 收起明细" : "▸ 查看店铺与库存"}`,
@@ -2564,11 +2575,15 @@ function renderShopSystemControls() {
     );
   }
   els.shopSystemSelect.innerHTML = options.join("");
-  els.shopSystemSelect.value = selected;
-  els.shopSystemSelect.classList.toggle("is-selected", selected !== "all");
+  syncShopSystemSelection();
   if (els.shopSortSelect) {
     els.shopSortSelect.classList.toggle("is-selected", state.shopSort !== "default");
   }
+}
+
+function syncShopSystemSelection() {
+  els.shopSystemSelect.value = state.shopSystemType;
+  els.shopSystemSelect.classList.toggle("is-selected", state.shopSystemType !== "all");
 }
 
 function renderMainCategoryBadges(mainCategories, productCount, maxCount = 5) {
@@ -3240,6 +3255,7 @@ function bindEvents() {
 
   els.sortSelect.addEventListener("change", () => {
     state.sort = SORT_OPTIONS.has(els.sortSelect.value) ? els.sortSelect.value : "relevance";
+    syncControlsFromState();
     syncStateToUrl();
     fetchProducts(false, true, { preserveNotice: true });
   });
@@ -3574,7 +3590,6 @@ function triggerKunEgg(secret = false) {
 }
 
 document.querySelector("#kunEggBtn")?.addEventListener("click", () => triggerKunEgg());
-document.querySelector("#heroKunEgg")?.addEventListener("click", () => triggerKunEgg());
 let kunSecretBuffer = "";
 let lastKunKeyAt = 0;
 document.addEventListener("keydown", (event) => {
@@ -3799,7 +3814,7 @@ window.addEventListener("prism:langchange", () => {
   if (els.searchInput) {
     els.searchInput.placeholder =
       state.mode === "shop"
-        ? L("搜索店铺名称、主营类别、系统类型或网址…", "Search shop name, main categories, platform, or URL...")
+        ? L("搜索店铺、类别或网址…", "Search shops or URLs…")
         : L("搜索 ChatGPT Plus、Claude Pro、Codex、美区，或输入店铺名称…", "Search ChatGPT Plus, Claude Pro, Codex, US region, or shop name...");
   }
   syncDocumentTitle();

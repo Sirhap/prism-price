@@ -7,17 +7,22 @@ const panelMeta = {
   catalog: ['平台与品牌', '发卡平台架构分布与热门品牌商品规模'],
   sync: ['商品同步', '浏览器端手动同步与服务端采集批次记录'],
   ranking: ['店铺管理', '查看同步状态、管理店铺与排名'],
+  sponsors: ['赞助推广', '生成一次性赞助授权码，查看有效期并管理投放'],
   settings: ['站点设置', '管理收藏、收录与开店入口'],
   security: ['安全设置', '管理密码与同步凭据'],
 };
 const panelLoaded = { overview: false, visits: false, catalog: false, sync: false };
 let activePanel = 'overview';
+let visitRangeQuery = '';
+let visitLoading = null;
+let appliedVisitRange;
 
 function message(text, error = false) { clearTimeout(noticeTimer); notice.textContent=text;notice.dataset.error=String(error);notice.hidden=false; if(!error) noticeTimer=setTimeout(()=>notice.hidden=true,4500); }
 function ensurePanelData(key) {
   if (key === 'visits' && !panelLoaded.visits) loadVisits().catch(err => message(err.message, true));
   else if (key === 'catalog' && !panelLoaded.catalog) loadCatalog().catch(err => message(err.message, true));
   else if (key === 'sync' && !panelLoaded.sync) loadSyncRuns().catch(err => message(err.message, true));
+  else if (key === 'sponsors') loadSponsors().catch(err => message(err.message, true));
 }
 function selectPanel(key) {
   if (!panelMeta[key]) key = 'overview';
@@ -54,12 +59,24 @@ function formatBjTime(iso) {
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 }
 function fillRecentDays(days, todayStr) {
-  const map = new Map((days || []).map(item => [item.day, Number(item.pageViews ?? item.page_views ?? 0)]));
+  const map = new Map((days || []).map(item => [
+    item.day,
+    {
+      pageViews: Number(item.pageViews ?? item.page_views ?? 0),
+      uniqueVisitors: Number(item.uniqueVisitors ?? item.unique_visitors ?? 0),
+    },
+  ]));
   const base = todayStr ? new Date(`${todayStr}T00:00:00Z`) : new Date(Date.now() + 8 * 3600000);
   const list = [];
   for (let i = 29; i >= 0; i--) {
     const day = new Date(base.getTime() - i * 86400000).toISOString().slice(0, 10);
-    list.push({ day, pageViews: map.get(day) || 0, isToday: day === todayStr });
+    const entry = map.get(day);
+    list.push({
+      day,
+      pageViews: entry?.pageViews || 0,
+      uniqueVisitors: entry?.uniqueVisitors || 0,
+      isToday: day === todayStr,
+    });
   }
   return list;
 }
@@ -74,17 +91,23 @@ function jumpToRanking({ filter = 'all', sync = 'all', stock = 'all', system = '
   selectPanel('ranking');
   loadShops().catch(err => message(err.message, true));
 }
-function renderMiniStats(container, items) {
+function renderMiniStats(container, items, extraClass = '') {
   if (!container) return;
   container.replaceChildren();
-  for (const [label, value] of items) {
+  for (const [label, value, sub] of items) {
     const chip = document.createElement('div');
-    chip.className = 'mini-stat';
+    chip.className = extraClass ? `mini-stat ${extraClass}` : 'mini-stat';
     const k = document.createElement('small');
     k.textContent = label;
     const v = document.createElement('strong');
     v.textContent = value;
     chip.append(k, v);
+    if (sub) {
+      const subEl = document.createElement('span');
+      subEl.className = 'mini-stat-sub';
+      subEl.textContent = sub;
+      chip.append(subEl);
+    }
     container.append(chip);
   }
 }
@@ -96,8 +119,9 @@ function renderTrendBars(container, days, todayStr) {
   for (const item of series) {
     const barWrap = document.createElement('div');
     barWrap.className = `trend-bar${item.isToday ? ' is-today' : ''}${item.pageViews === 0 ? ' is-zero' : ''}`;
-    barWrap.title = `${item.day}：${item.pageViews.toLocaleString()} 次访问`;
-    barWrap.setAttribute('aria-label', `${item.day} ${item.pageViews} 次访问`);
+    const tip = `${item.day}：实际 ${item.uniqueVisitors.toLocaleString()} 人（IP 去重） · ${item.pageViews.toLocaleString()} 次访问`;
+    barWrap.title = tip;
+    barWrap.setAttribute('aria-label', tip);
     const bar = document.createElement('span');
     bar.className = 'trend-bar-fill';
     const pct = item.pageViews > 0 ? Math.max(8, Math.round((item.pageViews / maxViews) * 100)) : 4;
@@ -115,7 +139,7 @@ function renderVisitLogs(logs) {
   if (!logs || !logs.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = '暂无访问明细记录（有前台访问产生后将实时记录 IP、地区与设备）';
+    empty.textContent = '所选日期内暂无访问明细';
     wrap.append(empty);
     return;
   }
@@ -147,6 +171,81 @@ function renderVisitLogs(logs) {
   }
   table.append(thead, tbody);
   wrap.append(table);
+}
+
+function renderCrawlerAccess(access) {
+  const logs = $('#crawlerAccessLogs');
+  const blocklist = $('#crawlerBlocklist');
+  logs.replaceChildren();
+  blocklist.replaceChildren();
+  const showEmpty = (container, text) => {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = text;
+    container.append(empty);
+  };
+  const blockButton = (ip, blocked) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-secondary';
+    button.textContent = blocked ? '解除拉黑' : '拉黑 IP';
+    button.setAttribute('aria-label', `${button.textContent} ${ip}`);
+    button.addEventListener('click', async () => {
+      if (!blocked && !confirm(`拉黑 ${ip}？该 IP 上的所有客户端将无法访问公开页面和公开 API。`)) return;
+      button.disabled = true;
+      try {
+        await api('/api/control/crawler-block', { ip, blocked: !blocked });
+        await loadVisits(visitRangeQuery, true);
+        message(blocked ? `已解除 ${ip} 的手动拉黑，自动拦截仍生效` : `已手动拉黑 ${ip}`);
+      } catch (err) {
+        message(err.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
+  };
+  $('#crawlerBlocklistTitle').textContent = `手动 IP 黑名单（${access?.blocklist.length || 0}）`;
+  if (!access?.available) {
+    showEmpty(logs, '爬虫记录暂不可用，请先应用数据库迁移。');
+    return;
+  }
+  if (!access.logs.length) {
+    showEmpty(logs, '所选日期内暂无爬虫访问或拦截记录');
+  } else {
+    const table = document.createElement('table');
+    table.className = 'visit-logs-table';
+    const head = table.createTHead().insertRow();
+    for (const title of ['访问时间（北京时间）', 'IP 地址', '请求', '客户端标识', '处理结果', '操作']) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = title;
+      head.append(cell);
+    }
+    const body = table.createTBody();
+    for (const log of access.logs) {
+      const row = body.insertRow();
+      row.insertCell().textContent = formatBjTime(log.visitedAt);
+      row.insertCell().textContent = log.ip || '未知 IP';
+      row.insertCell().textContent = `${log.method} ${log.path}`;
+      const agent = row.insertCell();
+      agent.className = 'crawler-agent';
+      agent.textContent = log.userAgent || '未提供';
+      row.insertCell().textContent = log.blocked ? '已拦截（500）' : '未拦截';
+      const action = row.insertCell();
+      if (log.ip) action.append(blockButton(log.ip, log.isBlocked));
+    }
+    logs.append(table);
+  }
+  if (!access.blocklist.length) showEmpty(blocklist, '暂无手动拉黑的 IP');
+  for (const entry of access.blocklist) {
+    const row = document.createElement('div');
+    row.className = 'visit-row';
+    const label = document.createElement('span');
+    label.textContent = `${entry.ip} · ${formatBjTime(entry.blockedAt)}`;
+    row.append(label, blockButton(entry.ip, true));
+    blocklist.append(row);
+  }
 }
 function renderBreakdownRow({ label, countText, ratio, tone = 'indigo', subText = '', onClick }) {
   const row = document.createElement(onClick ? 'button' : 'div');
@@ -191,9 +290,11 @@ function renderShareBreakdown(container, items, total, tone, emptyText) {
   for (const item of items) {
     const count = Number(item.count || 0);
     const pct = Math.round((count / denom) * 1000) / 10;
+    const hasUv = item.uniqueVisitors !== undefined && item.uniqueVisitors !== null;
+    const uvText = hasUv ? `${Number(item.uniqueVisitors || 0).toLocaleString()} 人 · ` : '';
     container.append(renderBreakdownRow({
       label: item.label,
-      countText: `${count.toLocaleString()} 次 (${pct}%)`,
+      countText: `${uvText}${count.toLocaleString()} 次 (${pct}%)`,
       ratio: pct,
       tone,
     }));
@@ -207,9 +308,25 @@ function renderVisitsPanel(visits) {
   const avg = Number(visits?.avgDailyViews || 0);
   const peakText = visits?.peakDay ? `${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '—';
 
+  const todayVisitors = Number(visits?.todayVisitors || 0);
+  const yesterdayVisitors = Number(visits?.yesterdayVisitors || 0);
+  const last7Visitors = Number(visits?.last7DaysVisitors || 0);
+  const last30Visitors = Number(visits?.last30DaysVisitors || 0);
+  const avgVisitors = Number(visits?.avgDailyVisitors || 0);
+  const peakVisitorsText = visits?.peakVisitorsDay
+    ? `${visits.peakVisitorsDay.day.slice(5)} (${Number(visits.peakVisitorsDay.uniqueVisitors).toLocaleString()} 人)`
+    : '—';
+
+  renderMiniStats($('#visitUniqueStats'), [
+    ['今日实际访客（IP 去重）', `${todayVisitors.toLocaleString()} 人`, `今日访问 ${todayViews.toLocaleString()} 次`],
+    ['昨日实际访客（IP 去重）', `${yesterdayVisitors.toLocaleString()} 人`, `昨日访问 ${yesterdayViews.toLocaleString()} 次`],
+    ['近 7 天实际访客', `${last7Visitors.toLocaleString()} 人`, `7 天内按 IP 跨天去重`],
+    ['近 30 天实际访客', `${last30Visitors.toLocaleString()} 人`, `日均 ${avgVisitors.toLocaleString()} 人 · 峰值 ${peakVisitorsText}`],
+  ], 'is-uv');
+
   renderMiniStats($('#visitSummaryStats'), [
-    ['今日访问', `${todayViews.toLocaleString()} 次`],
-    ['昨日访问', `${yesterdayViews.toLocaleString()} 次`],
+    ['今日访问次数', `${todayViews.toLocaleString()} 次`],
+    ['昨日访问次数', `${yesterdayViews.toLocaleString()} 次`],
     ['近 7 天累计', `${last7.toLocaleString()} 次`],
     ['近 30 天累计', `${last30.toLocaleString()} 次`],
     ['有记录日均', `${avg.toLocaleString()} 次`],
@@ -219,9 +336,10 @@ function renderVisitsPanel(visits) {
   renderTrendBars($('#visitTrendChart'), visits?.days || [], visits?.today);
 
   const sampleTotal = Number(visits?.sampleTotal || 0);
-  if ($('#visitSampleHint')) {
-    $('#visitSampleHint').textContent = sampleTotal > 0 ? `基于近 30 天共 ${sampleTotal.toLocaleString()} 条访问日志聚合` : '有前台访问产生后将实时生成地区分布';
-  }
+  const uniqueIpCount = Number(visits?.uniqueIpCount || 0);
+  const { from, to } = visits.insightRange;
+  $('#visitRangeStatus').textContent = `当前范围：${from === to ? from : `${from} 至 ${to}`}`;
+  $('#visitSampleHint').textContent = `${sampleTotal.toLocaleString()} 条访问日志 · ${uniqueIpCount.toLocaleString()} 个独立 IP · 占比按访问次数计算`;
   renderShareBreakdown($('#visitGeoBreakdown'), visits?.geoBreakdown || [], sampleTotal, 'indigo', '暂无来访地区数据');
   renderShareBreakdown($('#visitDeviceBreakdown'), visits?.deviceBreakdown || [], sampleTotal, 'emerald', '暂无设备终端数据');
 
@@ -231,12 +349,15 @@ function renderVisitsPanel(visits) {
     for (const item of visits?.browserBreakdown || []) {
       const chip = document.createElement('span');
       chip.className = 'sub-chip';
-      chip.textContent = `${item.label} · ${Number(item.count || 0).toLocaleString()} 次`;
+      const uv = Number(item.uniqueVisitors || 0);
+      chip.textContent = `${item.label} · ${uv.toLocaleString()} 人 / ${Number(item.count || 0).toLocaleString()} 次`;
       browserEl.append(chip);
     }
   }
 
   renderVisitLogs(visits?.recentLogs || []);
+  $('#visitLogsHint').textContent = `显示 ${(visits.recentLogs?.length || 0).toLocaleString()} / ${sampleTotal.toLocaleString()} 条 · 按时间倒序，最多 50 条`;
+  renderCrawlerAccess(visits.crawlerAccess);
 
   const list = $('#visitHistory');
   if (list) {
@@ -251,7 +372,9 @@ function renderVisitsPanel(visits) {
         const day = document.createElement('span');
         day.textContent = item.day;
         const count = document.createElement('strong');
-        count.textContent = `${Number(item.pageViews ?? item.page_views ?? 0).toLocaleString()} 次`;
+        const uv = Number(item.uniqueVisitors ?? item.unique_visitors ?? 0);
+        const pv = Number(item.pageViews ?? item.page_views ?? 0);
+        count.textContent = `实际 ${uv.toLocaleString()} 人 · ${pv.toLocaleString()} 次`;
         row.append(day, count);
         list.append(row);
       }
@@ -347,22 +470,27 @@ function renderOverview(data) {
   const last7 = Number(visits.last7DaysViews || 0);
   const last30 = Number(visits.last30DaysViews || 0);
   const avg = Number(visits.avgDailyViews || 0);
+  const todayVisitors = Number(visits.todayVisitors || 0);
+  const yesterdayVisitors = Number(visits.yesterdayVisitors || 0);
+  const last7Visitors = Number(visits.last7DaysVisitors || 0);
+  const last30Visitors = Number(visits.last30DaysVisitors || 0);
+  const avgVisitors = Number(visits.avgDailyVisitors || 0);
   const diff = todayViews - yesterdayViews;
   const diffText = diff === 0 ? '与昨日持平' : (diff > 0 ? `较昨日 +${diff.toLocaleString()}` : `较昨日 ${diff.toLocaleString()}`);
 
   $('#metricVisits').textContent = todayViews.toLocaleString();
-  if ($('#metricVisitsSub')) $('#metricVisitsSub').textContent = `昨日 ${yesterdayViews.toLocaleString()} 次 · ${diffText}`;
+  if ($('#metricVisitsSub')) $('#metricVisitsSub').textContent = `实访 ${todayVisitors.toLocaleString()} 人（昨日 ${yesterdayVisitors.toLocaleString()} 人 / ${yesterdayViews.toLocaleString()} 次 · ${diffText}）`;
   if ($('#metricVisits30d')) $('#metricVisits30d').textContent = last30.toLocaleString();
   if ($('#metricVisits30dSub')) {
-    const peakText = visits.peakDay ? `峰值 ${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '近 7 天暂无记录';
-    $('#metricVisits30dSub').textContent = `近 7 天 ${last7.toLocaleString()} · ${peakText}`;
+    const peakText = visits.peakDay ? `峰值 ${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()} 次)` : '近 7 天暂无记录';
+    $('#metricVisits30dSub').textContent = `实访 ${last30Visitors.toLocaleString()} 人 · 近 7 天 ${last7Visitors.toLocaleString()} 人 / ${last7.toLocaleString()} 次 · ${peakText}`;
   }
 
   renderMiniStats($('#overviewVisitStats'), [
-    ['今日', `${todayViews.toLocaleString()} 次`],
-    ['近 7 天', `${last7.toLocaleString()} 次`],
-    ['近 30 天', `${last30.toLocaleString()} 次`],
-    ['有记录日均', `${avg.toLocaleString()} 次`],
+    ['今日', `${todayViews.toLocaleString()} 次`, `实访 ${todayVisitors.toLocaleString()} 人（IP 去重）`],
+    ['近 7 天', `${last7.toLocaleString()} 次`, `实访 ${last7Visitors.toLocaleString()} 人（IP 去重）`],
+    ['近 30 天', `${last30.toLocaleString()} 次`, `实访 ${last30Visitors.toLocaleString()} 人（IP 去重）`],
+    ['有记录日均', `${avg.toLocaleString()} 次`, `日均实访 ${avgVisitors.toLocaleString()} 人`],
   ]);
   renderTrendBars($('#overviewVisitChart'), visits.days || [], visits.today);
 
@@ -447,10 +575,30 @@ async function loadOverview() {
     $('#metricVisits').textContent = '暂不可用';
   }
 }
-async function loadVisits() {
-  const data = await api('/api/control/visits');
-  panelLoaded.visits = true;
-  renderVisitsPanel(data);
+async function loadVisits(query = visitRangeQuery, force = false) {
+  if (visitLoading) {
+    if (!force) return;
+    try { await visitLoading; } catch {}
+    return loadVisits(visitRangeQuery, true);
+  }
+  const form = $('#visitRangeForm');
+  const apply = form.querySelector('button[type=submit]');
+  const refresh = $('#refreshVisits');
+  apply.disabled = refresh.disabled = true;
+  form.setAttribute('aria-busy', 'true');
+  try {
+    visitLoading = api(`/api/control/visits${query ? `?${query}` : ''}`);
+    const data = await visitLoading;
+    renderVisitsPanel(data);
+    visitRangeQuery = query;
+    appliedVisitRange = data.insightRange;
+    form.elements.from.max = form.elements.to.max = data.today;
+    panelLoaded.visits = true;
+  } finally {
+    form.removeAttribute('aria-busy');
+    apply.disabled = refresh.disabled = false;
+    visitLoading = null;
+  }
 }
 async function loadCatalog() {
   const data = await api('/api/control/catalog');
@@ -551,6 +699,143 @@ async function loadShops() {
  finally{if(ticket===listRequest){list.removeAttribute('aria-busy');list.style.opacity='1';}}
 }
 async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;selectPanel(location.hash.slice(1));try{await Promise.all([loadSettings(),loadShops(),loadOverview()]);}catch(err){message(err.message,true);}}
+
+let sponsorPage = 1;
+let sponsorRequest = 0;
+let sponsorSaving = false;
+let sponsorEnabled = false;
+const sponsorEndpoint = '/api/control/sponsors';
+const sponsorStatuses = { unused: '未使用', active: '已使用 · 展示中', expired: '已到期', revoked: '已作废' };
+const sponsorPlacements = { carousel: '顶部轮播', 'fixed-1': '固定位 1', 'fixed-2': '固定位 2', 'fixed-3': '固定位 3', 'fixed-4': '固定位 4' };
+function renderSponsorEnabled(enabled) {
+  sponsorEnabled = enabled;
+  $('#sponsorEnabled').checked = enabled;
+  $('#sponsorEnabled').disabled = sponsorSaving;
+  const status = $('#sponsorEnabledStatus');
+  status.dataset.enabled = String(enabled);
+  status.textContent = enabled ? '已开启' : '已关闭';
+}
+async function loadSponsors() {
+  const request = ++sponsorRequest;
+  const status = $('#sponsorStatusFilter').value;
+  const data = await api(sponsorEndpoint + '?' + new URLSearchParams({ status, page: String(sponsorPage) }));
+  if (request !== sponsorRequest) return;
+  if (!sponsorSaving) renderSponsorEnabled(data.enabled);
+  if (!data.codes.length && sponsorPage > 1) {
+    sponsorPage -= 1;
+    return loadSponsors();
+  }
+  const list = $('#sponsorAdminRows');
+  list.replaceChildren();
+  $('#sponsorAdminPage').textContent = `第 ${data.page} 页`;
+  $('#sponsorPreviousBtn').disabled = data.page <= 1;
+  $('#sponsorNextBtn').disabled = !data.hasMore;
+  $('#sponsorCapacity').replaceChildren(...data.placements.map(slot => {
+    const badge = document.createElement('span');
+    const count = document.createElement('b');
+    count.textContent = `${slot.occupied}/${slot.capacity}`;
+    badge.append(sponsorPlacements[slot.placement], count);
+    return badge;
+  }));
+  if (!data.codes.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '没有符合条件的授权码';
+    list.append(empty);
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'visit-logs-table';
+  const header = table.createTHead().insertRow();
+  for (const title of ['授权码尾号', '赞助标题', '投放位置', '状态', '时长', '生成时间', '使用时间', '到期时间', '操作']) {
+    const cell = document.createElement('th');
+    cell.scope = 'col';
+    cell.textContent = title;
+    header.append(cell);
+  }
+  const tableBody = table.createTBody();
+  for (const code of data.codes) {
+    const row = tableBody.insertRow();
+    const timestamp = value => value == null ? '—' : formatBjTime(new Date(value).toISOString());
+    for (const value of [
+      '…' + code.codeHint, code.title || '—',
+      code.placementChoice && !code.redeemedAt ? '投稿人选择' : sponsorPlacements[code.placement],
+      code.status === 'active' && !data.enabled ? '已使用 · 暂停展示' : sponsorStatuses[code.status],
+      code.duration + (code.unit === 'days' ? ' 天' : ' 个月'),
+      timestamp(code.createdAt), timestamp(code.redeemedAt), timestamp(code.expiresAt),
+    ]) row.insertCell().textContent = value;
+    const actions = document.createElement('div');
+    actions.className = 'sponsor-admin-actions';
+    for (const [action, label] of [['revoke', '作废'], ['delete', '删除']]) {
+      if (action === 'revoke' && !['active', 'unused'].includes(code.status)) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary';
+      button.textContent = label;
+      button.addEventListener('click', async () => {
+        if (!confirm(`确定${label}尾号 ${code.codeHint} 的授权码？对应赞助内容将下架。`)) return;
+        button.disabled = true;
+        try {
+          await api(sponsorEndpoint, { action, id: code.id });
+          await loadSponsors();
+          message(`已${label}`);
+        } catch (error) { message(error.message, true); }
+        finally { button.disabled = false; }
+      });
+      actions.append(button);
+    }
+    row.insertCell().append(actions);
+  }
+  list.append(table);
+}
+
+const sponsorForm = $('#sponsorGenerateForm');
+sponsorForm?.elements.unit.addEventListener('change', () => {
+  const months = sponsorForm.elements.unit.value === 'months';
+  sponsorForm.elements.duration.max = months ? '12' : '365';
+  sponsorForm.elements.duration.value = months ? '1' : '30';
+});
+if (sponsorForm) submitForm('#sponsorGenerateForm', async form => {
+  const { codes } = await api(sponsorEndpoint, {
+    action: 'create', quantity: Number(form.elements.quantity.value),
+    duration: Number(form.elements.duration.value), unit: form.elements.unit.value, placement: form.elements.placement.value,
+  });
+  $('#sponsorGenerated textarea').value = codes.join('\n');
+  $('#sponsorGenerated').hidden = false;
+  sponsorPage = 1;
+  $('#sponsorStatusFilter').value = 'all';
+  message(`已生成 ${codes.length} 个授权码，请复制保存`);
+  await loadSponsors();
+});
+$('#sponsorCopyBtn')?.addEventListener('click', async () => {
+  const output = $('#sponsorGenerated textarea');
+  try { await navigator.clipboard.writeText(output.value); message('已复制全部授权码'); }
+  catch { output.select(); message('请手动复制已选中的授权码', true); }
+});
+const refreshSponsors = () => loadSponsors().catch(err => message(err.message, true));
+$('#sponsorEnabled').addEventListener('change', async event => {
+  const toggle = event.currentTarget;
+  sponsorSaving = true;
+  toggle.disabled = true;
+  delete $('#sponsorEnabledStatus').dataset.enabled;
+  $('#sponsorEnabledStatus').textContent = '正在保存…';
+  try {
+    const data = await api(sponsorEndpoint, { action: 'set-enabled', enabled: toggle.checked });
+    sponsorEnabled = data.enabled;
+    message(data.enabled ? '赞助推广已开启' : '赞助推广已关闭');
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    sponsorSaving = false;
+    renderSponsorEnabled(sponsorEnabled);
+    refreshSponsors();
+  }
+});
+$('#sponsorStatusFilter')?.addEventListener('change', () => { sponsorPage = 1; refreshSponsors(); });
+$('#sponsorRefreshBtn')?.addEventListener('click', refreshSponsors);
+$('#sponsorPreviousBtn')?.addEventListener('click', () => { if (sponsorPage > 1) sponsorPage -= 1; refreshSponsors(); });
+$('#sponsorNextBtn')?.addEventListener('click', () => { sponsorPage += 1; refreshSponsors(); });
+
 submitForm('#loginForm',async f=>{await api('/api/control/login',{password:f.elements.password.value});f.reset();notice.hidden=true;await showDashboard();});
 submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await Promise.all([loadShops(),loadOverview()]);});
 submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');await loadOverview();});
@@ -577,7 +862,24 @@ function bindRefresh(selector, loader, idleLabel, successMessage) {
   });
 }
 bindRefresh('#refreshOverview', loadOverview, '↻ 刷新概览', '工作台概览已刷新');
-bindRefresh('#refreshVisits', loadVisits, '↻ 刷新访客数据', '访客数据已刷新');
+$('#refreshVisits').addEventListener('click', () => {
+  loadVisits().then(() => message('当前范围访客数据已刷新')).catch(err => message(err.message, true));
+});
+$('#visitRange').addEventListener('change', ({ currentTarget }) => {
+  const custom = currentTarget.value === 'custom';
+  const fields = $('#visitCustomRange');
+  fields.hidden = fields.disabled = !custom;
+  if (custom && appliedVisitRange) {
+    const { from, to } = currentTarget.form.elements;
+    if (!from.value) from.value = appliedVisitRange.from;
+    if (!to.value) to.value = appliedVisitRange.to;
+  }
+});
+$('#visitRangeForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const query = new URLSearchParams(new FormData(event.currentTarget));
+  loadVisits(query.toString()).catch(err => message(err.message, true));
+});
 bindRefresh('#refreshCatalog', loadCatalog, '↻ 刷新分布数据', '平台与品牌分布已刷新');
 bindRefresh('#refreshSyncRuns', loadSyncRuns, '↻ 刷新批次', '采集批次已刷新');
 document.addEventListener('click',e=>{const el=e.target.closest('[data-jump-sync],[data-jump-stock],[data-jump-filter]');if(!el)return;jumpToRanking({sync:el.dataset.jumpSync||'all',stock:el.dataset.jumpStock||'all',filter:el.dataset.jumpFilter||'all'});});

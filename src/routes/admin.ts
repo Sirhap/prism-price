@@ -2,6 +2,8 @@
 import { deleteShopById } from '../collector/scheduler';
 import { hideTelegramContacts } from '../collector/shopPresentation';
 import { getShopColumnCapabilities, SHOP_SYSTEMS, shopReadSource } from '../collector/shopSystems';
+import { isCrawlerAgent, normalizeCrawlerIp, readCrawlerAccess, setCrawlerBlock } from './crawlerAccess';
+import { handleSponsorAdmin } from './sponsors';
 const storeTypes = ['ldxp','catfk','16688','acg-faka','dujiaoka','other','unknown'] as const;
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const encoder = new TextEncoder();
@@ -301,7 +303,7 @@ export async function resolveVisitorGeo(req: Request, ip: string, fetchImpl: typ
 function parseVisitorDevice(req: Request): { device: string; os: string; browser: string; userAgent: string } {
   const ua = (req.headers.get('User-Agent') || '').trim().slice(0, 300);
   const chMobile = req.headers.get('Sec-CH-UA-Mobile') === '?1';
-  const isBot = /bot|spider|crawl|slurp|curl|wget|python-requests|go-http-client|headless|lighthouse/i.test(ua);
+  const isBot = isCrawlerAgent(ua);
 
   let os = '未知系统';
   if (/HarmonyOS/i.test(ua)) os = 'HarmonyOS';
@@ -334,9 +336,113 @@ function parseVisitorDevice(req: Request): { device: string; os: string; browser
 }
 
 type VisitLogRow = { id: number; day: string; ip: string; location: string; device: string; os: string; browser: string; visited_at: string };
-type VisitBreakdownItem = { label: string; count: number };
+type VisitBreakdownItem = { label: string; count: number; uniqueVisitors: number };
+type VisitInsightRange = { from: string; to: string };
 
-function summarizeVisitDays(visitDays: Array<{ day: string; page_views: number }>, bjNowMs: number) {
+/** 按北京时间的日历日期筛选，开始和结束日期均包含在内。 */
+function visitInsightRange(params: URLSearchParams, bjNow: number): VisitInsightRange | null {
+  const dayMs = 86400000;
+  const today = new Date(bjNow).toISOString().slice(0, 10);
+  const preset = params.get('range') ?? '30d';
+  if (preset === 'custom') {
+    const from = params.get('from') ?? '';
+    const to = params.get('to') ?? '';
+    const parseDay = (day: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return NaN;
+      const date = new Date(`${day}T00:00:00Z`);
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === day ? date.getTime() : NaN;
+    };
+    const days = (parseDay(to) - parseDay(from)) / dayMs + 1;
+    return days >= 1 && days <= 90 && to <= today ? { from, to } : null;
+  }
+  if (preset === 'yesterday') {
+    const yesterday = new Date(bjNow - dayMs).toISOString().slice(0, 10);
+    return { from: yesterday, to: yesterday };
+  }
+  const offset = preset === 'today' ? 0 : preset === '7d' ? 6 : preset === '30d' ? 29 : null;
+  if (offset === null) return null;
+  return { from: new Date(bjNow - offset * dayMs).toISOString().slice(0, 10), to: today };
+}
+
+/** 过滤空字符串与 unknown，仅统计有效客户端 IP 以便精准去重。 */
+const VALID_VISITOR_IP_EXPR = "NULLIF(NULLIF(trim(ip), ''), 'unknown')";
+
+interface UniqueVisitStats {
+  todayVisitors: number;
+  yesterdayVisitors: number;
+  last7DaysVisitors: number;
+  last30DaysVisitors: number;
+  dailyMap: Map<string, number>;
+}
+
+/**
+ * 统计近 30 天各时间窗口的独立访客数（按客户端 IP 去重，跨天同一 IP 只计 1 人）。
+ */
+async function readUniqueVisitStats(db: D1Database, bjNowMs: number): Promise<UniqueVisitStats> {
+  const today = new Date(bjNowMs).toISOString().slice(0, 10);
+  const yesterday = new Date(bjNowMs - 86400000).toISOString().slice(0, 10);
+  const start7 = new Date(bjNowMs - 6 * 86400000).toISOString().slice(0, 10);
+  const start30 = new Date(bjNowMs - 29 * 86400000).toISOString().slice(0, 10);
+
+  try {
+    const [dailyRes, windowRow] = await Promise.all([
+      db.prepare(
+        `SELECT day, COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS unique_visitors
+         FROM visit_logs
+         WHERE day >= ? AND day <= ?
+         GROUP BY day`,
+      )
+        .bind(start30, today)
+        .all<{ day: string; unique_visitors: number }>(),
+      db.prepare(
+        `SELECT
+           COUNT(DISTINCT CASE WHEN day = ? THEN ${VALID_VISITOR_IP_EXPR} END) AS today_visitors,
+           COUNT(DISTINCT CASE WHEN day = ? THEN ${VALID_VISITOR_IP_EXPR} END) AS yesterday_visitors,
+           COUNT(DISTINCT CASE WHEN day >= ? THEN ${VALID_VISITOR_IP_EXPR} END) AS last_7d_visitors,
+           COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS last_30d_visitors
+         FROM visit_logs
+         WHERE day >= ? AND day <= ?`,
+      )
+        .bind(today, yesterday, start7, start30, today)
+        .first<{
+          today_visitors: number;
+          yesterday_visitors: number;
+          last_7d_visitors: number;
+          last_30d_visitors: number;
+        }>(),
+    ]);
+
+    const dailyMap = new Map<string, number>();
+    for (const row of dailyRes.results || []) {
+      dailyMap.set(row.day, Number(row.unique_visitors || 0));
+    }
+
+    return {
+      todayVisitors: Number(windowRow?.today_visitors || 0),
+      yesterdayVisitors: Number(windowRow?.yesterday_visitors || 0),
+      last7DaysVisitors: Number(windowRow?.last_7d_visitors || 0),
+      last30DaysVisitors: Number(windowRow?.last_30d_visitors || 0),
+      dailyMap,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('no such table')) {
+      return {
+        todayVisitors: 0,
+        yesterdayVisitors: 0,
+        last7DaysVisitors: 0,
+        last30DaysVisitors: 0,
+        dailyMap: new Map(),
+      };
+    }
+    throw err;
+  }
+}
+
+function summarizeVisitDays(
+  visitDays: Array<{ day: string; page_views: number }>,
+  bjNowMs: number,
+  uniqueStats?: UniqueVisitStats,
+) {
   const today = new Date(bjNowMs).toISOString().slice(0, 10);
   const yesterday = new Date(bjNowMs - 86400000).toISOString().slice(0, 10);
   const start7 = new Date(bjNowMs - 6 * 86400000).toISOString().slice(0, 10);
@@ -345,10 +451,30 @@ function summarizeVisitDays(visitDays: Array<{ day: string; page_views: number }
   const last7DaysViews = visitDays.filter(r => r.day >= start7).reduce((sum, r) => sum + Number(r.page_views || 0), 0);
   const last30DaysViews = visitDays.reduce((sum, r) => sum + Number(r.page_views || 0), 0);
   let peakDay: { day: string; pageViews: number } | null = null;
-  for (const row of visitDays) {
-    const pv = Number(row.page_views || 0);
-    if (!peakDay || pv > peakDay.pageViews) peakDay = { day: row.day, pageViews: pv };
+  let peakVisitorsDay: { day: string; uniqueVisitors: number } | null = null;
+  const dailyMap = uniqueStats?.dailyMap;
+
+  const days = visitDays.map(r => {
+    const pv = Number(r.page_views || 0);
+    const uv = Number(dailyMap?.get(r.day) || 0);
+    if (!peakDay || pv > peakDay.pageViews) peakDay = { day: r.day, pageViews: pv };
+    if (uv > 0 && (!peakVisitorsDay || uv > peakVisitorsDay.uniqueVisitors)) {
+      peakVisitorsDay = { day: r.day, uniqueVisitors: uv };
+    }
+    return { day: r.day, pageViews: pv, uniqueVisitors: uv };
+  });
+
+  if (dailyMap) {
+    for (const [dayKey, uv] of dailyMap.entries()) {
+      if (uv > 0 && (!peakVisitorsDay || uv > peakVisitorsDay.uniqueVisitors)) {
+        peakVisitorsDay = { day: dayKey, uniqueVisitors: uv };
+      }
+    }
   }
+
+  const dailyVisitorsSum = days.reduce((sum, item) => sum + item.uniqueVisitors, 0);
+  const visitorActiveDays = dailyMap && dailyMap.size > 0 ? dailyMap.size : visitDays.length;
+
   return {
     today,
     todayViews,
@@ -358,7 +484,13 @@ function summarizeVisitDays(visitDays: Array<{ day: string; page_views: number }
     activeDays30: visitDays.length,
     avgDailyViews: visitDays.length > 0 ? Math.round((last30DaysViews / visitDays.length) * 10) / 10 : 0,
     peakDay,
-    days: visitDays.map(r => ({ day: r.day, pageViews: Number(r.page_views || 0) })),
+    todayVisitors: uniqueStats?.todayVisitors ?? 0,
+    yesterdayVisitors: uniqueStats?.yesterdayVisitors ?? 0,
+    last7DaysVisitors: uniqueStats?.last7DaysVisitors ?? 0,
+    last30DaysVisitors: uniqueStats?.last30DaysVisitors ?? 0,
+    avgDailyVisitors: visitorActiveDays > 0 ? Math.round((dailyVisitorsSum / visitorActiveDays) * 10) / 10 : 0,
+    peakVisitorsDay,
+    days,
   };
 }
 
@@ -373,31 +505,58 @@ async function readRecentVisitLogs(db: D1Database, limit = 30): Promise<VisitLog
   }
 }
 
-async function readVisitInsights(db: D1Database, sinceDay: string, logLimit = 50): Promise<{
+async function readVisitInsights(db: D1Database, { from, to }: VisitInsightRange): Promise<{
   recentLogs: VisitLogRow[];
   sampleTotal: number;
+  uniqueIpCount: number;
   geoBreakdown: VisitBreakdownItem[];
   deviceBreakdown: VisitBreakdownItem[];
   browserBreakdown: VisitBreakdownItem[];
 }> {
   try {
-    const [recentLogs, totalRow, geoRes, devRes, browserRes] = await Promise.all([
-      readRecentVisitLogs(db, logLimit),
-      db.prepare('SELECT COUNT(*) AS cnt FROM visit_logs WHERE day >= ?').bind(sinceDay).first<{ cnt: number }>(),
-      db.prepare("SELECT COALESCE(NULLIF(trim(location), ''), '未知地区') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 8").bind(sinceDay).all<VisitBreakdownItem>(),
-      db.prepare("SELECT COALESCE(NULLIF(trim(device), ''), '未知设备') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 6").bind(sinceDay).all<VisitBreakdownItem>(),
-      db.prepare("SELECT COALESCE(NULLIF(trim(browser), ''), '其它客户端') AS label, COUNT(*) AS count FROM visit_logs WHERE day >= ? GROUP BY label ORDER BY count DESC, label ASC LIMIT 6").bind(sinceDay).all<VisitBreakdownItem>(),
+    const [logsRes, totalRow, geoRes, devRes, browserRes] = await Promise.all([
+      db.prepare(`SELECT id,day,ip,location,device,os,browser,visited_at FROM visit_logs
+                  WHERE day BETWEEN ? AND ? ORDER BY day DESC, visited_at DESC, id DESC LIMIT 50`)
+        .bind(from, to).all<VisitLogRow>(),
+      db.prepare(`SELECT COUNT(*) AS cnt, COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS unique_ips FROM visit_logs WHERE day BETWEEN ? AND ?`)
+        .bind(from, to)
+        .first<{ cnt: number; unique_ips: number }>(),
+      db.prepare(
+        `SELECT COALESCE(NULLIF(trim(location), ''), '未知地区') AS label,
+                COUNT(*) AS count,
+                COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS unique_visitors
+         FROM visit_logs WHERE day BETWEEN ? AND ? GROUP BY label ORDER BY unique_visitors DESC, count DESC, label ASC LIMIT 8`,
+      )
+        .bind(from, to)
+        .all<{ label: string; count: number; unique_visitors: number }>(),
+      db.prepare(
+        `SELECT COALESCE(NULLIF(trim(device), ''), '未知设备') AS label,
+                COUNT(*) AS count,
+                COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS unique_visitors
+         FROM visit_logs WHERE day BETWEEN ? AND ? GROUP BY label ORDER BY unique_visitors DESC, count DESC, label ASC LIMIT 6`,
+      )
+        .bind(from, to)
+        .all<{ label: string; count: number; unique_visitors: number }>(),
+      db.prepare(
+        `SELECT COALESCE(NULLIF(trim(browser), ''), '其它客户端') AS label,
+                COUNT(*) AS count,
+                COUNT(DISTINCT ${VALID_VISITOR_IP_EXPR}) AS unique_visitors
+         FROM visit_logs WHERE day BETWEEN ? AND ? GROUP BY label ORDER BY unique_visitors DESC, count DESC, label ASC LIMIT 6`,
+      )
+        .bind(from, to)
+        .all<{ label: string; count: number; unique_visitors: number }>(),
     ]);
     return {
-      recentLogs,
+      recentLogs: logsRes.results || [],
       sampleTotal: Number(totalRow?.cnt || 0),
-      geoBreakdown: (geoRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
-      deviceBreakdown: (devRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
-      browserBreakdown: (browserRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0) })),
+      uniqueIpCount: Number(totalRow?.unique_ips || 0),
+      geoBreakdown: (geoRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0), uniqueVisitors: Number(r.unique_visitors || 0) })),
+      deviceBreakdown: (devRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0), uniqueVisitors: Number(r.unique_visitors || 0) })),
+      browserBreakdown: (browserRes.results || []).map(r => ({ label: r.label, count: Number(r.count || 0), uniqueVisitors: Number(r.unique_visitors || 0) })),
     };
   } catch (err) {
     if (err instanceof Error && err.message.includes('no such table')) {
-      return { recentLogs: [], sampleTotal: 0, geoBreakdown: [], deviceBreakdown: [], browserBreakdown: [] };
+      return { recentLogs: [], sampleTotal: 0, uniqueIpCount: 0, geoBreakdown: [], deviceBreakdown: [], browserBreakdown: [] };
     }
     throw err;
   }
@@ -493,21 +652,41 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     return Response.json({ok:true},{headers:{...headers,'Set-Cookie':cookie(req,token,86400)}});
   }
   if (!await authenticated(req,db)) return json({error:'请先登录'},401);
+  if (path === '/api/control/sponsors') return handleSponsorAdmin(req, db);
   if (path === '/api/control/session' && req.method === 'GET') return json({ok:true});
+  if (path === '/api/control/crawler-block' && req.method === 'POST') {
+    let data: Record<string, unknown>;
+    try { data = await body(req); } catch { return json({error:'请求格式错误'},400); }
+    const ip = normalizeCrawlerIp(typeof data.ip === 'string' ? data.ip : '');
+    if (!ip || typeof data.blocked !== 'boolean') return json({error:'请选择有效的客户端 IP 和操作'},400);
+    await setCrawlerBlock(db, ip, data.blocked);
+    return json({ok:true});
+  }
   if (path === '/api/control/visits' && req.method === 'GET') {
     const bjNow = Date.now() + 8 * 60 * 60 * 1000;
+    const insightRange = visitInsightRange(url.searchParams, bjNow);
+    if (!insightRange) return json({error:'请选择有效日期，范围最多 90 天，结束日期不得晚于今天（北京时间）'},400);
     const day = new Date(bjNow).toISOString().slice(0, 10);
     const start = new Date(bjNow - 29 * 86400000).toISOString().slice(0, 10);
-    const [{ results }, insights] = await Promise.all([
+    const [{ results }, uniqueStats, insights, crawlerAccess] = await Promise.all([
       db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC')
         .bind(start, day).all<{ day: string; page_views: number }>(),
-      readVisitInsights(db, start, 50),
+      readUniqueVisitStats(db, bjNow),
+      readVisitInsights(db, insightRange),
+      readCrawlerAccess(db, insightRange.from, insightRange.to),
     ]);
-    const summary = summarizeVisitDays(results || [], bjNow);
+    const summary = summarizeVisitDays(results || [], bjNow, uniqueStats);
     return json({
       ...summary,
-      days: (results || []).map(r => ({ day: r.day, page_views: Number(r.page_views || 0), pageViews: Number(r.page_views || 0) })),
+      days: (results || []).map(r => {
+        const pv = Number(r.page_views || 0);
+        const uv = Number(uniqueStats.dailyMap.get(r.day) || 0);
+        return { day: r.day, page_views: pv, pageViews: pv, unique_visitors: uv, uniqueVisitors: uv };
+      }),
+      insightRange,
+      crawlerAccess,
       sampleTotal: insights.sampleTotal,
+      uniqueIpCount: insights.uniqueIpCount,
       geoBreakdown: insights.geoBreakdown,
       deviceBreakdown: insights.deviceBreakdown,
       browserBreakdown: insights.browserBreakdown,
@@ -581,9 +760,10 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     const caps = await getShopColumnCapabilities(db);
     const src = shopReadSource(caps);
 
-    const [visitRes, shopSummary, catalogSummary, rankSummary, openUrlRow, cfg, extra] = await Promise.all([
+    const [visitRes, uniqueStats, shopSummary, catalogSummary, rankSummary, openUrlRow, cfg, extra] = await Promise.all([
       db.prepare('SELECT day,page_views FROM daily_page_visits WHERE day >= ? AND day <= ? ORDER BY day DESC')
         .bind(start30, today).all<{ day: string; page_views: number }>(),
+      readUniqueVisitStats(db, bjNow),
       db.prepare(`SELECT
         COUNT(*) AS total,
         COALESCE(SUM(CASE WHEN product_count > 0 THEN 1 ELSE 0 END), 0) AS in_stock,
@@ -631,7 +811,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
       ]),
     ]);
 
-    const visitSummary = summarizeVisitDays(visitRes.results || [], bjNow);
+    const visitSummary = summarizeVisitDays(visitRes.results || [], bjNow, uniqueStats);
     const s = shopSummary || {};
     const totalShops = Number(s.total || 0);
     const readyShops = Number(s.ready || 0);

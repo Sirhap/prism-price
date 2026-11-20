@@ -1,4 +1,5 @@
 import { cachedQuery, catalogVersion } from "../cache/queryCache";
+import { isCurrentStockWarning } from "../collector/etl/stockObservations";
 import {
   extractMainCategories,
   hideTelegramContacts,
@@ -677,6 +678,8 @@ interface PreviewOfferItem {
   shopName?: string;
   price?: number;
   stockStatus?: string;
+  stockCount?: number | null;
+  stockWarningDay?: string;
   itemUrl?: string;
 }
 
@@ -743,7 +746,8 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         ? `<a href="/catalog/shops/${encodeURIComponent(shopId)}/">${esc(shopName)}</a>`
         : esc(shopName);
       const offerPrice = Number(offer.price);
-      const stockText = STOCK_LABELS[String(offer.stockStatus || "")] || "库存以店铺为准";
+      const stockText = isCurrentStockWarning(offer.stockWarningDay) ? "连续 7 天缺货，购买前请核实"
+        : offer.stockCount === 0 ? "采集时缺货" : STOCK_LABELS[String(offer.stockStatus || "")] || "库存以店铺为准";
       const safeItemHref = safeHttpUrl(offer.itemUrl);
       const actionCell = safeItemHref
         ? `<a rel="nofollow noopener noreferrer" target="_blank" href="${esc(safeItemHref)}">前往核实 ↗</a>`

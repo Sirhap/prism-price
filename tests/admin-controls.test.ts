@@ -28,8 +28,9 @@ describe('后台和店铺排名', () => {
   expect((await SELF.fetch(origin+'/api/control/visits')).status).toBe(401);
   expect((await SELF.fetch(origin+'/api/visit',{method:'POST',headers:{...headers(),'CF-Connecting-IP':'203.0.113.8','CF-IPCountry':'CN','CF-IPCity':'Beijing','User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'},body:'{}'})).status).toBe(204);
   expect((await SELF.fetch(origin+'/api/visit',{method:'POST',headers:{...headers(),'X-Real-IP':'127.0.0.1','User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'},body:'{}'})).status).toBe(204);
-  const visits=await (await SELF.fetch(origin+'/api/control/visits',{headers:{cookie}})).json() as {todayViews:number;days:Array<{day:string;page_views:number}>;recentLogs:Array<{ip:string;location:string;device:string;os:string;browser:string}>};
-  expect(visits.todayViews).toBe(2);expect(visits.days[0].page_views).toBe(2);
+  const visits=await (await SELF.fetch(origin+'/api/control/visits',{headers:{cookie}})).json() as {todayViews:number;todayVisitors:number;last7DaysVisitors:number;last30DaysVisitors:number;uniqueIpCount:number;days:Array<{day:string;page_views:number;unique_visitors:number;uniqueVisitors:number}>;recentLogs:Array<{ip:string;location:string;device:string;os:string;browser:string}>};
+  expect(visits.todayViews).toBe(2);expect(visits.todayVisitors).toBe(2);expect(visits.last7DaysVisitors).toBe(2);expect(visits.last30DaysVisitors).toBe(2);expect(visits.uniqueIpCount).toBe(2);
+  expect(visits.days[0].page_views).toBe(2);expect(visits.days[0].unique_visitors).toBe(2);expect(visits.days[0].uniqueVisitors).toBe(2);
   expect(visits.recentLogs[0]).toMatchObject({ip:'127.0.0.1',location:'本地 / 内网',device:'桌面端',os:'macOS',browser:'Chrome'});
   expect(visits.recentLogs[1]).toMatchObject({ip:'203.0.113.8',location:'中国 · Beijing',device:'手机',os:'iOS',browser:'Safari'});
   expect((await SELF.fetch(origin+'/api/control/sync-shops')).status).toBe(401);

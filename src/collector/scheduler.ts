@@ -152,16 +152,17 @@ export async function runSyncBatch(
 
     try {
       const snapshot = await adapter.fetchSnapshot(shop, env);
+      const observedItemKeys = is16688 ? new Set(snapshot.items.map((item) => item.itemKey)) : undefined;
       if (is16688) {
-        const keys = new Set(snapshot.items.map((item) => item.itemKey));
         const previous = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(shop.id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
         for (const row of previous.results || []) {
           const key = row.id.startsWith(`${shop.id}:`) ? row.id.slice(shop.id.length + 1) : '';
-          if (key && !keys.has(key)) snapshot.items.push({itemKey:key,rawName:row.raw_name,shopCategory:row.shop_category,price:Number(row.price),stockCount:row.stock_count,stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient',itemUrl:row.item_url});
+          if (key && !observedItemKeys?.has(key)) snapshot.items.push({itemKey:key,rawName:row.raw_name,shopCategory:row.shop_category,price:Number(row.price),stockCount:row.stock_count,stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient',itemUrl:row.item_url});
         }
       }
       const res = await persistShopSnapshot(env.DB, shop, snapshot, nowIso, {
         hasDescriptionColumn: cols.description,
+        observedItemKeys,
       });
 
       if (res.status === "unchanged") {
@@ -374,18 +375,19 @@ export async function ingestPushedSnapshots(
       continue;
     }
 
-    if (entry.partial) {
-      const incoming = new Set(entry.snapshot.items.map((item) => item.itemKey));
+    const observedItemKeys = entry.partial ? new Set(entry.snapshot.items.map((item) => item.itemKey)) : undefined;
+    if (observedItemKeys) {
       const { results } = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(shop.id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
       for (const row of results || []) {
         const key = row.id.startsWith(`${shop.id}:`) ? row.id.slice(shop.id.length + 1) : '';
-        if (!key || incoming.has(key)) continue;
+        if (!key || observedItemKeys.has(key)) continue;
         entry.snapshot.items.push({ itemKey:key, rawName:row.raw_name, shopCategory:row.shop_category, price:Number(row.price), stockCount:row.stock_count, stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient', itemUrl:row.item_url });
       }
     }
     const res = await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
       hasDescriptionColumn: cols.description,
       minUnchangedIntervalMs: 12 * 60 * 60 * 1000,
+      observedItemKeys,
     });
     const activeAdapter = shop.adapter_type === "manual" || shop.adapter_type === "ka123_api"
       ? shop.adapter_type

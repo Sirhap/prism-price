@@ -28,10 +28,30 @@ systemctl list-timers 'ldxp-*'
 systemctl start ldxp-backup.service
 ```
 
-重新构建：在项目根目录运行 `node_modules/.bin/esbuild deploy/huoshan/entry.ts --bundle --format=esm --platform=neutral --target=es2022 --outfile=deploy/huoshan/worker.mjs`。
-将完整源码/静态资源与打包结果放进新 release，在 `deploy/huoshan` 内运行 `npm ci --omit=dev`，
-本次新版本通过软链接复用旧版固定的 `node_modules`，不要删除 `20261112-1845`；后续独立安装依赖后可解除该依赖。
-切换 `current` 软链接并重启 `ldxp-cf-demo.service`，验证后保留旧版本。
+## 发布
+
+项目根目录安装开发依赖后，使用以下命令构建并验证指定的 Git 提交。默认使用 `HEAD`。
+
+```sh
+bash deploy/huoshan/deploy.sh --ref HEAD
+```
+
+正式发布使用已推送的提交和核对过的线上版本名。将下方的版本名替换为 `current` 指向的目录名。
+
+```sh
+ssh huoshan-server 'readlink -f /opt/ldxp-cf-demo/current'
+bash deploy/huoshan/deploy.sh --ref HEAD --apply --expect <当前版本目录名>
+```
+
+脚本通过 `huoshan-server` 上传并验证发布包，在服务器上锁定发布、核对上一版本、备份并校验 SQLite，再切换 `current` 并重启服务。它会验证源站和正式域名的首页、后台静态资源与公共 API。验证失败时自动切回上一应用版本。数据库备份保存于 `/opt/ldxp-cf-demo/backups/<新版本>/pre-deploy.sqlite`。
+
+数据库迁移、运行依赖升级及系统配置变更单独执行。常规发布复用上一版本的运行依赖，并校验依赖清单一致。清理历史版本时，保留 `current`、回退版本及仍被引用的 `node_modules` 所在目录。
+
+上线访客时间筛选及爬虫拦截前，先备份生产 SQLite，再按顺序应用 `0011_visit_logs_day_ip_index.sql` 和 `0012_crawler_access.sql`（按当前库已应用的迁移跳过）。黑名单只信任 `CF-Connecting-IP`，须先确认源站只接受可信 Cloudflare 回源，或由 OpenResty 丢弃直连请求携带的该头部。若配置了公开页面/API 的边缘缓存，也应确认这些请求会到达应用，否则命中缓存的请求既不会拦截也不会被记录。
+
+自动规则在公开页面及公开 API 的 GET/HEAD 请求上拦截明确的爬虫和脚本标识（包括 curl、wget），不自动写入手动 IP 黑名单，拦截返回不可缓存的 500 并保留记录。`robots.txt` 和其中显式放行的索引爬虫访问公开页面不受自动规则限制（不适用于公开 API）；UA 放行不等于身份校验。后台、写入型同步 API 和默认使用 Node.js `fetch` 的同步客户端不受自动规则影响。部署后的可用性检查用浏览器或 Node.js `fetch`，不要用默认 curl 检查受保护路径的正常状态。
+
+上线赞助推广前先备份 SQLite，再按顺序应用 `0014_sponsor_ads.sql` 至 `0019_sponsors_enabled.sql`（已应用的跳过，并在事务中执行重建表的迁移）。后台「赞助推广」总开关默认开启；关闭时隐藏展示和入口、暂停公开投稿，授权记录保留，有效期照常计算。授权码可绑定位置或交由投稿人选择；轮播最多 4 张，四个固定位各限 1 张，已占用的固定位在页面上不定时上下换序。赞助图片最大 5 MB，支持原图和裁剪。生成不占位，满位不消耗码；提交成功即展示，到期、作废或删除即释放位置。
 
 ## 回滚
 

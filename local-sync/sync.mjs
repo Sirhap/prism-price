@@ -184,7 +184,7 @@ export async function runSync(options, deps = {}) {
           console.warn(`[local-sync] ${shop.id}: ${isPartialAdapter(shop) ? '源站列表完整性未确认，按部分同步保留其余商品' : `商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`}`);
           snapshot.items = snapshot.items.slice(0, 2000);
         }
-        const unchanged = !partial && shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence });
+        const unchanged = !partial && shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence, stockObservationSupport: data.stockObservationSupport });
         if (unchanged) stats.unchanged++;
         else {
           stats.changed++;

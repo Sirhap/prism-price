@@ -9,6 +9,7 @@ import type {
 import { normalizeDescription } from "../adapters/fetcher";
 import { hasShopDescriptionColumn } from "../shopSystems";
 import { calculateMedian, isNonSalePlaceholderItem, normalizeOffer } from "./cleaner";
+import { observeZeroStock, stockWarningDay } from "./stockObservations";
 
 const snapshotBrandRules: readonly BrandRule[] = brandRules;
 
@@ -93,6 +94,8 @@ interface OfferWithShopRow {
   price: number;
   stock_count: number | null;
   stock_status: StockStatus;
+  stock_zero_day?: string | null;
+  stock_zero_days?: number;
   item_url: string;
   updated_at: string;
   shop_name: string;
@@ -141,9 +144,7 @@ export async function rebuildProductGroups(
     readStatements.push(db
       .prepare(
         `SELECT
-          o.id, o.shop_id, o.group_key, o.clean_name, o.brand_group, o.shop_category,
-          o.attr_type, o.attr_plan, o.attr_duration, o.attr_warranty, o.attr_sms, o.attr_region,
-          o.price, o.stock_count, o.stock_status, o.item_url, o.updated_at,
+          o.*,
           s.shop_name, s.shop_url, s.telegram, s.stale_days, s.product_count AS shop_product_count
         FROM offers o
         INNER JOIN shops s ON s.id = o.shop_id
@@ -193,6 +194,7 @@ export async function rebuildProductGroups(
       price: row.price,
       stockCount: row.stock_count,
       stockStatus: row.stock_status,
+      stockWarningDay: stockWarningDay(row),
       itemUrl: row.item_url,
       updatedAt: row.updated_at,
       staleDays: row.stale_days,
@@ -300,6 +302,8 @@ export interface PersistSnapshotOptions {
   hasDescriptionColumn?: boolean;
   /** 推送重复快照时合并心跳更新；定时采集仍按 next_sync_at 调度。 */
   minUnchangedIntervalMs?: number;
+  /** Partial snapshots may include carried-forward offers; those are not stock observations. */
+  observedItemKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -321,6 +325,10 @@ export async function persistShopSnapshot(
   const newHash = await computeSnapshotHash(snapshot);
   const nextSyncAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   const today = nowIso.slice(0, 10);
+  const zeroStockOfferIds = snapshot.items.filter((item) =>
+    item.stockCount === 0 && (!options?.observedItemKeys || options.observedItemKeys.has(item.itemKey)) &&
+    !isNonSalePlaceholderItem(item.rawName, item.shopCategory, item.price),
+  ).map((item) => `${shop.id}:${item.itemKey}`);
 
   const hasIncomingDescription = typeof snapshot.description === "string";
   const nextDescription = hasIncomingDescription ? normalizeDescription(snapshot.description) : "";
@@ -339,12 +347,13 @@ export async function persistShopSnapshot(
   }
   const descriptionChanged = shouldWriteDescription && nextDescription !== previousDescription;
 
-  // 未发生任何价格/商品变化：仅刷新同步时间戳（若简介有变化则顺带单行更新简介），不重写 offers/product_groups
   if (shop.content_hash && shop.content_hash === newHash) {
+    const observed = await observeZeroStock(db, zeroStockOfferIds, nowIso);
+    const stockWrites = observed.writes + await rebuildProductGroups(db, [...new Set(observed.groups)], nowIso);
     const elapsed = Date.parse(nowIso) - Date.parse(shop.last_synced_at || "");
     if (!descriptionChanged && shop.sync_state === "ready" && !shop.last_error && !shop.consecutive_failures &&
         Number.isFinite(elapsed) && elapsed >= 0 && elapsed < (options?.minUnchangedIntervalMs || 0)) {
-      return { status: "unchanged", contentHash: newHash, itemCount: shop.product_count, estimatedWrites: 0, descriptionUpdated: false };
+      return { status: "unchanged", contentHash: newHash, itemCount: shop.product_count, estimatedWrites: stockWrites, descriptionUpdated: false };
     }
     if (descriptionChanged) {
       await db
@@ -370,7 +379,7 @@ export async function persistShopSnapshot(
       status: "unchanged",
       contentHash: newHash,
       itemCount: snapshot.items.length,
-      estimatedWrites: 1,
+      estimatedWrites: 1 + stockWrites,
       descriptionUpdated: descriptionChanged,
     };
   }
@@ -529,11 +538,13 @@ export async function persistShopSnapshot(
   );
 
   const snapshotWrites = await executeStatementChunks(db, batchStmts);
+  const observed = await observeZeroStock(db, zeroStockOfferIds, nowIso);
+  for (const key of observed.groups) affectedGroups.add(key);
 
   const groupWrites = await rebuildProductGroups(db, [...affectedGroups], nowIso);
 
   // 估算写入行数（含索引列维护）
-  const estimatedWrites = snapshotWrites + groupWrites;
+  const estimatedWrites = snapshotWrites + observed.writes + groupWrites;
 
   return {
     status: "updated",

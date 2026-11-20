@@ -33,8 +33,8 @@
         } catch {}
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=20261115-mobile1" />
-    <script src="/i18n.js?v=20261115-i18n" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=sponsor-compact-title" />
+    <script src="/i18n.js?v=sponsor-auto-crop" defer></script>
   </head>
   <body>
     <!-- 极光与透视晶格背景层 -->
@@ -67,11 +67,11 @@
         </a>
 
         <div class="masthead-actions">
-          <button id="workbenchBtn" class="nav-pill" type="button" title="打开收藏夹与同台对比工作台" data-i18n-title="home.workbenchTitle">
+          <button id="workbenchBtn" class="nav-pill" type="button" aria-label="打开收藏夹与同台对比工作台" data-i18n-aria="home.workbenchTitle" title="打开收藏夹与同台对比工作台" data-i18n-title="home.workbenchTitle">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3l2.6 5.3 5.9.8-4.3 4.1 1 5.8L12 16.2 6.8 19l1-5.8-4.3-4.1 5.9-.8L12 3z"></path>
             </svg>
-            <span><span data-i18n="home.workbenchPrefix">收藏</span><span class="hide-xs" data-i18n="home.workbenchSub">与对比</span></span>
+            <span class="workbench-label"><span data-i18n="home.workbenchPrefix">收藏</span><span class="hide-xs" data-i18n="home.workbenchSub">与对比</span></span>
             <em id="workbenchBadge" class="nav-pill-badge" hidden>0</em>
           </button>
 
@@ -90,6 +90,7 @@
           <span class="masthead-break" aria-hidden="true"></span>
 
           <button id="submitShopBtn" class="nav-pill submit-shop-nav" type="button" data-i18n="home.submitShop">添加收录店铺</button>
+          <button class="nav-pill sponsor-nav" type="button" data-sponsor-open data-i18n="home.sponsorTitle" hidden>赞助推广</button>
 
           <a
             class="masthead-cta"
@@ -105,12 +106,12 @@
         </div>
       </nav>
 
-      <!-- 2. 居中聚光灯搜索舱 (Command Spotlight Hero) -->
+      <!-- 2. 首页检索 -->
       <header class="topbar spotlight-hero">
         <div class="spotlight-top-bar">
-          <div class="eyebrow">
-            <span class="live-dot" aria-hidden="true"></span>
-            <span data-i18n="home.eyebrow">PRISM LIVE INDEX · 多源同款实时聚合引擎</span>
+          <div class="spotlight-headline">
+            <h1 data-i18n-html="home.heroHeadlineHtml">AI 订阅与数字商品，<span>多店报价一目了然</span></h1>
+            <p class="subtitle" data-i18n="home.heroSubtitle">聚合公开店铺报价，实际价格与库存以店铺页面为准。</p>
           </div>
 
           <div class="mode-tabs" role="tablist" aria-label="检索视图模式">
@@ -133,14 +134,6 @@
               <small id="tabShopCount">0</small>
             </button>
           </div>
-        </div>
-
-        <div class="spotlight-headline">
-          <h1 data-i18n-html="home.heroHeadlineHtml">AI 订阅与数字商品，<span>多店报价一目了然</span></h1>
-          <p class="subtitle" data-i18n="home.heroSubtitle">
-            聚合公开店铺的 AI 订阅、API 中转与数字商品报价，支持按品牌、规格和价格筛选。本站仅提供信息检索，实际价格与库存请以店铺页面为准。
-          </p>
-          <button id="heroKunEgg" class="hero-kun-egg" type="button" aria-label="打开鸡哥比价彩蛋" data-i18n="home.kunEgg" data-i18n-aria="home.kunEggAria">🐔 两年半比价练习生 <span aria-hidden="true">· 🏀</span></button>
         </div>
 
         <!-- 聚光灯指挥舱搜索框 -->
@@ -183,10 +176,10 @@
           </form>
 
           <div class="search-assist-row">
-            <p id="searchHint" class="search-hint" data-i18n="home.searchHint">输入后点击“立即检索”或按回车查询 · 支持空格分词</p>
+            <p id="searchHint" class="sr-only" data-i18n="home.searchHint">输入后点击“立即检索”或按回车查询 · 支持空格分词</p>
             <div class="search-assist-tools">
               <div id="hotQueries" class="hot-queries" aria-label="热门快捷搜索"></div>
-              <button id="shareFiltersBtn" class="quick-chip share-link-chip" type="button" title="复制当前筛选链接" data-i18n-title="home.shareFiltersTitle">
+              <button id="shareFiltersBtn" class="quick-chip share-link-chip" type="button" aria-label="复制当前筛选链接" data-i18n-aria="home.shareFiltersTitle" title="复制当前筛选链接" data-i18n-title="home.shareFiltersTitle">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="18" cy="5" r="3"></circle>
                   <circle cx="6" cy="12" r="3"></circle>
@@ -200,7 +193,7 @@
           </div>
         </div>
 
-        <!-- 底部三联流线型实时指标条 -->
+        <!-- 收录统计 -->
         <div class="topbar-metrics" aria-label="站点收录统计">
           <div class="metric-card">
             <span class="metric-icon metric-icon-indigo" aria-hidden="true">
@@ -266,12 +259,12 @@
             <div class="controls-bar">
               <!-- 看店铺筛选条 -->
               <div id="shopControlsWrap" class="shop-controls" hidden>
-                <label class="filter-field">
-                  <span data-i18n="home.shopSystemLabel">卡网系统类型</span>
-                  <select id="shopSystemSelect" aria-label="卡网系统类型筛选">
+                <div class="filter-field shop-system-field">
+                  <label id="shopSystemLabel" for="shopSystemSelect" data-i18n="home.shopSystemLabel">卡网系统类型</label>
+                  <select id="shopSystemSelect">
                     <option value="all" data-i18n="home.shopAllSystems">全部系统</option>
                   </select>
-                </label>
+                </div>
                 <label class="shop-stock-filter" for="shopOnlyInStockInput">
                   <input id="shopOnlyInStockInput" type="checkbox" />
                   <span data-i18n="home.shopOnlyInStock">仅看有收录商品</span>
@@ -281,26 +274,30 @@
                   <span data-i18n="home.shopHasCode">仅看有对接码</span>
                 </label>
                 <button id="shopResetFiltersBtn" class="quick-chip quick-chip-reset" type="button" data-i18n="home.resetFilters" hidden>清空筛选</button>
-                <span class="shop-system-note" data-i18n="home.shopSystemNote">域名未匹配平台的店铺暂归为“第三方自建站（待确认）”</span>
               </div>
 
               <!-- 找商品筛选条 -->
               <div id="productControlsWrap" class="product-controls-wrap">
                 <div id="primaryFilters" class="filter-selects"></div>
-                <div class="custom-price-range" aria-label="自定义价格区间">
-                  <span class="custom-price-label" data-i18n="home.customPriceLabel">自定义 ¥</span>
-                  <input id="customMinPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最低" data-i18n-placeholder="home.customMinPlaceholder" aria-label="自定义最低价格" data-i18n-aria="home.customMinAria" />
-                  <span class="custom-price-sep">~</span>
-                  <input id="customMaxPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最高" data-i18n-placeholder="home.customMaxPlaceholder" aria-label="自定义最高价格" data-i18n-aria="home.customMaxAria" />
-                  <button id="applyCustomPriceBtn" class="quick-chip" type="button" data-i18n="home.applyBtn">应用</button>
+                <div class="filter-field custom-price-field" role="group" aria-labelledby="customPriceLabel">
+                  <span id="customPriceLabel" data-i18n="home.customPriceLabel">自定义价格（¥）</span>
+                  <div class="custom-price-range">
+                    <input id="customMinPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最低" data-i18n-placeholder="home.customMinPlaceholder" aria-label="自定义最低价格" data-i18n-aria="home.customMinAria" />
+                    <span class="custom-price-sep" aria-hidden="true">~</span>
+                    <input id="customMaxPrice" type="number" min="0" max="999999" step="1" inputmode="decimal" placeholder="最高" data-i18n-placeholder="home.customMaxPlaceholder" aria-label="自定义最高价格" data-i18n-aria="home.customMaxAria" />
+                    <button id="applyCustomPriceBtn" class="quick-chip" type="button" data-i18n="home.applyBtn">应用</button>
+                  </div>
                 </div>
                 <div class="filter-actions">
                   <button id="resetFiltersBtn" class="quick-chip quick-chip-reset" type="button" data-i18n="home.resetFilters" hidden>清空筛选</button>
+                  <details class="facet-help">
+                    <summary data-i18n="home.facetHelp">筛选说明</summary>
+                    <p data-i18n="home.facetHelpText">计数表示只更改该项后的商品组数。切换品牌或类型会清除不兼容的筛选。预设价格含下限、不含上限。</p>
+                  </details>
                 </div>
               </div>
 
               <div id="moreFiltersPanel" class="more-filters-panel" hidden></div>
-              <div id="facetNoteBar" class="facet-note-bar" hidden></div>
               <div id="filterNoticeBar" class="filter-notice-bar" role="status" aria-live="polite" hidden></div>
               <div id="activeFilters" class="active-filters" aria-label="已选筛选"></div>
             </div>
@@ -360,6 +357,44 @@
               <p id="shopEmpty" class="empty-tip" data-i18n="home.shopEmpty" hidden>暂无匹配店铺。</p>
             </section>
           </div>
+          <aside class="sponsor-rail" aria-labelledby="sponsorRailTitle" hidden>
+            <div class="sponsor-rail-header">
+              <h2 id="sponsorRailTitle" data-i18n="home.sponsorTitle">赞助推广</h2>
+            </div>
+            <section class="sponsor-placement" id="sponsorCarousel" aria-labelledby="sponsorCarouselTitle" hidden>
+              <div class="sponsor-placement-header">
+                <h3 id="sponsorCarouselTitle" data-i18n="home.sponsorCarousel">轮播推广</h3>
+                <span class="sponsor-disclosure" data-i18n="home.sponsorDisclosure">赞助</span>
+              </div>
+              <figure id="sponsorAd" class="sponsor-ad" hidden>
+                <img width="320" height="240" alt="" decoding="async">
+                <figcaption></figcaption>
+              </figure>
+              <div id="sponsorPages" class="sponsor-pages" hidden>
+                <button type="button" data-sponsor-step="-1" aria-label="上一条赞助" data-i18n-aria="home.sponsorPrevious">‹</button>
+                <span></span>
+                <button type="button" data-sponsor-step="1" aria-label="下一条赞助" data-i18n-aria="home.sponsorNext">›</button>
+              </div>
+            </section>
+            <div class="sponsor-fixed-layout" hidden>
+              <section class="sponsor-placement" data-sponsor-placement="fixed-1" aria-label="固定位 1" data-i18n-aria="home.sponsorFixed1" hidden>
+                <div class="sponsor-placement-header"><h3 data-i18n="home.sponsorFixed1">固定位 1</h3><span class="sponsor-disclosure" data-i18n="home.sponsorDisclosure">赞助</span></div>
+                <figure class="sponsor-ad" hidden><img width="320" height="240" alt="" decoding="async" loading="lazy"><figcaption></figcaption></figure>
+              </section>
+              <section class="sponsor-placement" data-sponsor-placement="fixed-2" aria-label="固定位 2" data-i18n-aria="home.sponsorFixed2" hidden>
+                <div class="sponsor-placement-header"><h3 data-i18n="home.sponsorFixed2">固定位 2</h3><span class="sponsor-disclosure" data-i18n="home.sponsorDisclosure">赞助</span></div>
+                <figure class="sponsor-ad" hidden><img width="320" height="240" alt="" decoding="async" loading="lazy"><figcaption></figcaption></figure>
+              </section>
+              <section class="sponsor-placement" data-sponsor-placement="fixed-3" aria-label="固定位 3" data-i18n-aria="home.sponsorFixed3" hidden>
+                <div class="sponsor-placement-header"><h3 data-i18n="home.sponsorFixed3">固定位 3</h3><span class="sponsor-disclosure" data-i18n="home.sponsorDisclosure">赞助</span></div>
+                <figure class="sponsor-ad" hidden><img width="320" height="240" alt="" decoding="async" loading="lazy"><figcaption></figcaption></figure>
+              </section>
+              <section class="sponsor-placement" data-sponsor-placement="fixed-4" aria-label="固定位 4" data-i18n-aria="home.sponsorFixed4" hidden>
+                <div class="sponsor-placement-header"><h3 data-i18n="home.sponsorFixed4">固定位 4</h3><span class="sponsor-disclosure" data-i18n="home.sponsorDisclosure">赞助</span></div>
+                <figure class="sponsor-ad" hidden><img width="320" height="240" alt="" decoding="async" loading="lazy"><figcaption></figcaption></figure>
+              </section>
+            </div>
+          </aside>
         </div>
   </section>
 
@@ -467,6 +502,87 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20261115-i18n" defer></script>
+    <dialog id="sponsorDialog" class="sponsor-dialog" aria-labelledby="sponsorDialogTitle">
+      <form id="sponsorForm">
+        <header>
+          <h2 id="sponsorDialogTitle" data-i18n="home.sponsorTitle">赞助推广</h2>
+          <button type="button" class="quick-chip" data-sponsor-close aria-label="关闭" data-i18n-aria="home.sponsorClose">×</button>
+        </header>
+        <p class="sponsor-form-note" data-i18n="home.sponsorFormNote">授权码仅可使用一次。提交成功即展示，有效期从提交时开始。</p>
+        <label><span data-i18n="home.sponsorCode">授权码</span>
+          <input name="code" required maxlength="38" placeholder="PRISM-…" autocomplete="off" spellcheck="false">
+        </label>
+        <button type="button" class="quick-chip" data-sponsor-check data-i18n="home.sponsorCheck">查询授权状态</button>
+        <fieldset class="sponsor-fieldset" aria-describedby="sponsorPlacementHint">
+          <legend data-i18n="home.sponsorPlacement">投放方式</legend>
+          <div class="sponsor-options">
+            <label><input type="radio" name="placementType" value="carousel" required><span data-i18n="home.sponsorCarouselChoice">顶部轮播</span></label>
+            <label><input type="radio" name="placementType" value="fixed" required><span data-i18n="home.sponsorFixedChoice">固定赞助位</span></label>
+          </div>
+          <small id="sponsorPlacementHint" data-i18n="home.sponsorPlacementHint">固定赞助位会安排到可用位置；指定位置的授权码仅支持对应方式。</small>
+        </fieldset>
+        <label><span data-i18n="home.sponsorAdTitle">赞助标题</span>
+          <input name="title" required maxlength="80">
+        </label>
+        <label><span data-i18n="home.sponsorImage">赞助图片</span>
+          <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required aria-describedby="sponsorImageHint">
+          <small id="sponsorImageHint" data-i18n="home.sponsorImageHint">JPG、PNG 或 WebP，最大 5 MB。选图后进入 4:3 裁剪预览，取消可保留原图。</small>
+        </label>
+        <fieldset id="sponsorPreview" class="sponsor-fieldset" hidden>
+          <legend data-i18n="home.sponsorImagePreview">投放预览</legend>
+          <div class="sponsor-upload-preview">
+            <div class="sponsor-preview-frame"><img alt="" decoding="async"></div>
+            <div class="sponsor-preview-actions">
+              <small id="sponsorPreviewMode" aria-live="polite"></small>
+              <button type="button" class="quick-chip" id="sponsorOpenCrop" data-i18n="home.sponsorCrop">裁剪图片</button>
+              <button type="button" class="quick-chip" id="sponsorRestoreOriginal" data-i18n="home.sponsorRestoreOriginal" hidden>恢复原图</button>
+            </div>
+          </div>
+        </fieldset>
+        <p id="sponsorResult" role="status" aria-live="polite" hidden></p>
+        <footer class="sponsor-form-actions">
+          <button type="submit" class="btn btn-primary" data-i18n="home.sponsorPublish">立即发布</button>
+        </footer>
+      </form>
+      <section id="sponsorCropEditor" class="sponsor-crop-editor" aria-labelledby="sponsorCropTitle" hidden>
+        <header>
+          <h2 id="sponsorCropTitle" data-i18n="home.sponsorCrop">裁剪图片</h2>
+          <output class="sponsor-crop-ratio" id="sponsorCropSize"></output>
+        </header>
+        <div class="sponsor-options" role="group" aria-label="裁剪比例" data-i18n-aria="home.sponsorCropRatio">
+          <label><input type="radio" name="sponsorCropRatio" value="card" checked><span>4:3</span></label>
+          <label><input type="radio" name="sponsorCropRatio" value="free"><span data-i18n="home.sponsorCropFree">自由比例</span></label>
+        </div>
+        <p id="sponsorCropHelp" data-i18n="home.sponsorCropHelp">拖动框内移动位置，拖动四角调整大小。</p>
+        <div id="sponsorCropStage" class="sponsor-crop-stage" tabindex="0" role="group" aria-labelledby="sponsorCropTitle" aria-describedby="sponsorCropHelp">
+          <img alt="" draggable="false">
+          <div class="sponsor-crop-guide">
+            <span aria-hidden="true"></span>
+            <button type="button" data-crop-handle="nw" aria-label="调整左上角" data-i18n-aria="home.sponsorCropTopLeft"></button>
+            <button type="button" data-crop-handle="ne" aria-label="调整右上角" data-i18n-aria="home.sponsorCropTopRight"></button>
+            <button type="button" data-crop-handle="sw" aria-label="调整左下角" data-i18n-aria="home.sponsorCropBottomLeft"></button>
+            <button type="button" data-crop-handle="se" aria-label="调整右下角" data-i18n-aria="home.sponsorCropBottomRight"></button>
+          </div>
+        </div>
+        <div class="sponsor-crop-toolbar">
+          <div class="sponsor-crop-zoom">
+            <button type="button" class="quick-chip" data-sponsor-zoom="-10" aria-label="缩小" data-i18n-aria="home.sponsorZoomOut">−</button>
+            <input id="sponsorCropZoom" type="range" min="25" max="100" value="85" aria-label="缩放裁剪框" data-i18n-aria="home.sponsorZoom">
+            <button type="button" class="quick-chip" data-sponsor-zoom="10" aria-label="放大" data-i18n-aria="home.sponsorZoomIn">+</button>
+            <output for="sponsorCropZoom"></output>
+          </div>
+          <button type="button" class="quick-chip" id="sponsorCropReset" data-i18n="home.sponsorCropReset">重置</button>
+        </div>
+        <p id="sponsorCropError" role="alert" hidden></p>
+        <footer class="sponsor-crop-actions">
+          <button type="button" class="btn btn-secondary" id="sponsorCropCancel" data-i18n="home.sponsorCropCancel">取消</button>
+          <button type="button" class="btn btn-primary" id="sponsorCropApply" data-i18n="home.sponsorCropApply">应用裁剪</button>
+        </footer>
+      </section>
+    </dialog>
+    <script src="/select-picker.js?v=20261119-dropdowns" defer></script>
+    <script src="/app.js?v=sponsor-preview" defer></script>
+    <script src="/sponsor-crop.js?v=sponsor-4x3" defer></script>
+    <script src="/sponsors.js?v=sponsor-compact-title" defer></script>
   </body>
 </html>
