@@ -318,6 +318,12 @@
       if (linkInput) linkInput.value = '';
       form.elements.image.value = '';
       clearPreview();
+      if (data.status === 'active') {
+        show(wording(`已通过并上线 · ${placementLabel(data.placement)} · 到期：${time(data.expiresAt)}（北京时间）`,
+          `Approved and published · ${placementLabel(data.placement)} · Expires ${time(data.expiresAt)} (Beijing time)`));
+        await refresh();
+        return;
+      }
       show(wording(`提交成功 · ${placementLabel(data.placement)} · 待审批`,
         `Submitted · ${placementLabel(data.placement)} · Pending review`));
     });

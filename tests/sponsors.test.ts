@@ -271,3 +271,45 @@ it('总开关仅管理员可改，关闭时停止公开展示和核销，重新�
   expect((await SELF.fetch(imageUrl)).status).toBe(200);
   expect(await (await post('/api/sponsors/check', { code: activeCode })).json()).toMatchObject({ status: 'active', expiresAt: active.expiresAt });
 });
+
+it('自动审批默认关闭，可独立启用，轮播满位时并发投稿不会超限', async () => {
+  const toggle = (autoApprove: unknown, session = cookie) => post(admin, { action: 'set-auto-approve', autoApprove }, session);
+  const settings = async () => (await SELF.fetch(origin + admin, { headers: { cookie } })).json();
+  const check = async (code: string) => (await post('/api/sponsors/check', { code })).json();
+  const generate = async (placement: string, quantity: number) => {
+    const result = await post(admin, { action: 'create', placement, quantity, duration: 2, unit: 'days' }, cookie);
+    expect(result.status).toBe(201);
+    return (await result.json<{ codes: string[] }>()).codes;
+  };
+  expect(await settings()).toMatchObject({ enabled: true, autoApprove: false });
+  expect((await toggle(true, '')).status).toBe(401);
+  expect((await toggle('true')).status).toBe(400);
+  const [pendingBefore, automatic, pendingAfter] = await generate('fixed-1', 3);
+  expect(await (await publish(pendingBefore, '开启前的投稿')).json()).toMatchObject({ status: 'pending', expiresAt: null });
+  try {
+    expect(await (await toggle(true)).json()).toEqual({ autoApprove: true });
+    expect(await settings()).toMatchObject({ enabled: true, autoApprove: true });
+    expect(await check(pendingBefore)).toMatchObject({ status: 'pending', expiresAt: null });
+    const activated = await (await publish(automatic, '自动通过')).json();
+    expect(activated).toMatchObject({ status: 'active', placement: 'fixed-1' });
+    const record = (await list('active')).find(item => item.codeHint === automatic.slice(-8))!;
+    expect(record.expiresAt).toBe(record.reviewedAt! + 2 * 86_400_000);
+    expect((await SELF.fetch(origin + '/api/sponsors/image/' + record.id)).status).toBe(200);
+
+    for (const item of (await list('active')).filter(entry => entry.placement === 'carousel')) {
+      expect((await post(admin, { action: 'revoke', id: item.id }, cookie)).status).toBe(200);
+    }
+    const carousel = await generate('carousel', 5);
+    const responses = await Promise.all(carousel.map(code => publish(code, '自动轮播')));
+    expect(responses.map(response => response.status)).toEqual([201, 201, 201, 201, 201]);
+    const decisions = await Promise.all(responses.map(response => response.json<{ status: string; expiresAt: number | null }>()));
+    expect(decisions.filter(item => item.status === 'active')).toHaveLength(4);
+    expect(decisions.filter(item => item.status === 'pending')).toEqual([{ status: 'pending', expiresAt: null, placement: 'carousel' }]);
+    const ads = await (await SELF.fetch(origin + '/api/sponsors')).json<{ ads: Array<{ placement: string }> }>();
+    expect(ads.ads.filter(item => item.placement === 'carousel')).toHaveLength(4);
+  } finally {
+    expect(await (await toggle(false)).json()).toEqual({ autoApprove: false });
+  }
+  expect(await (await publish(pendingAfter, '关闭后的投稿')).json()).toMatchObject({ status: 'pending', expiresAt: null });
+  expect(await settings()).toMatchObject({ enabled: true, autoApprove: false });
+});

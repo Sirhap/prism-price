@@ -7,8 +7,8 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.f36c8e907bfd.css">
-  <script type="module" src="/admin/admin.e60d286a7403.js"></script>
+  <link rel="stylesheet" href="/admin/admin.17aa2367f5ac.css">
+  <script type="module" src="/admin/admin.450306e2e5ab.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -278,6 +278,11 @@
           <span class="sponsor-toggle-copy"><strong id="sponsorEnabledLabel">启用赞助推广</strong><small id="sponsorEnabledHint">关闭后隐藏前台并暂停投稿，有效期照常计算。</small></span>
           <span id="sponsorEnabledStatus" class="sponsor-status" role="status">加载中</span>
           <input id="sponsorEnabled" type="checkbox" role="switch" disabled aria-labelledby="sponsorEnabledLabel" aria-describedby="sponsorEnabledHint sponsorEnabledStatus">
+        </label>
+        <label class="toggle-row sponsor-toggle-row" for="sponsorAutoApprove">
+          <span class="sponsor-toggle-copy"><strong id="sponsorAutoApproveLabel">自动审批</strong><small id="sponsorAutoApproveHint">开启后新投稿自动通过。轮播已满的投稿仍需手动审批。</small></span>
+          <span id="sponsorAutoApproveStatus" class="sponsor-status" role="status">加载中</span>
+          <input id="sponsorAutoApprove" type="checkbox" role="switch" disabled aria-labelledby="sponsorAutoApproveLabel" aria-describedby="sponsorAutoApproveHint sponsorAutoApproveStatus">
         </label>
       </section>
       <section class="admin-card">

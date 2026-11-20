@@ -72,6 +72,8 @@
     "home.sponsorFormNote": "Codes are single-use. Your sponsorship goes live and its term starts after approval.",
     "home.sponsorClose": "Close",
     "home.sponsorCode": "Authorization code",
+    "home.sponsorGetCode": "Get an authorization code ↗",
+    "home.sponsorCodeGuide": "Paste the code starting with PRISM- above.",
     "home.sponsorCheck": "Check code status",
     "home.sponsorPlacement": "Placement",
     "home.sponsorCarouselChoice": "Featured carousel",

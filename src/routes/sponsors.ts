@@ -13,7 +13,9 @@ function isPlacement(value: unknown): value is Placement {
 }
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const sponsorsEnabledSql = '(SELECT sponsors_enabled FROM admin_settings WHERE id = 1) = 1';
+const autoApproveSql = '(SELECT sponsors_auto_approve FROM admin_settings WHERE id = 1) = 1';
 const activeSql = "revoked_at IS NULL AND redeemed_at IS NOT NULL AND review_status = 'approved' AND expires_at > ?";
+const carouselHasRoomSql = `(SELECT COUNT(*) FROM sponsor_ads WHERE placement = 'carousel' AND ${activeSql}) < ?`;
 const sponsorDisabledMessage = '赞助推广已关闭';
 async function sponsorsEnabled(db: D1Database): Promise<boolean> {
   return (await db.prepare('SELECT sponsors_enabled FROM admin_settings WHERE id = 1').first<number>('sponsors_enabled')) === 1;
@@ -204,7 +206,9 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
   const bytes = new Uint8Array(await file.arrayBuffer());
   const imageType = identifyImage(bytes);
   if (!imageType) return failure('请上传 JPG、PNG 或 WebP 图片');
+  const submittedAt = Date.now();
   const imageKey = crypto.randomUUID();
+  // Make the automatic decision in the same write that reserves a carousel position.
   const update = db.prepare(`WITH selected AS MATERIALIZED (
     SELECT candidate.value AS placement, candidate.key AS priority, COUNT(ad.id) AS occupied
     FROM json_each(?) AS candidate LEFT JOIN sponsor_ads AS ad
@@ -212,20 +216,29 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
       AND (ad.review_status = 'pending' OR (ad.review_status = 'approved' AND ad.expires_at > ?))
     GROUP BY candidate.key, candidate.value
     ORDER BY occupied, priority LIMIT 1
+  ), decision AS MATERIALIZED (
+    SELECT placement, (${autoApproveSql}) AND (placement <> 'carousel' OR ${carouselHasRoomSql}) AS approved
+    FROM selected
   )
   UPDATE sponsor_ads SET title = ?, link_url = ?, image_type = ?, image_key = ?, redeemed_at = ?,
-    review_status = 'pending', placement = (SELECT placement FROM selected)
+    placement = (SELECT placement FROM decision),
+    review_status = CASE WHEN (SELECT approved FROM decision) THEN 'approved' ELSE 'pending' END,
+    reviewed_at = CASE WHEN (SELECT approved FROM decision) THEN ? END,
+    expires_at = CASE WHEN (SELECT approved FROM decision) THEN ? END
     WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND ${sponsorsEnabledSql}
-    RETURNING placement`)
-    .bind(JSON.stringify(candidates), now, title, linkUrl, imageType, imageKey, now, row.id);
+    RETURNING placement, review_status AS reviewStatus, expires_at AS expiresAt`)
+    .bind(JSON.stringify(candidates), submittedAt, submittedAt, capacities.carousel, title, linkUrl, imageType, imageKey,
+      submittedAt, submittedAt, sponsorExpiry(submittedAt, row.duration, row.unit), row.id);
   const insert = db.prepare(`INSERT INTO sponsor_image_parts(sponsor_id, part, content)
     SELECT id, ?, ? FROM sponsor_ads WHERE id = ? AND image_key = ?`);
   const parts = [];
   for (let offset = 0; offset < bytes.length; offset += IMAGE_PART_SIZE) {
     parts.push(insert.bind(offset / IMAGE_PART_SIZE, bytes.slice(offset, offset + IMAGE_PART_SIZE).buffer, row.id, imageKey));
   }
-  const [saved] = await db.batch<{ placement: Placement }>([update, ...parts]);
-  if (saved.results[0]) return json({ status: 'pending', expiresAt: null, placement: saved.results[0].placement }, 201);
+  const [saved] = await db.batch<{ placement: Placement; reviewStatus: 'approved' | 'pending'; expiresAt: number | null }>([update, ...parts]);
+  const submission = saved.results[0];
+  if (submission) return json({ status: submission.reviewStatus === 'approved' ? 'active' : 'pending',
+    expiresAt: submission.expiresAt, placement: submission.placement }, 201);
   if (!await sponsorsEnabled(db)) return failure(sponsorDisabledMessage, 403);
   return failure('授权码已使用、已作废或已删除', 409);
 }
@@ -239,7 +252,7 @@ async function reviewSponsor(db: D1Database, id: string, approve: boolean, now: 
   const checkCarousel = approve && item.placement === 'carousel';
   const result = await db.prepare(`UPDATE sponsor_ads SET review_status = ?, reviewed_at = ?, expires_at = ?
     WHERE id = ? AND review_status = 'pending' AND redeemed_at IS NOT NULL AND revoked_at IS NULL
-      AND (? = 0 OR (SELECT COUNT(*) FROM sponsor_ads WHERE placement = 'carousel' AND ${activeSql}) < ?)
+      AND (? = 0 OR ${carouselHasRoomSql})
     RETURNING id`)
     .bind(approve ? 'approved' : 'rejected', now, expiresAt, id, Number(checkCarousel), now, capacities.carousel).first();
   if (result) return json({ status: approve ? 'active' : 'rejected', expiresAt });
@@ -274,7 +287,10 @@ export async function handleSponsorAdmin(request: Request, db: D1Database): Prom
     const placements = Object.entries(capacities).map(([placement, capacity]) => ({
       placement, capacity, occupied: occupied.find(row => row.placement === placement)?.count || 0,
     }));
-    return json({ enabled: await sponsorsEnabled(db), codes: results.slice(0, 50), page, hasMore: results.length > 50, placements });
+    const settings = await db.prepare('SELECT sponsors_enabled AS enabled, sponsors_auto_approve AS autoApprove FROM admin_settings WHERE id = 1')
+      .first<{ enabled: number; autoApprove: number }>();
+    return json({ enabled: settings?.enabled === 1, autoApprove: settings?.autoApprove === 1,
+      codes: results.slice(0, 50), page, hasMore: results.length > 50, placements });
   }
   if (request.method !== 'POST') return failure('请求方法无效', 405);
   const data = await readJson(request, 2048);
@@ -283,6 +299,11 @@ export async function handleSponsorAdmin(request: Request, db: D1Database): Prom
     if (typeof data.enabled !== 'boolean') return failure('赞助推广状态无效');
     await db.prepare('UPDATE admin_settings SET sponsors_enabled = ? WHERE id = 1').bind(Number(data.enabled)).run();
     return json({ enabled: data.enabled });
+  }
+  if (data.action === 'set-auto-approve') {
+    if (typeof data.autoApprove !== 'boolean') return failure('自动审批状态无效');
+    await db.prepare('UPDATE admin_settings SET sponsors_auto_approve = ? WHERE id = 1').bind(Number(data.autoApprove)).run();
+    return json({ autoApprove: data.autoApprove });
   }
   if (data.action === 'create') {
     const { quantity, duration, unit } = data;

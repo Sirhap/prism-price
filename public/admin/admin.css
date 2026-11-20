@@ -235,6 +235,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid v
 #panel-sponsors h2 { margin:0 0 5px;font-size:16px; }
 #panel-sponsors p { margin:0; }
 #panel-sponsors .sponsor-toggle-row { padding:0;border:0;gap:10px; }
+#panel-sponsors .sponsor-toggle-row + .sponsor-toggle-row { margin-top:10px;padding-top:10px;border-top:1px solid var(--border); }
 #panel-sponsors .sponsor-toggle-copy { flex:1;min-width:0;gap:2px; }
 #panel-sponsors .sponsor-status { display:inline-flex;padding:3px 7px;border-radius:999px;background:var(--surface-muted);color:var(--text-muted);white-space:nowrap;font-size:12px;font-weight:600; }
 #panel-sponsors .sponsor-status[data-enabled="true"] { background:var(--success-bg);color:var(--success); }

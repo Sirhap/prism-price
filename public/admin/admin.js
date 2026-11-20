@@ -702,9 +702,11 @@ async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hid
 
 let sponsorPage = 1;
 let sponsorRequest = 0;
-let sponsorSaving = false;
-let sponsorEnabled = false;
 const sponsorEndpoint = '/api/control/sponsors';
+const sponsorSwitches = [
+  { id: 'sponsorEnabled', field: 'enabled', action: 'set-enabled', label: '赞助推广', value: false, saving: false },
+  { id: 'sponsorAutoApprove', field: 'autoApprove', action: 'set-auto-approve', label: '自动审批', value: false, saving: false },
+];
 const sponsorStatuses = { unused: '未使用', pending: '待审批', rejected: '已驳回', active: '已使用 · 投放中', expired: '已到期', revoked: '已作废' };
 const sponsorPlacements = { carousel: '顶部轮播', 'fixed-1': '固定位 1', 'fixed-2': '固定位 2', 'fixed-3': '固定位 3', 'fixed-4': '固定位 4' };
 function sponsorPreviewLink(label, href) {
@@ -715,20 +717,24 @@ function sponsorPreviewLink(label, href) {
   link.rel = 'noopener noreferrer';
   return link;
 }
-function renderSponsorEnabled(enabled) {
-  sponsorEnabled = enabled;
-  $('#sponsorEnabled').checked = enabled;
-  $('#sponsorEnabled').disabled = sponsorSaving;
-  const status = $('#sponsorEnabledStatus');
-  status.dataset.enabled = String(enabled);
-  status.textContent = enabled ? '已开启' : '已关闭';
+function renderSponsorSwitch(setting) {
+  const input = $('#' + setting.id);
+  if (!setting.saving) input.checked = setting.value;
+  input.disabled = setting.saving;
+  const status = $('#' + setting.id + 'Status');
+  status.dataset.enabled = String(setting.value && !setting.saving);
+  status.textContent = setting.saving ? '正在保存…' : setting.value ? '已开启' : '已关闭';
 }
 async function loadSponsors() {
   const request = ++sponsorRequest;
   const status = $('#sponsorStatusFilter').value;
   const data = await api(sponsorEndpoint + '?' + new URLSearchParams({ status, page: String(sponsorPage) }));
   if (request !== sponsorRequest) return;
-  if (!sponsorSaving) renderSponsorEnabled(data.enabled);
+  for (const setting of sponsorSwitches) {
+    if (setting.saving) continue;
+    setting.value = data[setting.field] === true;
+    renderSponsorSwitch(setting);
+  }
   if (!data.codes.length && sponsorPage > 1) {
     sponsorPage -= 1;
     return loadSponsors();
@@ -852,24 +858,24 @@ $('#sponsorCopyBtn')?.addEventListener('click', async () => {
   catch { output.select(); message('请手动复制已选中的授权码', true); }
 });
 const refreshSponsors = () => loadSponsors().catch(err => message(err.message, true));
-$('#sponsorEnabled').addEventListener('change', async event => {
-  const toggle = event.currentTarget;
-  sponsorSaving = true;
-  toggle.disabled = true;
-  delete $('#sponsorEnabledStatus').dataset.enabled;
-  $('#sponsorEnabledStatus').textContent = '正在保存…';
-  try {
-    const data = await api(sponsorEndpoint, { action: 'set-enabled', enabled: toggle.checked });
-    sponsorEnabled = data.enabled;
-    message(data.enabled ? '赞助推广已开启' : '赞助推广已关闭');
-  } catch (error) {
-    message(error.message, true);
-  } finally {
-    sponsorSaving = false;
-    renderSponsorEnabled(sponsorEnabled);
-    refreshSponsors();
-  }
-});
+for (const setting of sponsorSwitches) {
+  $('#' + setting.id).addEventListener('change', async event => {
+    const checked = event.currentTarget.checked;
+    setting.saving = true;
+    renderSponsorSwitch(setting);
+    try {
+      const data = await api(sponsorEndpoint, { action: setting.action, [setting.field]: checked });
+      setting.value = data[setting.field] === true;
+      message(setting.label + (setting.value ? '已开启' : '已关闭'));
+    } catch (error) {
+      message(error.message, true);
+    } finally {
+      setting.saving = false;
+      renderSponsorSwitch(setting);
+      refreshSponsors();
+    }
+  });
+}
 $('#sponsorStatusFilter')?.addEventListener('change', () => { sponsorPage = 1; refreshSponsors(); });
 $('#sponsorRefreshBtn')?.addEventListener('click', refreshSponsors);
 $('#sponsorPreviousBtn')?.addEventListener('click', () => { if (sponsorPage > 1) sponsorPage -= 1; refreshSponsors(); });
