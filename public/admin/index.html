@@ -7,8 +7,8 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.4fc941930eeb.css">
-  <script type="module" src="/admin/admin.e2ea0e626f83.js"></script>
+  <link rel="stylesheet" href="/admin/admin.f36c8e907bfd.css">
+  <script type="module" src="/admin/admin.e60d286a7403.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -282,8 +282,8 @@
       </section>
       <section class="admin-card">
         <h2>批量生成赞助授权码</h2>
-        <p class="muted">授权码一次性使用，可指定位置或由投稿人选，不提前占位。完整码只在生成时显示。</p>
-        <div id="sponsorCapacity" class="sponsor-capacity" role="status" aria-label="赞助位占用情况"></div>
+        <p class="muted">授权码一次性使用，完整码只在生成时显示。顶部轮播限 4 张，固定位可接收多条推广并上下轮动。</p>
+        <div id="sponsorCapacity" class="sponsor-capacity" role="status" aria-label="赞助投放数量"></div>
         <form id="sponsorGenerateForm">
           <label>生成数量<input name="quantity" type="number" min="1" max="50" value="1" required></label>
           <label>有效时长<input name="duration" type="number" min="1" max="365" value="30" required></label>
@@ -305,10 +305,11 @@
       </section>
       <section class="admin-card">
         <div class="sponsor-card-heading">
-          <h2>授权码管理</h2>
+          <h2>审批与授权码管理</h2>
           <div class="sponsor-admin-controls">
             <select id="sponsorStatusFilter" aria-label="按状态筛选授权码">
-              <option value="all">全部状态</option><option value="unused">未使用</option><option value="active">已使用 · 有效</option>
+              <option value="all">全部状态</option><option value="pending">待审批</option><option value="rejected">已驳回</option>
+              <option value="unused">未使用</option><option value="active">已使用 · 有效</option>
               <option value="expired">已到期</option><option value="revoked">已作废</option>
             </select>
             <button type="button" id="sponsorRefreshBtn" class="btn btn-secondary">刷新</button>

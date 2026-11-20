@@ -33,8 +33,8 @@
         } catch {}
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=sponsor-compact-title" />
-    <script src="/i18n.js?v=sponsor-auto-crop" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=sponsor-links" />
+    <script src="/i18n.js?v=sponsor-review" defer></script>
   </head>
   <body>
     <!-- 极光与透视晶格背景层 -->
@@ -508,7 +508,7 @@
           <h2 id="sponsorDialogTitle" data-i18n="home.sponsorTitle">赞助推广</h2>
           <button type="button" class="quick-chip" data-sponsor-close aria-label="关闭" data-i18n-aria="home.sponsorClose">×</button>
         </header>
-        <p class="sponsor-form-note" data-i18n="home.sponsorFormNote">授权码仅可使用一次。提交成功即展示，有效期从提交时开始。</p>
+        <p class="sponsor-form-note" data-i18n="home.sponsorFormNote">授权码仅可使用一次。审批通过后开始展示并计算有效期。</p>
         <label><span data-i18n="home.sponsorCode">授权码</span>
           <input name="code" required maxlength="38" placeholder="PRISM-…" autocomplete="off" spellcheck="false">
         </label>
@@ -519,10 +519,13 @@
             <label><input type="radio" name="placementType" value="carousel" required><span data-i18n="home.sponsorCarouselChoice">顶部轮播</span></label>
             <label><input type="radio" name="placementType" value="fixed" required><span data-i18n="home.sponsorFixedChoice">固定赞助位</span></label>
           </div>
-          <small id="sponsorPlacementHint" data-i18n="home.sponsorPlacementHint">固定赞助位会安排到可用位置；指定位置的授权码仅支持对应方式。</small>
+          <small id="sponsorPlacementHint" data-i18n="home.sponsorPlacementHint">固定赞助内容会轮流展示。指定位置的授权码仅支持对应方式。</small>
         </fieldset>
         <label><span data-i18n="home.sponsorAdTitle">赞助标题</span>
           <input name="title" required maxlength="80">
+        </label>
+        <label><span data-i18n="home.sponsorLink">跳转链接（选填）</span>
+          <input name="linkUrl" type="url" placeholder="https://example.com/" maxlength="2048" autocomplete="url" spellcheck="false">
         </label>
         <label><span data-i18n="home.sponsorImage">赞助图片</span>
           <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required aria-describedby="sponsorImageHint">
@@ -541,7 +544,7 @@
         </fieldset>
         <p id="sponsorResult" role="status" aria-live="polite" hidden></p>
         <footer class="sponsor-form-actions">
-          <button type="submit" class="btn btn-primary" data-i18n="home.sponsorPublish">立即发布</button>
+          <button type="submit" class="btn btn-primary" data-i18n="home.sponsorPublish">提交审批</button>
         </footer>
       </form>
       <section id="sponsorCropEditor" class="sponsor-crop-editor" aria-labelledby="sponsorCropTitle" hidden>
@@ -583,6 +586,6 @@
     <script src="/select-picker.js?v=20261119-dropdowns" defer></script>
     <script src="/app.js?v=sponsor-preview" defer></script>
     <script src="/sponsor-crop.js?v=sponsor-4x3" defer></script>
-    <script src="/sponsors.js?v=sponsor-compact-title" defer></script>
+    <script src="/sponsors.js?v=sponsor-review" defer></script>
   </body>
 </html>

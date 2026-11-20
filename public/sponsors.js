@@ -3,6 +3,7 @@
   const rail = document.querySelector('.sponsor-rail');
   const entries = [...document.querySelectorAll('[data-sponsor-open]')];
   const form = document.querySelector('#sponsorForm');
+  const linkInput = form.elements.linkUrl;
   const result = document.querySelector('#sponsorResult');
   const adCard = document.querySelector('#sponsorAd');
   const pages = document.querySelector('#sponsorPages');
@@ -52,20 +53,31 @@
   function renderAd(card, ad) {
     card.hidden = !ad;
     const image = card.querySelector('img');
+    const caption = card.querySelector('figcaption');
+    let link = caption.querySelector('a');
     if (!ad) {
       image.removeAttribute('src');
+      link?.removeAttribute('href');
       return;
     }
     const url = '/api/sponsors/image/' + encodeURIComponent(ad.id);
     if (image.getAttribute('src') !== url) image.setAttribute('src', url);
-    const caption = card.querySelector('figcaption');
-    caption.textContent = ad.title;
+    if (!link) {
+      link = document.createElement('a');
+      link.target = '_blank';
+      link.rel = 'sponsored noopener noreferrer';
+      caption.append(link);
+    }
+    const href = safeUrl(ad.linkUrl);
+    if (href) link.href = href;
+    else link.removeAttribute('href');
+    link.textContent = ad.title;
     caption.title = ad.title;
   }
 
   function scheduleRotation() {
     clearTimeout(rotationTimer);
-    if (reducedMotion.matches || hovered || document.hidden || !wide.matches || carouselAds().length < 2) return;
+    if (reducedMotion.matches || hovered || carousel.matches(':focus-within') || document.hidden || !wide.matches || carouselAds().length < 2) return;
     rotationTimer = setTimeout(() => {
       index = (index + 1) % carouselAds().length;
       render();
@@ -73,7 +85,7 @@
   }
 
   function scheduleFixedRotation() {
-    if (fixedTimer || reducedMotion.matches || fixedHovered || document.hidden || !wide.matches || fixedOrder.length < 2) return;
+    if (fixedTimer || reducedMotion.matches || fixedHovered || fixedLayout.matches(':focus-within') || document.hidden || !wide.matches || fixedOrder.length < 2) return;
     fixedTimer = setTimeout(() => {
       fixedTimer = undefined;
       fixedOrder.push(fixedOrder.shift());
@@ -88,17 +100,21 @@
 
   function render() {
     clearTimeout(expiryTimer);
-    ads = ads.filter(ad => ad.expiresAt > Date.now());
+    const now = Date.now();
+    ads = ads.filter(ad => ad.expiresAt > now);
     const slides = carouselAds();
     index = Math.min(index, Math.max(0, slides.length - 1));
     carousel.hidden = slides.length === 0;
     renderAd(adCard, slides[index]);
     const fixedAds = ads.filter(ad => ad.placement !== 'carousel');
-    const available = fixedSlots.filter(slot => fixedAds.some(ad => ad.placement === slot.dataset.sponsorPlacement));
-    fixedOrder = fixedOrder.filter(id => fixedAds.some(ad => ad.id === id));
-    for (const ad of fixedAds) if (!fixedOrder.includes(ad.id)) fixedOrder.push(ad.id);
+    const adsById = new Map(fixedAds.map(ad => [ad.id, ad]));
+    const occupied = new Set(fixedAds.map(ad => ad.placement));
+    const available = fixedSlots.filter(slot => occupied.has(slot.dataset.sponsorPlacement));
+    fixedOrder = fixedOrder.filter(id => adsById.has(id));
+    const queued = new Set(fixedOrder);
+    for (const ad of fixedAds) if (!queued.has(ad.id)) fixedOrder.push(ad.id);
     for (const slot of fixedSlots) {
-      const ad = fixedAds.find(item => item.id === fixedOrder[available.indexOf(slot)]);
+      const ad = adsById.get(fixedOrder[available.indexOf(slot)]);
       slot.hidden = !ad;
       renderAd(slot.querySelector('figure'), ad);
     }
@@ -112,11 +128,11 @@
     pages.querySelector('span').textContent = `${index + 1} / ${slides.length}`;
     scheduleRotation();
     if (!ads.length) return;
-    const nextExpiry = Math.min(...ads.map(item => item.expiresAt));
-    expiryTimer = setTimeout(render, Math.min(nextExpiry - Date.now() + 50, 2_147_483_647));
+    const nextExpiry = ads.reduce((earliest, ad) => Math.min(earliest, ad.expiresAt), Infinity);
+    expiryTimer = setTimeout(render, Math.min(nextExpiry - now + 50, 2_147_483_647));
   }
 
-  async function refresh(showLatest = false) {
+  async function refresh() {
     const version = ++requestVersion;
     try {
       const response = await fetch('/api/sponsors', { cache: 'no-store' });
@@ -129,7 +145,7 @@
       const current = carouselAds()[index]?.id;
       ads = enabled && wide.matches ? data.ads : [];
       const slides = carouselAds();
-      index = showLatest ? Math.max(0, slides.length - 1) : Math.max(0, slides.findIndex(item => item.id === current));
+      index = Math.max(0, slides.findIndex(item => item.id === current));
       render();
     } catch (error) {
       if (version !== requestVersion) return;
@@ -246,8 +262,12 @@
   });
   carousel.addEventListener('mouseenter', () => { hovered = true; scheduleRotation(); });
   carousel.addEventListener('mouseleave', () => { hovered = false; scheduleRotation(); });
+  carousel.addEventListener('focusin', scheduleRotation);
+  carousel.addEventListener('focusout', () => setTimeout(scheduleRotation, 0));
   fixedLayout.addEventListener('mouseenter', () => { fixedHovered = true; stopFixedRotation(); });
   fixedLayout.addEventListener('mouseleave', () => { fixedHovered = false; scheduleFixedRotation(); });
+  fixedLayout.addEventListener('focusin', stopFixedRotation);
+  fixedLayout.addEventListener('focusout', () => setTimeout(scheduleFixedRotation, 0));
   reducedMotion.addEventListener('change', () => { stopFixedRotation(); render(); });
   window.addEventListener('prism:langchange', () => { render(); updatePreview(); });
   check.addEventListener('click', () => {
@@ -267,11 +287,13 @@
           }
         }
         const unit = data.unit === 'days' ? wording('天', ' days') : wording('个月', ' months');
-        show(wording(`未使用 · ${placement} · 提交后有效 ${data.duration} ${unit}`, `Unused · ${placement} · valid for ${data.duration}${unit} after submission`));
+        show(wording(`未使用 · ${placement} · 审批通过后有效 ${data.duration} ${unit}`, `Unused · ${placement} · valid for ${data.duration}${unit} after approval`));
         return;
       }
       const labels = {
-        active: wording('已使用，展示中', 'Redeemed, live'),
+        pending: wording('待审批', 'Pending review'),
+        rejected: wording('已驳回', 'Rejected'),
+        active: wording('已使用，投放中', 'Redeemed, active'),
         expired: wording('已到期', 'Expired'),
         revoked: wording('已作废', 'Revoked'),
       };
@@ -286,17 +308,18 @@
       if (!file || file.size > maxImageSize) throw new Error(wording('请选择不超过 5 MB 的图片', 'Choose an image up to 5 MB'));
       const payload = new FormData();
       for (const name of ['code', 'title', 'placementType']) payload.set(name, form.elements[name].value);
+      if (linkInput) payload.set('linkUrl', linkInput.value.trim());
       if (!imageReady || !await imageReady || file !== form.elements.image.files[0]) {
         throw new Error(wording('请先选择可预览的图片', 'Choose a valid image first'));
       }
       payload.set('image', croppedFile || file);
       const data = await request('redeem', payload);
       form.elements.title.value = '';
+      if (linkInput) linkInput.value = '';
       form.elements.image.value = '';
       clearPreview();
-      show(wording(`发布成功 · ${placementLabel(data.placement)} · 到期：${time(data.expiresAt)}（北京时间）`,
-        `Published · ${placementLabel(data.placement)} · Expires ${time(data.expiresAt)} (Beijing time)`));
-      await refresh(data.placement === 'carousel');
+      show(wording(`提交成功 · ${placementLabel(data.placement)} · 待审批`,
+        `Submitted · ${placementLabel(data.placement)} · Pending review`));
     });
   });
   const refreshIfVisible = () => {

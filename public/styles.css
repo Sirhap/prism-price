@@ -883,6 +883,7 @@ html[data-theme="dark"] .metric-icon-cyan {
 }
 
 .sponsor-ad {
+  position: relative;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -907,6 +908,27 @@ html[data-theme="dark"] .metric-icon-cyan {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sponsor-ad figcaption a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sponsor-ad a[href]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.sponsor-ad a[href]:hover {
+  text-decoration: underline;
+}
+
+.sponsor-ad a[href]:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: var(--radius-sm);
 }
 
 .sponsor-pages {

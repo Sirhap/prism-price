@@ -705,8 +705,16 @@ let sponsorRequest = 0;
 let sponsorSaving = false;
 let sponsorEnabled = false;
 const sponsorEndpoint = '/api/control/sponsors';
-const sponsorStatuses = { unused: '未使用', active: '已使用 · 展示中', expired: '已到期', revoked: '已作废' };
+const sponsorStatuses = { unused: '未使用', pending: '待审批', rejected: '已驳回', active: '已使用 · 投放中', expired: '已到期', revoked: '已作废' };
 const sponsorPlacements = { carousel: '顶部轮播', 'fixed-1': '固定位 1', 'fixed-2': '固定位 2', 'fixed-3': '固定位 3', 'fixed-4': '固定位 4' };
+function sponsorPreviewLink(label, href) {
+  const link = document.createElement('a');
+  link.textContent = label;
+  link.href = href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  return link;
+}
 function renderSponsorEnabled(enabled) {
   sponsorEnabled = enabled;
   $('#sponsorEnabled').checked = enabled;
@@ -733,7 +741,7 @@ async function loadSponsors() {
   $('#sponsorCapacity').replaceChildren(...data.placements.map(slot => {
     const badge = document.createElement('span');
     const count = document.createElement('b');
-    count.textContent = `${slot.occupied}/${slot.capacity}`;
+    count.textContent = slot.capacity == null ? `${slot.occupied} 条` : `${slot.occupied}/${slot.capacity}`;
     badge.append(sponsorPlacements[slot.placement], count);
     return badge;
   }));
@@ -747,7 +755,7 @@ async function loadSponsors() {
   const table = document.createElement('table');
   table.className = 'visit-logs-table';
   const header = table.createTHead().insertRow();
-  for (const title of ['授权码尾号', '赞助标题', '投放位置', '状态', '时长', '生成时间', '使用时间', '到期时间', '操作']) {
+  for (const title of ['授权码尾号', '赞助内容', '投放位置', '状态', '时长', '生成时间', '提交时间', '审批时间', '到期时间', '操作']) {
     const cell = document.createElement('th');
     cell.scope = 'col';
     cell.textContent = title;
@@ -757,30 +765,61 @@ async function loadSponsors() {
   for (const code of data.codes) {
     const row = tableBody.insertRow();
     const timestamp = value => value == null ? '—' : formatBjTime(new Date(value).toISOString());
+    row.insertCell().textContent = '…' + code.codeHint;
+    const content = row.insertCell();
+    content.className = 'sponsor-review-content';
+    content.textContent = code.title || '—';
+    if (code.redeemedAt) {
+      const previewLinks = document.createElement('div');
+      previewLinks.className = 'sponsor-review-links';
+      const preview = sponsorPreviewLink('查看大图', sponsorEndpoint + '/image/' + encodeURIComponent(code.id));
+      preview.className = 'sponsor-review-preview';
+      const image = document.createElement('img');
+      image.alt = '';
+      image.width = 112;
+      image.height = 84;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => { preview.textContent = '图片加载失败，点击重试'; }, { once: true });
+      image.src = preview.href;
+      preview.prepend(image);
+      previewLinks.append(preview);
+      if (/^https?:\/\//i.test(code.linkUrl || '')) {
+        const link = sponsorPreviewLink(code.linkUrl, code.linkUrl);
+        link.title = code.linkUrl;
+        previewLinks.append(link);
+      }
+      content.append(previewLinks);
+    }
     for (const value of [
-      '…' + code.codeHint, code.title || '—',
       code.placementChoice && !code.redeemedAt ? '投稿人选择' : sponsorPlacements[code.placement],
       code.status === 'active' && !data.enabled ? '已使用 · 暂停展示' : sponsorStatuses[code.status],
       code.duration + (code.unit === 'days' ? ' 天' : ' 个月'),
-      timestamp(code.createdAt), timestamp(code.redeemedAt), timestamp(code.expiresAt),
+      timestamp(code.createdAt), timestamp(code.redeemedAt), timestamp(code.reviewedAt), timestamp(code.expiresAt),
     ]) row.insertCell().textContent = value;
     const actions = document.createElement('div');
     actions.className = 'sponsor-admin-actions';
-    for (const [action, label] of [['revoke', '作废'], ['delete', '删除']]) {
-      if (action === 'revoke' && !['active', 'unused'].includes(code.status)) continue;
+    const commands = [['delete', '删除', '授权码将被永久删除。']];
+    if (['active', 'unused'].includes(code.status)) commands.unshift(['revoke', '作废', '授权码将失效，正在展示的内容会下架。']);
+    if (code.status === 'pending') {
+      commands.unshift(['approve', '通过', data.enabled ? '推广将开始展示并计算有效期。' : '有效期将立即开始，开启赞助推广后才会展示。'],
+        ['reject', '驳回', '此投稿将结束审批，此授权码已使用。']);
+    }
+    for (const [action, label, confirmation] of commands) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'btn btn-secondary';
+      button.className = action === 'approve' ? 'btn btn-primary' : 'btn btn-secondary';
       button.textContent = label;
       button.addEventListener('click', async () => {
-        if (!confirm(`确定${label}尾号 ${code.codeHint} 的授权码？对应赞助内容将下架。`)) return;
-        button.disabled = true;
+        if (!confirm(`确定${label}尾号 ${code.codeHint} 的记录？${confirmation}`)) return;
+        const buttons = actions.querySelectorAll('button');
+        buttons.forEach(entry => { entry.disabled = true; });
         try {
           await api(sponsorEndpoint, { action, id: code.id });
           await loadSponsors();
           message(`已${label}`);
         } catch (error) { message(error.message, true); }
-        finally { button.disabled = false; }
+        finally { buttons.forEach(entry => { entry.disabled = false; }); }
       });
       actions.append(button);
     }

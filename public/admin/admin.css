@@ -258,6 +258,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid v
 #sponsorAdminRows td:nth-child(2) { min-width:110px;max-width:200px;white-space:normal;overflow-wrap:anywhere; }
 #sponsorAdminRows .sponsor-admin-actions { display:flex;gap:4px; }
 #sponsorAdminRows .sponsor-admin-actions .btn { min-height:30px;padding:4px 7px; }
+#sponsorAdminRows .sponsor-review-content { min-width:140px;max-width:240px;white-space:normal;overflow-wrap:anywhere; }
+#sponsorAdminRows .sponsor-review-links { display:grid;gap:2px;margin-top:4px;font-size:12px; }
+#sponsorAdminRows .sponsor-review-links a { color:var(--accent); }
+#sponsorAdminRows .sponsor-review-preview { display:grid;gap:3px;justify-self:start; }
+#sponsorAdminRows .sponsor-review-preview img { display:block;object-fit:contain;border:1px solid var(--border);border-radius:8px;background:var(--surface-subtle); }
 @container (min-width: 640px) {
   #sponsorGenerateForm { grid-template-columns:90px 96px 94px minmax(0,1fr) auto; }
 }

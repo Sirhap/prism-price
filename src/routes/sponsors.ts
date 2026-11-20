@@ -1,9 +1,11 @@
 const PREFIX = '/api/sponsors';
+const ADMIN_PREFIX = '/api/control/sponsors';
 const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_LINK_LENGTH = 2048;
 const IMAGE_PART_SIZE = 1024 * 1024;
 const CODE_FORMAT = /^PRISM-[0-9A-F]{32}$/;
 const ID_FORMAT = '[a-f0-9-]{36}';
-const capacities = { carousel: 4, 'fixed-1': 1, 'fixed-2': 1, 'fixed-3': 1, 'fixed-4': 1 } as const;
+const capacities = { carousel: 4, 'fixed-1': null, 'fixed-2': null, 'fixed-3': null, 'fixed-4': null } as const;
 type Placement = keyof typeof capacities;
 const fixedPlacements = (Object.keys(capacities) as Placement[]).filter(placement => placement !== 'carousel');
 function isPlacement(value: unknown): value is Placement {
@@ -11,18 +13,22 @@ function isPlacement(value: unknown): value is Placement {
 }
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const sponsorsEnabledSql = '(SELECT sponsors_enabled FROM admin_settings WHERE id = 1) = 1';
+const activeSql = "revoked_at IS NULL AND redeemed_at IS NOT NULL AND review_status = 'approved' AND expires_at > ?";
 const sponsorDisabledMessage = '赞助推广已关闭';
 async function sponsorsEnabled(db: D1Database): Promise<boolean> {
   return (await db.prepare('SELECT sponsors_enabled FROM admin_settings WHERE id = 1').first<number>('sponsors_enabled')) === 1;
 }
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
 const statusSql = `CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
-  WHEN redeemed_at IS NULL THEN 'unused' WHEN expires_at <= ? THEN 'expired' ELSE 'active' END`;
+  WHEN redeemed_at IS NULL THEN 'unused' WHEN review_status <> 'approved' THEN review_status
+  WHEN expires_at <= ? THEN 'expired' ELSE 'active' END`;
 const metadata = `id, code_hint AS codeHint, duration, unit, created_at AS createdAt,
-  redeemed_at AS redeemedAt, expires_at AS expiresAt, revoked_at AS revokedAt, title, placement,
+  redeemed_at AS redeemedAt, reviewed_at AS reviewedAt, expires_at AS expiresAt, revoked_at AS revokedAt,
+  title, link_url AS linkUrl, placement,
   placement_choice AS placementChoice`;
 type Unit = 'days' | 'months';
-type SponsorStatus = 'unused' | 'active' | 'expired' | 'revoked';
+const statuses = ['unused', 'pending', 'rejected', 'active', 'expired', 'revoked'] as const;
+type SponsorStatus = typeof statuses[number];
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers });
 const failure = (error: string, status = 400) => json({ error }, status);
 
@@ -89,6 +95,17 @@ function identifyImage(bytes: Uint8Array) {
   return imageType || null;
 }
 
+function normalizeSponsorLink(input: string): string | null {
+  if (input.length > MAX_LINK_LENGTH || !/^https?:\/\//i.test(input) || /[\u0000-\u0020\u007f\\]/.test(input)) return null;
+  try {
+    const url = new URL(input);
+    if (!url.username && !url.password && url.href.length <= MAX_LINK_LENGTH) return url.href;
+  } catch {
+    // Invalid HTTP(S) URL.
+  }
+  return null;
+}
+
 async function readSponsorForm(request: Request) {
   const contentType = request.headers.get('Content-Type') || '';
   if (!/^multipart\/form-data\s*;/i.test(contentType)) return null;
@@ -96,10 +113,39 @@ async function readSponsorForm(request: Request) {
   if (!bytes) return null;
   try {
     const form = await new Response(bytes, { headers: { 'Content-Type': contentType } }).formData();
-    return { code: form.get('code'), title: form.get('title'), image: form.get('image'), placementType: form.get('placementType') };
+    return { code: form.get('code'), title: form.get('title'), image: form.get('image'),
+      placementType: form.get('placementType'), linkUrl: form.get('linkUrl') };
   } catch {
     return null;
   }
+}
+
+/** Public access is rechecked when fetching bytes so a revoked or expired upload cannot be served. */
+async function sponsorImage(db: D1Database, id: string, method: string, adminPreview = false): Promise<Response> {
+  const visibility = `redeemed_at IS NOT NULL AND (? = 1 OR (${activeSql} AND ${sponsorsEnabledSql}))`;
+  const preview = Number(adminPreview);
+  const row = await db.prepare(`SELECT image_type AS imageType, image_key AS imageKey FROM sponsor_ads
+    WHERE id = ? AND ${visibility}`)
+    .bind(id, preview, Date.now()).first<{ imageType: string | null; imageKey: string | null }>();
+  if (!row?.imageType) return failure('赞助内容不可用', 404);
+  let data: Blob | null = null;
+  if (method === 'GET') {
+    if (row.imageKey) {
+      const { results } = await db.prepare(`SELECT parts.content FROM sponsor_image_parts AS parts JOIN sponsor_ads AS ads
+        ON ads.id = parts.sponsor_id WHERE ads.id = ? AND ads.image_key = ?
+        AND ${visibility} ORDER BY parts.part`)
+        .bind(id, row.imageKey, preview, Date.now()).all<{ content: number[] }>();
+      if (results.length) data = new Blob(results.map(part => Uint8Array.from(part.content)));
+    } else {
+      const legacy = await db.prepare(`SELECT image FROM sponsor_ads WHERE id = ? AND image_key IS NULL AND ${visibility}`)
+        .bind(id, preview, Date.now()).first<{ image: number[] | null }>();
+      if (legacy?.image) data = new Blob([Uint8Array.from(legacy.image)]);
+    }
+    if (!data) return failure('赞助图片不可用', 404);
+  }
+  return new Response(data, { headers: {
+    ...headers, 'Content-Type': row.imageType, 'Content-Security-Policy': "default-src 'none'; sandbox",
+  } });
 }
 
 /** 公共提交只接受自站页面发来的请求，授权码不进入 URL、访问日志或公共广告列表。 */
@@ -108,36 +154,18 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
   const now = Date.now();
   if (url.pathname === PREFIX && request.method === 'GET') {
     if (!await sponsorsEnabled(db)) return json({ enabled: false, ads: [] });
-    const { results } = await db.prepare(`SELECT id, title, expires_at AS expiresAt, placement FROM (
-      SELECT id, title, expires_at, placement, ROW_NUMBER() OVER (PARTITION BY placement ORDER BY redeemed_at, id) AS position
-      FROM sponsor_ads WHERE revoked_at IS NULL AND redeemed_at IS NOT NULL AND expires_at > ? AND ${sponsorsEnabledSql}
-    ) WHERE position <= CASE WHEN placement = 'carousel' THEN ? ELSE 1 END ORDER BY placement, position`)
+    const { results } = await db.prepare(`SELECT id, title, expires_at AS expiresAt, placement, link_url AS linkUrl FROM (
+      SELECT id, title, expires_at, placement, link_url,
+        ROW_NUMBER() OVER (PARTITION BY placement ORDER BY COALESCE(reviewed_at, redeemed_at), id) AS position
+      FROM sponsor_ads WHERE ${activeSql} AND ${sponsorsEnabledSql}
+    ) WHERE placement <> 'carousel' OR position <= ?
+      ORDER BY (placement = 'carousel') DESC, position, placement`)
       .bind(now, capacities.carousel).all();
     return json({ enabled: true, ads: results });
   }
   const image = url.pathname.match(new RegExp(`^${PREFIX}/image/(${ID_FORMAT})$`));
   if (image && (request.method === 'GET' || request.method === 'HEAD')) {
-    const row = await db.prepare(`SELECT image_type AS imageType, image_key AS imageKey FROM sponsor_ads
-      WHERE id = ? AND revoked_at IS NULL AND redeemed_at IS NOT NULL AND expires_at > ? AND ${sponsorsEnabledSql}`)
-      .bind(image[1], now).first<{ imageType: string; imageKey: string | null }>();
-    if (!row) return failure('赞助内容不可用', 404);
-    let data: Blob | null = null;
-    if (request.method === 'GET') {
-      const { results } = await db.prepare(`SELECT parts.content FROM sponsor_image_parts AS parts JOIN sponsor_ads AS ads
-        ON ads.id = parts.sponsor_id WHERE ads.id = ? AND ads.image_key = ?
-        AND ads.revoked_at IS NULL AND ads.expires_at > ? AND ${sponsorsEnabledSql} ORDER BY parts.part`)
-        .bind(image[1], row.imageKey, Date.now()).all<{ content: number[] }>();
-      if (results.length) data = new Blob(results.map(part => Uint8Array.from(part.content)));
-      else if (!row.imageKey) {
-        const legacy = await db.prepare(`SELECT image FROM sponsor_ads WHERE id = ? AND image_key IS NULL
-          AND revoked_at IS NULL AND expires_at > ? AND ${sponsorsEnabledSql}`).bind(image[1], Date.now()).first<{ image: number[] | null }>();
-        if (legacy?.image) data = new Blob([Uint8Array.from(legacy.image)]);
-      }
-      if (!data) return failure('赞助图片不可用', 404);
-    }
-    return new Response(data, { headers: {
-      ...headers, 'Content-Type': row.imageType, 'Content-Security-Policy': "default-src 'none'; sandbox",
-    } });
+    return sponsorImage(db, image[1], request.method);
   }
 
   const redeem = url.pathname === `${PREFIX}/redeem`;
@@ -168,25 +196,28 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
   const candidates = mayChoose ? requestedType === 'fixed' ? fixedPlacements : ['carousel'] : [row.placement];
   const title = typeof data.title === 'string' ? data.title.trim() : '';
   if (!title || title.length > 80 || /[\u0000-\u001f\u007f]/.test(title)) return failure('请填写 1～80 字的赞助标题');
+  const submittedLink = typeof data.linkUrl === 'string' ? data.linkUrl.trim() : data.linkUrl;
+  const linkUrl = typeof submittedLink === 'string' && submittedLink ? normalizeSponsorLink(submittedLink) : null;
+  if (submittedLink != null && submittedLink !== '' && !linkUrl) return failure('请输入有效的 http:// 或 https:// 跳转链接');
   const file = data.image;
   if (!(file instanceof File) || file.size > MAX_IMAGE) return failure('请上传不超过 5 MB 的 JPG、PNG 或 WebP 图片');
   const bytes = new Uint8Array(await file.arrayBuffer());
   const imageType = identifyImage(bytes);
   if (!imageType) return failure('请上传 JPG、PNG 或 WebP 图片');
-  const expiresAt = sponsorExpiry(now, row.duration, row.unit);
   const imageKey = crypto.randomUUID();
-  const update = db.prepare(`WITH available AS MATERIALIZED (
-    SELECT candidate.value AS placement FROM json_each(?) AS candidate WHERE (
-      SELECT COUNT(*) FROM sponsor_ads WHERE placement = candidate.value AND revoked_at IS NULL
-        AND redeemed_at IS NOT NULL AND expires_at > ?
-    ) < CASE WHEN candidate.value = 'carousel' THEN ? ELSE 1 END ORDER BY candidate.key LIMIT 1
+  const update = db.prepare(`WITH selected AS MATERIALIZED (
+    SELECT candidate.value AS placement, candidate.key AS priority, COUNT(ad.id) AS occupied
+    FROM json_each(?) AS candidate LEFT JOIN sponsor_ads AS ad
+      ON ad.placement = candidate.value AND ad.revoked_at IS NULL AND ad.redeemed_at IS NOT NULL
+      AND (ad.review_status = 'pending' OR (ad.review_status = 'approved' AND ad.expires_at > ?))
+    GROUP BY candidate.key, candidate.value
+    ORDER BY occupied, priority LIMIT 1
   )
-  UPDATE sponsor_ads SET title = ?, image_type = ?, image_key = ?, redeemed_at = ?, expires_at = ?,
-    placement = (SELECT placement FROM available)
-    WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM available)
-      AND ${sponsorsEnabledSql}
+  UPDATE sponsor_ads SET title = ?, link_url = ?, image_type = ?, image_key = ?, redeemed_at = ?,
+    review_status = 'pending', placement = (SELECT placement FROM selected)
+    WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND ${sponsorsEnabledSql}
     RETURNING placement`)
-    .bind(JSON.stringify(candidates), now, capacities.carousel, title, imageType, imageKey, now, expiresAt, row.id);
+    .bind(JSON.stringify(candidates), now, title, linkUrl, imageType, imageKey, now, row.id);
   const insert = db.prepare(`INSERT INTO sponsor_image_parts(sponsor_id, part, content)
     SELECT id, ?, ? FROM sponsor_ads WHERE id = ? AND image_key = ?`);
   const parts = [];
@@ -194,25 +225,51 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
     parts.push(insert.bind(offset / IMAGE_PART_SIZE, bytes.slice(offset, offset + IMAGE_PART_SIZE).buffer, row.id, imageKey));
   }
   const [saved] = await db.batch<{ placement: Placement }>([update, ...parts]);
-  if (saved.results[0]) return json({ status: 'active', expiresAt, placement: saved.results[0].placement }, 201);
+  if (saved.results[0]) return json({ status: 'pending', expiresAt: null, placement: saved.results[0].placement }, 201);
   if (!await sponsorsEnabled(db)) return failure(sponsorDisabledMessage, 403);
-  const unused = await db.prepare('SELECT 1 FROM sponsor_ads WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL').bind(row.id).first();
-  return failure(unused ? '该赞助位已满，授权码尚未使用' : '授权码已使用或已作废', 409);
+  return failure('授权码已使用、已作废或已删除', 409);
+}
+
+async function reviewSponsor(db: D1Database, id: string, approve: boolean, now: number): Promise<Response> {
+  const item = await db.prepare(`SELECT duration, unit, placement, ${statusSql} AS status FROM sponsor_ads WHERE id = ?`)
+    .bind(now, id).first<{ duration: number; unit: Unit; placement: Placement; status: SponsorStatus }>();
+  if (!item) return failure('授权记录不存在', 404);
+  if (item.status !== 'pending') return failure('该投稿已处理或尚未提交', 409);
+  const expiresAt = approve ? sponsorExpiry(now, item.duration, item.unit) : null;
+  const checkCarousel = approve && item.placement === 'carousel';
+  const result = await db.prepare(`UPDATE sponsor_ads SET review_status = ?, reviewed_at = ?, expires_at = ?
+    WHERE id = ? AND review_status = 'pending' AND redeemed_at IS NOT NULL AND revoked_at IS NULL
+      AND (? = 0 OR (SELECT COUNT(*) FROM sponsor_ads WHERE placement = 'carousel' AND ${activeSql}) < ?)
+    RETURNING id`)
+    .bind(approve ? 'approved' : 'rejected', now, expiresAt, id, Number(checkCarousel), now, capacities.carousel).first();
+  if (result) return json({ status: approve ? 'active' : 'rejected', expiresAt });
+  if (checkCarousel && await db.prepare(`SELECT 1 FROM sponsor_ads WHERE id = ? AND review_status = 'pending'
+    AND redeemed_at IS NOT NULL AND revoked_at IS NULL`).bind(id).first()) {
+    return failure('顶部轮播已满。该投稿仍待审批，有空位后可通过', 409);
+  }
+  return failure('该投稿状态已变化，请刷新后重试', 409);
 }
 
 /** 由后台路由完成同源和管理员鉴权后调用；只在生成时返回完整授权码。 */
 export async function handleSponsorAdmin(request: Request, db: D1Database): Promise<Response> {
   const url = new URL(request.url);
   const now = Date.now();
+  if (url.pathname !== ADMIN_PREFIX) {
+    const image = url.pathname.match(new RegExp(`^${ADMIN_PREFIX}/image/(${ID_FORMAT})$`));
+    if (image && request.method === 'GET') return sponsorImage(db, image[1], 'GET', true);
+    return failure('赞助内容不可用', 404);
+  }
   if (request.method === 'GET') {
     const filter = url.searchParams.get('status') || 'all';
     const page = Number(url.searchParams.get('page') || 1);
-    if (!['all', 'unused', 'active', 'expired', 'revoked'].includes(filter) || !Number.isSafeInteger(page) || page < 1 || page > 10000) return failure('筛选条件无效');
+    if (filter !== 'all' && !statuses.some(status => status === filter)) return failure('筛选条件无效');
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000) return failure('筛选条件无效');
     const { results } = await db.prepare(`SELECT * FROM (SELECT ${metadata}, ${statusSql} AS status FROM sponsor_ads)
-      WHERE ? = 'all' OR status = ? ORDER BY createdAt DESC, id DESC LIMIT 51 OFFSET ?`)
+      WHERE ? = 'all' OR status = ?
+      ORDER BY (status = 'pending') DESC, CASE WHEN status = 'pending' THEN redeemedAt ELSE createdAt END DESC, id DESC LIMIT 51 OFFSET ?`)
       .bind(now, filter, filter, (page - 1) * 50).all();
     const { results: occupied } = await db.prepare(`SELECT placement, COUNT(*) AS count FROM sponsor_ads
-      WHERE revoked_at IS NULL AND redeemed_at IS NOT NULL AND expires_at > ? GROUP BY placement`)
+      WHERE ${activeSql} GROUP BY placement`)
       .bind(now).all<{ placement: Placement; count: number }>();
     const placements = Object.entries(capacities).map(([placement, capacity]) => ({
       placement, capacity, occupied: occupied.find(row => row.placement === placement)?.count || 0,
@@ -241,6 +298,7 @@ export async function handleSponsorAdmin(request: Request, db: D1Database): Prom
     return json({ codes }, 201);
   }
   if (typeof data.id !== 'string' || !new RegExp(`^${ID_FORMAT}$`).test(data.id)) return failure('授权记录无效');
+  if (data.action === 'approve' || data.action === 'reject') return reviewSponsor(db, data.id, data.action === 'approve', now);
   if (data.action === 'revoke') {
     const result = await db.prepare('UPDATE sponsor_ads SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? RETURNING id').bind(now, data.id).first();
     return result ? json({ ok: true }) : failure('授权记录不存在', 404);
