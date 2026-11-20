@@ -5,9 +5,9 @@
   const form = document.querySelector('#sponsorForm');
   const linkInput = form.elements.linkUrl;
   const result = document.querySelector('#sponsorResult');
-  const adCard = document.querySelector('#sponsorAd');
   const pages = document.querySelector('#sponsorPages');
   const carousel = document.querySelector('#sponsorCarousel');
+  const carouselCard = carousel.querySelector('figure');
   const fixedLayout = document.querySelector('.sponsor-fixed-layout');
   const fixedSlots = [...document.querySelectorAll('[data-sponsor-placement]')];
   const wide = matchMedia('(min-width: 1200px)');
@@ -105,7 +105,7 @@
     const slides = carouselAds();
     index = Math.min(index, Math.max(0, slides.length - 1));
     carousel.hidden = slides.length === 0;
-    renderAd(adCard, slides[index]);
+    renderAd(carouselCard, slides[index]);
     const fixedAds = ads.filter(ad => ad.placement !== 'carousel');
     const adsById = new Map(fixedAds.map(ad => [ad.id, ad]));
     const occupied = new Set(fixedAds.map(ad => ad.placement));

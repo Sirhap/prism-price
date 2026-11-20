@@ -882,7 +882,7 @@ html[data-theme="dark"] .metric-icon-cyan {
   display: none;
 }
 
-.sponsor-ad {
+.sponsor-card {
   position: relative;
   margin: 0;
   overflow: hidden;
@@ -890,7 +890,7 @@ html[data-theme="dark"] .metric-icon-cyan {
   border-radius: var(--radius-sm);
 }
 
-.sponsor-ad img {
+.sponsor-card img {
   display: block;
   width: 100%;
   height: auto;
@@ -899,7 +899,7 @@ html[data-theme="dark"] .metric-icon-cyan {
   background: var(--surface-subtle);
 }
 
-.sponsor-ad figcaption {
+.sponsor-card figcaption {
   padding: 4px 6px;
   color: var(--text);
   font-size: 11px;
@@ -910,22 +910,22 @@ html[data-theme="dark"] .metric-icon-cyan {
   text-overflow: ellipsis;
 }
 
-.sponsor-ad figcaption a {
+.sponsor-card figcaption a {
   color: inherit;
   text-decoration: none;
 }
 
-.sponsor-ad a[href]::after {
+.sponsor-card a[href]::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.sponsor-ad a[href]:hover {
+.sponsor-card a[href]:hover {
   text-decoration: underline;
 }
 
-.sponsor-ad a[href]:focus-visible::after {
+.sponsor-card a[href]:focus-visible::after {
   outline: 2px solid var(--accent);
   outline-offset: -3px;
   border-radius: var(--radius-sm);
