@@ -49,7 +49,7 @@ git archive "$commit" src public migrations scripts local-sync deploy/huoshan pa
     cmp "public/admin/admin.$extension" "public/admin/$asset"
   done
   printf '%s\n' "$commit" > RELEASE_COMMIT
-  tar -czf "$work/release.tar.gz" .
+  tar --no-xattrs -czf "$work/release.tar.gz" .
 )
 checksum="$(shasum -a 256 < "$work/release.tar.gz" | cut -d ' ' -f 1)"
 [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
