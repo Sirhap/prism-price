@@ -5,9 +5,10 @@ import {
   type ShopColumnCapabilities,
   type ShopSystemType,
 } from "./shopSystems";
-import type { AdapterType, RawShopSnapshot, ShopRecord, SyncRunSummary, SyncShopOutcome } from "../types";
+import type { AdapterType, RawOfferItem, RawShopSnapshot, ShopRecord, SyncRunSummary, SyncShopOutcome } from "../types";
 import { resolveAdapter } from "./adapters";
 import { market16688Adapter } from "./adapters/market16688Adapter";
+import { confirmMissingMarket16688Offers, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
 import { normalizeDescription } from "./adapters/fetcher";
 import { clearShopOffers, persistShopSnapshot, rebuildProductGroups } from "./etl/hashAndDiff";
 import { INITIAL_SHOPS } from "./seedShops";
@@ -83,6 +84,38 @@ function calculateBackoffMs(failures: number): number {
   return schedule[index];
 }
 
+type StoredOffer = RawOfferItem & Market16688OfferVersion;
+
+async function readStoredOffers(db: D1Database, shopId: string): Promise<StoredOffer[]> {
+  const { results } = await db.prepare(
+    `SELECT id, updated_at AS updatedAt, raw_name AS rawName, shop_category AS shopCategory,
+       price, stock_count AS stockCount, stock_status AS stockStatus, item_url AS itemUrl
+     FROM offers WHERE shop_id = ? ORDER BY id`,
+  ).bind(shopId).all<Omit<StoredOffer, "itemKey"> & { id: string }>();
+  const prefix = `${shopId}:`;
+  const previous: StoredOffer[] = [];
+  for (const { id, stockStatus, ...offer } of results) {
+    if (!id.startsWith(prefix) || id.length === prefix.length) continue;
+    previous.push({
+      ...offer, itemKey: id.slice(prefix.length),
+      stockStatus: stockStatus === "low" || stockStatus === "normal" ? stockStatus : "sufficient",
+    });
+  }
+  return previous;
+}
+
+/** Keep unobserved offers unless the detail check refers to the still-current row version. */
+function mergePartialOffers(
+  snapshot: RawShopSnapshot, previous: StoredOffer[], observed: ReadonlySet<string>,
+  confirmed: Market16688OfferVersion[] = [],
+): void {
+  const missing = new Map(confirmed.map(({ itemKey, updatedAt }) => [itemKey, updatedAt]));
+  for (const { updatedAt, ...offer } of previous) {
+    if (observed.has(offer.itemKey) || missing.get(offer.itemKey) === updatedAt) continue;
+    snapshot.items.push(offer);
+  }
+}
+
 /**
  * 根据 last_synced_at 计算长期未更新天数
  */
@@ -134,8 +167,7 @@ export async function runSyncBatch(
 
   for (const shop of targets) {
     const shopStart = Date.now();
-    let is16688 = false;
-    try { is16688 = ['16688.com.cn', 'www.16688.com.cn'].includes(new URL(shop.shop_url).hostname.toLowerCase()); } catch { /* invalid stored URL */ }
+    const is16688 = Boolean(market16688ShopKey(shop.shop_url));
     const adapter = targetShopId && is16688 ? market16688Adapter : resolveAdapter(shop.adapter_type);
     if (!adapter) {
       outcomes.push({
@@ -153,12 +185,16 @@ export async function runSyncBatch(
     try {
       const snapshot = await adapter.fetchSnapshot(shop, env);
       const observedItemKeys = is16688 ? new Set(snapshot.items.map((item) => item.itemKey)) : undefined;
-      if (is16688) {
-        const previous = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(shop.id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
-        for (const row of previous.results || []) {
-          const key = row.id.startsWith(`${shop.id}:`) ? row.id.slice(shop.id.length + 1) : '';
-          if (key && !observedItemKeys?.has(key)) snapshot.items.push({itemKey:key,rawName:row.raw_name,shopCategory:row.shop_category,price:Number(row.price),stockCount:row.stock_count,stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient',itemUrl:row.item_url});
-        }
+      if (observedItemKeys) {
+        const previous = await readStoredOffers(env.DB, shop.id);
+        const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observedItemKeys, {
+          maxChecks: 3,
+          beforeRequest: () => new Promise(resolve => setTimeout(resolve, 1000)),
+        });
+        if (interrupted) console.warn(JSON.stringify({ event: "market16688_detail_check_interrupted", shopId: shop.id }));
+        if (!snapshot.items.length && !confirmed.length) throw new Error("16688 商品列表为空且没有确认下架的商品，未覆盖已有商品");
+        const latest = confirmed.length ? await readStoredOffers(env.DB, shop.id) : previous;
+        mergePartialOffers(snapshot, latest, observedItemKeys, confirmed);
       }
       const res = await persistShopSnapshot(env.DB, shop, snapshot, nowIso, {
         hasDescriptionColumn: cols.description,
@@ -259,6 +295,7 @@ export interface PushedShopEntry {
   shopUrl: string;
   snapshot?: RawShopSnapshot;
   partial?: boolean;
+  confirmedMissingOffers?: Market16688OfferVersion[];
   error?: string;
 }
 
@@ -291,6 +328,16 @@ export async function ingestPushedSnapshots(
     let shop = await env.DB.prepare("SELECT * FROM shops WHERE id = ? LIMIT 1")
       .bind(shopId)
       .first<ShopRecord>();
+
+    if (entry.confirmedMissingOffers?.length && (!shop || market16688ShopKey(shop.shop_url) !== market16688ShopKey(shopUrl))) {
+      failedCount += 1;
+      outcomes.push({
+        shopId, shopName: shop?.shop_name || shopId, adapterType: shop?.adapter_type || "push_ingest",
+        status: "failed", itemCount: shop?.product_count || 0, estimatedWrites: 0, durationMs: Date.now() - shopStart,
+        error: "16688 店铺编号与已有记录不匹配，未应用商品下架确认",
+      });
+      continue;
+    }
 
     if (!shop) {
       const initialName = entry.snapshot?.shopName || new URL(shopUrl).hostname;
@@ -377,12 +424,8 @@ export async function ingestPushedSnapshots(
 
     const observedItemKeys = entry.partial ? new Set(entry.snapshot.items.map((item) => item.itemKey)) : undefined;
     if (observedItemKeys) {
-      const { results } = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(shop.id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
-      for (const row of results || []) {
-        const key = row.id.startsWith(`${shop.id}:`) ? row.id.slice(shop.id.length + 1) : '';
-        if (!key || observedItemKeys.has(key)) continue;
-        entry.snapshot.items.push({ itemKey:key, rawName:row.raw_name, shopCategory:row.shop_category, price:Number(row.price), stockCount:row.stock_count, stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient', itemUrl:row.item_url });
-      }
+      const previous = await readStoredOffers(env.DB, shop.id);
+      mergePartialOffers(entry.snapshot, previous, observedItemKeys, entry.confirmedMissingOffers);
     }
     const res = await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
       hasDescriptionColumn: cols.description,

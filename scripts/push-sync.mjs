@@ -498,7 +498,7 @@ export async function fetch16688Snapshot(shop, options = {}) {
   if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效，保留原数据');
   const categoryNames = new Map(categories.data.filter(c => c && typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name.trim()]));
   const goods = await postJson('https://www.16688.com.cn/shopApi/goods/list', {shop_no:number,goods_category_no:'',keywords:'',sort:'default'}, 1, slowSourceOptions);
-  if (goods.code !== 1 || !Array.isArray(goods.data?.list) || !goods.data.list.length) throw new Error('16688 商品列表为空或无效，保留原数据');
+  if (goods.code !== 1 || !Array.isArray(goods.data?.list) || (!goods.data.list.length && !options.allowEmptyMarket16688)) throw new Error('16688 商品列表为空或无效，保留原数据');
   const seen = new Set();
   const items = goods.data.list.slice(0,2000).map(item => {
     const key=String(item?.goods_no || '').trim(), name=String(item?.name || '').trim(), price=Number(item?.price);

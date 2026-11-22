@@ -293,3 +293,52 @@ test('16688 只允许部分推送，空列表与不支持部分同步的目标�
   const incompatible=await runSync(options(checkpoint,{apply:true}),{...deps,load:async()=>({shops:[shop],partialSnapshotSupport:false})});
   assert.equal(incompatible.failed,1);assert.equal(removals,0);
 });
+
+test('16688 只推送详情确认不存在的旧报价，限流时停止复核', async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-16688-detail-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const checkpoint = path.join(temp, 'state.json');
+  const shop = { id: 'aimart', shopUrl: 'https://www.16688.com.cn/shop/S910427', adapterType: 'manual', syncSupported: false };
+  const updatedAt = '2026-11-21T02:29:40.000Z';
+  const observed = 'G36654706';
+  const absent = 'G67965422';
+  const stillExists = 'G20780331';
+  const limited = 'G82504891';
+  const unchecked = 'G30774515';
+  const detailCalls = [];
+  t.mock.method(globalThis, 'fetch', async (url, request) => {
+    assert.equal(url, 'https://www.16688.com.cn/shopApi/goods/detail');
+    const key = JSON.parse(request.body).goods_no;
+    detailCalls.push(key);
+    if (key === absent) return Response.json({ code: 0, msg: '商品不存在', data: null });
+    if (key === stillExists) return Response.json({ code: 1, data: { goods_no: key, stock_available_quantity: 0 } });
+    if (key === limited) return Response.json({ code: 0, msg: '商品不存在', data: null }, { status: 429 });
+    assert.fail(`不应复核 ${key}`);
+  });
+  let requestsBefore = 0;
+  let sent;
+  const deps = {
+    gate: { before: async () => { requestsBefore++; }, isBlocked: () => false },
+    load: async (url, request) => {
+      if (url.endsWith('?fields=sync')) return { shops: [shop], partialSnapshotSupport: true, market16688RemovalSupport: true };
+      assert.match(url, /\/api\/shops\/aimart\/products$/);
+      assert.equal(request.cache, 'no-store');
+      return { shop: { id: shop.id, productItems: [observed, absent, stillExists, limited, unchecked]
+        .map(itemKey => ({ id: `${shop.id}:${itemKey}`, updatedAt })) } };
+    },
+    collect: async () => ({ ...snapshot, items: [{ ...snapshot.items[0], itemKey: observed }] }),
+    push: async entry => { sent = entry; return result(shop.id); },
+  };
+  const preview = await runSync(options(checkpoint), deps);
+  assert.equal(preview.failed, 0);
+  assert.equal(sent, undefined);
+  detailCalls.length = 0;
+  requestsBefore = 0;
+
+  const applied = await runSync(options(checkpoint, { apply: true }), deps);
+  assert.equal(applied.pushed, 1);
+  assert.equal(sent.partial, true);
+  assert.deepEqual(sent.confirmedMissingOffers, [{ itemKey: absent, updatedAt }]);
+  assert.deepEqual(detailCalls, [absent, stillExists, limited]);
+  assert.equal(requestsBefore, detailCalls.length);
+});

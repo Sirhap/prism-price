@@ -42,6 +42,7 @@ import {
   type PushedShopEntry,
 } from "../collector/scheduler";
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
+import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
   calculateMedian,
@@ -659,6 +660,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
         systemTypePersistence: caps.systemType,
         descriptionPersistence: caps.description,
         partialSnapshotSupport: true,
+        market16688RemovalSupport: true,
         stockObservationSupport: await hasStockObservations(env.DB),
         shops: (results || []).map((s) => {
           const systemType = inferShopSystem(s.shop_url, s.canonical_url) !== "unknown" ? inferShopSystem(s.shop_url, s.canonical_url) : (normalizeShopSystem(s.system_type) ?? "unknown");
@@ -1201,6 +1203,21 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
     }
     if (entry.partial !== undefined && typeof entry.partial !== "boolean") return Response.json({ error: "partial 必须为布尔值" }, { status: 400 });
     if (entry.partial && !entry.snapshot) return Response.json({ error: "partial 需要商品快照" }, { status: 400 });
+    if (entry.confirmedMissingOffers !== undefined) {
+      const confirmed = entry.confirmedMissingOffers;
+      if (!entry.partial || !entry.snapshot || !market16688ShopKey(entry.shopUrl) ||
+          !Array.isArray(confirmed) || confirmed.length === 0 || confirmed.length > MARKET16688_MISSING_LIMIT) {
+        return Response.json({ error: "仅支持随 16688 部分快照提交有限数量的已确认下架商品" }, { status: 400 });
+      }
+      const keys = new Set(entry.snapshot.items.map(item => item.itemKey.trim()));
+      for (const offer of confirmed) {
+        if (!offer || !isMarket16688OfferKey(offer.itemKey) || keys.has(offer.itemKey) ||
+            typeof offer.updatedAt !== "string" || offer.updatedAt.length > 32 || !Number.isFinite(Date.parse(offer.updatedAt))) {
+          return Response.json({ error: "已确认下架商品必须唯一、缺席于当前快照且包含有效的报价版本" }, { status: 400 });
+        }
+        keys.add(offer.itemKey);
+      }
+    }
     if (entry.error !== undefined && typeof entry.error !== "string") {
       return Response.json({ error: "error 必须为字符串" }, { status: 400 });
     }

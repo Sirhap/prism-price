@@ -25,7 +25,7 @@ export const market16688Adapter: ShopAdapter = {
     if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效');
     const categoryNames = new Map(categories.data.filter(c => typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name!.trim()]));
     const data = await post('goods/list', {shop_no:shopNo, goods_category_no:'', keywords:'', sort:'default'});
-    if (!Array.isArray(data.list) || data.list.length === 0) throw new Error('16688 商品列表为空或无效，未覆盖已有商品');
+    if (!Array.isArray(data.list)) throw new Error('16688 商品列表无效，未覆盖已有商品');
     const items: RawOfferItem[] = []; const seen = new Set<string>();
     for (const raw of data.list.slice(0, 2000)) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('16688 商品数据无效');

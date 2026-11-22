@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
+import { confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
 import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
 const syncDir = path.dirname(fileURLToPath(import.meta.url));
@@ -121,13 +122,15 @@ export function createRequestGate(intervalMs = 1000, { maxIntervalMs = 2000, sle
 /** Returns a nonzero failure count for partial runs; injected dependencies permit offline tests. */
 export async function runSync(options, deps = {}) {
   const base = apiUrl(options.apiBase);
-  const load = deps.load || ((url) => jsonFetch(url));
+  const load = deps.load || jsonFetch;
   const minInterval = options.intervalMs ?? options.intervalMinMs ?? 1000;
   const maxInterval = options.intervalMs != null ? options.intervalMs + 1000 : options.intervalMaxMs ?? 2000;
   const gate = deps.gate || createRequestGate(minInterval, { maxIntervalMs: maxInterval });
-  const is16688 = (shop) => { try { return ['16688.com.cn','www.16688.com.cn'].includes(new URL(shop.shopUrl).hostname.toLowerCase()); } catch { return false; } };
+  const is16688 = (shop) => Boolean(market16688ShopKey(shop.shopUrl));
   const isPartialAdapter = shop => is16688(shop) || shop.adapterType === 'ka123_api';
-  const collect = deps.collect || ((shop) => (is16688(shop) ? fetch16688Snapshot : shop.adapterType === 'ka123_api' ? fetchKa123Snapshot : fetchShopApiSnapshot)(shop, { requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true }));
+  const collect = deps.collect || ((shop) => (is16688(shop) ? fetch16688Snapshot : shop.adapterType === 'ka123_api' ? fetchKa123Snapshot : fetchShopApiSnapshot)(shop, {
+    requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true, allowEmptyMarket16688: true,
+  }));
   const remove = deps.remove || ((shop) => jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${options.secret}` } }));
   const push = deps.push || ((entry) => jsonFetch(`${base}/api/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` }, body: JSON.stringify({ shops: [entry] }) }));
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
@@ -173,7 +176,21 @@ export async function runSync(options, deps = {}) {
       if (options.resume && state.completed[shop.id] === shop.shopUrl) { stats.resumed++; continue; }
       try {
         const snapshot = await collect(shop);
-        if (snapshot.items.length === 0) {
+        let confirmedMissingOffers = [];
+        if (is16688(shop) && data.market16688RemovalSupport && data.partialSnapshotSupport) {
+          const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store' });
+          if (stored?.id !== shop.id || !Array.isArray(stored.productItems)) throw new Error('目标站已有报价清单无效');
+          const prefix = `${shop.id}:`;
+          const previous = stored.productItems
+            .filter(item => typeof item?.id === 'string' && item.id.startsWith(prefix) && typeof item.updatedAt === 'string')
+            .map(item => ({ itemKey: item.id.slice(prefix.length), updatedAt: item.updatedAt }));
+          const observed = new Set(snapshot.items.map(item => item.itemKey));
+          const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observed, { beforeRequest: () => gate.before() });
+          confirmedMissingOffers = confirmed;
+          if (interrupted) console.warn(`[local-sync] ${shop.id}: 16688 详情复核中断，未确认的旧报价保留`);
+          if (confirmed.length) console.log(`[local-sync] ${shop.id}: 16688 确认 ${confirmed.length} 条商品不存在`);
+        }
+        if (snapshot.items.length === 0 && confirmedMissingOffers.length === 0) {
           if (isPartialAdapter(shop)) throw new Error('部分采集店铺空列表不能删除店铺');
           if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
           const error = new Error('源站完整采集后无可收录商品'); error.shopUnavailable = 'empty'; throw error;
@@ -189,7 +206,11 @@ export async function runSync(options, deps = {}) {
         else {
           stats.changed++;
           if (options.apply) {
-            const result = await push({ shopId: shop.id, shopUrl: shop.shopUrl, snapshot, ...(partial ? { partial: true } : {}) });
+            const result = await push({
+              shopId: shop.id, shopUrl: shop.shopUrl, snapshot,
+              ...(partial ? { partial: true } : {}),
+              ...(confirmedMissingOffers.length ? { confirmedMissingOffers } : {}),
+            });
             if (result.failedCount || !Array.isArray(result.outcomes) || result.outcomes.length !== 1 || result.outcomes[0].shopId !== shop.id || !['updated', 'unchanged'].includes(result.outcomes[0].status)) throw new Error('推送结果未确认成功');
             stats.pushed++;
           }
@@ -237,7 +258,7 @@ export function describeWorkflow() {
     credentials: 'INGEST_SECRET 只用于配置的目标 API 地址的 Bearer 鉴权；不向店铺源站发送。',
     destinations: {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
-      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。',
+      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。目标站支持时，16688 每店最多复核 12 条列表缺失的已收录商品，仅源站明确回复商品不存在才提交下架确认。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
       delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },
