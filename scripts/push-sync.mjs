@@ -378,7 +378,7 @@ export function buildShopApiSnapshot(shop, info, allGoods, apiOrigin, token) {
 
 /**
  * 判断本地采集结果是否可以跳过推送。
- * 简介变化和目标站需要的零库存观察，均不应被商品哈希跳过。
+ * 记录同步时间的服务端需要接收每次成功快照。旧版服务端仍使用哈希去重，保留简介和零库存观察。
  */
 export function shouldSkipLocalPush({
   shop,
@@ -386,8 +386,10 @@ export function shouldSkipLocalPush({
   localHash,
   descriptionPersistence,
   stockObservationSupport = false,
+  syncTimestampSupport = false,
   backfillDescription = false,
 }) {
+  if (syncTimestampSupport) return false;
   const hashMatches = Boolean(
     shop.contentHashFull &&
       shop.contentHashFull === localHash &&
@@ -710,7 +712,7 @@ async function main() {
   if (!shopsRes.ok) {
     throw new Error(`获取店铺列表失败: HTTP ${shopsRes.status}`);
   }
-  const { shops = [], descriptionPersistence, stockObservationSupport } = await shopsRes.json();
+  const { shops = [], descriptionPersistence, stockObservationSupport, syncTimestampSupport } = await shopsRes.json();
 
   const allTargets = shops.filter(
     (s) =>
@@ -812,6 +814,7 @@ async function main() {
             localHash,
             descriptionPersistence,
             stockObservationSupport,
+            syncTimestampSupport,
             backfillDescription,
           })
         ) {

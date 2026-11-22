@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import { loadConfig } from '../local-sync/sync.mjs';
+import { isMarket16688OfferKey } from './lib/market16688.mjs';
+
+const waitBetweenRequests = () => new Promise(resolve => setTimeout(resolve, 2000 + Math.floor(Math.random() * 2001)));
 
 /** 指定名单逐店触发已部署的 16688 适配器；无名单时不执行。 */
 async function main() {
@@ -21,14 +24,33 @@ async function main() {
   for (const id of unique) {
     if(done[id]){skipped++;continue;}
     try {
-      const res=await fetch(cfg.apiBase.replace(/\/+$/,'')+'/api/sync',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${cfg.secret}`},body:JSON.stringify({shopId:id}),signal:AbortSignal.timeout(45000),redirect:'error'});
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result=await res.json();const outcome=result.outcomes?.find(x=>x.shopId===id);
-      if(!outcome||!['updated','unchanged'].includes(outcome.status))throw new Error(outcome?.error || '目标未确认成功');
+      let cursor;
+      let outcome;
+      do {
+        const res = await fetch(cfg.apiBase.replace(/\/+$/, '')+'/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.secret}` },
+          body: JSON.stringify({ shopId: id, market16688Cursor: cursor }),
+          signal: AbortSignal.timeout(45000),
+          redirect: 'error',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = await res.json();
+        outcome = result.outcomes?.find(shop => shop.shopId === id);
+        if (!outcome || !['updated', 'unchanged'].includes(outcome.status)) {
+          throw new Error(outcome?.error || '目标未确认成功');
+        }
+        const next = outcome.market16688Verification?.nextCursor;
+        if (next !== undefined && (!isMarket16688OfferKey(next) || (cursor && next <= cursor))) {
+          throw new Error('16688 复核游标无效或没有前进');
+        }
+        cursor = next;
+        if (cursor) await waitBetweenRequests();
+      } while (cursor);
       done[id]=true;fs.writeFileSync(checkpoint+'.tmp',JSON.stringify({apiBase:cfg.apiBase,ids:unique,done},null,2),{mode:0o600});fs.renameSync(checkpoint+'.tmp',checkpoint);
       updated++;console.log(`[16688] ${id}: ${outcome.status} 商品 ${outcome.itemCount}`);
     }catch(e){failed++;console.warn(`[16688] ${id}: ${e.message}`);if(/HTTP (401|403|429)/.test(e.message))break;}
-    await new Promise(r=>setTimeout(r,2000+Math.floor(Math.random()*2001)));
+    await waitBetweenRequests();
   }
   console.log(JSON.stringify({total:unique.length,processed:updated,resumed:skipped,failed}));if(failed)process.exitCode=1;
 }

@@ -330,15 +330,76 @@ test('16688 只推送详情确认不存在的旧报价，限流时停止复核',
     push: async entry => { sent = entry; return result(shop.id); },
   };
   const preview = await runSync(options(checkpoint), deps);
-  assert.equal(preview.failed, 0);
+  assert.equal(preview.failed, 1);
   assert.equal(sent, undefined);
   detailCalls.length = 0;
   requestsBefore = 0;
 
   const applied = await runSync(options(checkpoint, { apply: true }), deps);
   assert.equal(applied.pushed, 1);
+  assert.equal(applied.failed, 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(checkpoint, 'utf8')).completed, {});
   assert.equal(sent.partial, true);
   assert.deepEqual(sent.confirmedMissingOffers, [{ itemKey: absent, updatedAt }]);
   assert.deepEqual(detailCalls, [absent, stillExists, limited]);
   assert.equal(requestsBefore, detailCalls.length);
+});
+
+test('普通同步默认复核第 12 条以后的报价，并分批推送 16688 下架确认', async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-16688-full-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const checkpoint = path.join(temp, 'state.json');
+  const shop = { id: 'aimart', shopUrl: 'https://www.16688.com.cn/shop/S910427', adapterType: 'manual' };
+  const updatedAt = '2026-11-21T02:29:40.000Z';
+  const missing = Array.from({ length: 15 }, (_, index) => 'G'+(10000000+index));
+  const productItems = ['one', ...missing].map(key => ({ id: `aimart:${key}`, updatedAt }));
+  const lookups = [];
+  t.mock.method(globalThis, 'fetch', async (_url, request) => {
+    const key = JSON.parse(request.body).goods_no;
+    lookups.push(key);
+    return Response.json({ code: 0, msg: '商品不存在', data: null });
+  });
+  const entries = [];
+  const deps = {
+    gate: { before: async () => {}, isBlocked: () => false },
+    load: async (url, request) => {
+      if (url.endsWith('?fields=sync')) return { shops: [shop, shops[0]], partialSnapshotSupport: true, market16688RemovalSupport: true };
+      assert.equal(request.headers.Authorization, 'Bearer test-key');
+      return { shop: { id: shop.id, productItems } };
+    },
+    collect: async current => {
+      assert.equal(current.id, shop.id);
+      return snapshot;
+    },
+    push: async entry => { entries.push(entry); return result(shop.id); },
+  };
+  const args = parseArgs(['--apply', '--shop=aimart', `--checkpoint=${checkpoint}`]);
+  const applied = await runSync({ ...args, apiBase: 'https://example.test', secret: 'test-key' }, deps);
+  assert.equal(applied.total, 1);
+  assert.equal(applied.pushed, 1);
+  assert.deepEqual(lookups, missing);
+  assert.deepEqual(entries.map(entry => entry.confirmedMissingOffers.length), [12, 3]);
+  assert.deepEqual(entries.map(entry => entry.snapshot.items.length), [1, 0]);
+  assert.ok(entries.every(entry => entry.partial));
+  assert.deepEqual(entries.flatMap(entry => entry.confirmedMissingOffers.map(offer => offer.itemKey)), missing);
+  const state = JSON.parse(fs.readFileSync(checkpoint, 'utf8'));
+  assert.equal(state.scope.verifyAll16688, undefined);
+  assert.equal(parseArgs(['--verify-all-16688']).only16688, true);
+  assert.equal(state.completed.aimart, shop.shopUrl);
+});
+
+test('服务端记录同步时间时，相同哈希的正常库存也会继续上报', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-timestamp-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const checkpoint = path.join(directory, 'state.json');
+  const same = { ...shops[0], contentHashFull: computeSnapshotHash(snapshot), description: '' };
+  const entries = [];
+  const stats = await runSync(options(checkpoint, { apply: true }), {
+    load: async () => ({ shops: [same], syncTimestampSupport: true }),
+    collect: async () => snapshot,
+    push: async entry => { entries.push(entry); return result(same.id); },
+  });
+  assert.equal(stats.pushed, 1);
+  assert.equal(stats.unchanged, 0);
+  assert.deepEqual(entries, [{ shopId: same.id, shopUrl: same.shopUrl, snapshot }]);
 });

@@ -9,5 +9,5 @@ export function isMarket16688OfferKey(value: unknown): value is string;
 export function confirmMissingMarket16688Offers(
   previous: Market16688OfferVersion[],
   observedKeys: ReadonlySet<string>,
-  options?: { maxChecks?: number; beforeRequest?: () => Promise<void> },
+  options?: { beforeRequest?: () => Promise<void> },
 ): Promise<{ confirmed: Market16688OfferVersion[]; interrupted: boolean }>;

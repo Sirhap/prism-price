@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
-import { confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
+import { MARKET16688_MISSING_LIMIT, confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
 import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
 const syncDir = path.dirname(fileURLToPath(import.meta.url));
@@ -12,10 +12,11 @@ const root = path.resolve(syncDir, '..');
 const defaultCheckpoint = path.join(root, 'output', 'local-sync-checkpoint.json');
 
 export function parseArgs(args) {
-  const result = { apply: false, resume: false, deleteUnavailable: false, concurrency: 1, intervalMs: null, shardIndex: 1, shardCount: 1, limit: 0, shops: [], checkpoint: defaultCheckpoint, checkpointExplicit: false };
+  const result = { apply: false, resume: false, deleteUnavailable: false, only16688: false, concurrency: 1, intervalMs: null, shardIndex: 1, shardCount: 1, limit: 0, shops: [], checkpoint: defaultCheckpoint, checkpointExplicit: false };
   for (const arg of args) {
     if (arg === '--apply') result.apply = true;
     else if (arg === '--delete-unavailable') result.deleteUnavailable = true;
+    else if (arg === '--verify-all-16688') result.only16688 = true;
     else if (arg === '--resume') result.resume = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--explain') result.explain = true;
@@ -136,7 +137,11 @@ export async function runSync(options, deps = {}) {
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
   const data = await load(`${base}/api/shops?fields=sync`);
   if (!Array.isArray(data.shops)) throw new Error('同步清单格式不正确');
-  let targets = data.shops.filter((s) => is16688(s) || (s.syncSupported && ['push_ingest', 'shop_api', 'ka123_api'].includes(s.adapterType)));
+  if (options.only16688 && (!data.market16688RemovalSupport || !data.partialSnapshotSupport)) {
+    throw new Error('目标站不支持 16688 商品下架确认');
+  }
+  let targets = options.only16688 ? data.shops.filter(is16688) :
+    data.shops.filter(s => is16688(s) || (s.syncSupported && ['push_ingest', 'shop_api', 'ka123_api'].includes(s.adapterType)));
   if (options.shops.length) {
     const wanted = new Set(options.shops);
     targets = targets.filter((s) => wanted.has(s.id) || wanted.has(s.shopUrl) || wanted.has(new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1)));
@@ -144,7 +149,11 @@ export async function runSync(options, deps = {}) {
   const shardCount = options.shardCount ?? 1;
   const shardIndex = options.shardIndex ?? 1;
   targets = targets.filter((shop) => shardForShop(shop.id, shardCount) === shardIndex);
-  const scope = { shardIndex, shardCount, shops: [...options.shops].sort(), limit: options.limit };
+  const scope = {
+    shardIndex, shardCount, shops: [...options.shops].sort(), limit: options.limit,
+    // Retain the existing checkpoint format for the 16688-only alias.
+    ...(options.only16688 ? { verifyAll16688: true } : {}),
+  };
   let state = { version: 2, apiBase: base, scope, completed: {}, startShopId: targets.length ? targets[(deps.chooseStart || crypto.randomInt)(targets.length)].id : null };
   if (options.resume) {
     state = JSON.parse(fs.readFileSync(options.checkpoint, 'utf8'));
@@ -177,15 +186,20 @@ export async function runSync(options, deps = {}) {
       try {
         const snapshot = await collect(shop);
         let confirmedMissingOffers = [];
+        let detailCheckInterrupted = false;
         if (is16688(shop) && data.market16688RemovalSupport && data.partialSnapshotSupport) {
-          const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store' });
+          const headers = options.apply && options.secret ? { Authorization: `Bearer ${options.secret}` } : undefined;
+          const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store', headers });
           if (stored?.id !== shop.id || !Array.isArray(stored.productItems)) throw new Error('目标站已有报价清单无效');
           const prefix = `${shop.id}:`;
           const previous = stored.productItems
             .filter(item => typeof item?.id === 'string' && item.id.startsWith(prefix) && typeof item.updatedAt === 'string')
             .map(item => ({ itemKey: item.id.slice(prefix.length), updatedAt: item.updatedAt }));
           const observed = new Set(snapshot.items.map(item => item.itemKey));
-          const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observed, { beforeRequest: () => gate.before() });
+          const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observed, {
+            beforeRequest: () => gate.before(),
+          });
+          detailCheckInterrupted = interrupted;
           confirmedMissingOffers = confirmed;
           if (interrupted) console.warn(`[local-sync] ${shop.id}: 16688 详情复核中断，未确认的旧报价保留`);
           if (confirmed.length) console.log(`[local-sync] ${shop.id}: 16688 确认 ${confirmed.length} 条商品不存在`);
@@ -201,19 +215,31 @@ export async function runSync(options, deps = {}) {
           console.warn(`[local-sync] ${shop.id}: ${isPartialAdapter(shop) ? '源站列表完整性未确认，按部分同步保留其余商品' : `商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`}`);
           snapshot.items = snapshot.items.slice(0, 2000);
         }
-        const unchanged = !partial && shouldSkipLocalPush({ shop, snapshot, localHash: computeSnapshotHash(snapshot), descriptionPersistence: data.descriptionPersistence, stockObservationSupport: data.stockObservationSupport });
+        const unchanged = !partial && shouldSkipLocalPush({
+          shop, snapshot, localHash: computeSnapshotHash(snapshot),
+          descriptionPersistence: data.descriptionPersistence, stockObservationSupport: data.stockObservationSupport,
+          syncTimestampSupport: data.syncTimestampSupport,
+        });
         if (unchanged) stats.unchanged++;
         else {
           stats.changed++;
           if (options.apply) {
-            const result = await push({
-              shopId: shop.id, shopUrl: shop.shopUrl, snapshot,
-              ...(partial ? { partial: true } : {}),
-              ...(confirmedMissingOffers.length ? { confirmedMissingOffers } : {}),
-            });
-            if (result.failedCount || !Array.isArray(result.outcomes) || result.outcomes.length !== 1 || result.outcomes[0].shopId !== shop.id || !['updated', 'unchanged'].includes(result.outcomes[0].status)) throw new Error('推送结果未确认成功');
+            for (let offset = 0; offset < Math.max(1, confirmedMissingOffers.length); offset += MARKET16688_MISSING_LIMIT) {
+              const confirmed = confirmedMissingOffers.slice(offset, offset + MARKET16688_MISSING_LIMIT);
+              const result = await push({
+                shopId: shop.id, shopUrl: shop.shopUrl, snapshot: offset === 0 ? snapshot : { ...snapshot, items: [] },
+                ...(partial ? { partial: true } : {}),
+                ...(confirmed.length ? { confirmedMissingOffers: confirmed } : {}),
+              });
+              if (result.failedCount || !Array.isArray(result.outcomes) || result.outcomes.length !== 1 || result.outcomes[0].shopId !== shop.id || !['updated', 'unchanged'].includes(result.outcomes[0].status)) throw new Error('推送结果未确认成功');
+            }
             stats.pushed++;
           }
+        }
+        if (detailCheckInterrupted) {
+          stats.failed++;
+          console.warn(`[local-sync] ${shop.id}: 16688 全量复核尚未完成，未记录完成断点`);
+          continue;
         }
         if (options.apply) { state.completed[shop.id] = shop.shopUrl; saveCheckpoint(options.checkpoint, state); }
         console.log(`[local-sync] ${shop.id}: ${unchanged ? '未变化' : options.apply ? '已推送' : '有变化'}`);
@@ -258,7 +284,7 @@ export function describeWorkflow() {
     credentials: 'INGEST_SECRET 只用于配置的目标 API 地址的 Bearer 鉴权；不向店铺源站发送。',
     destinations: {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
-      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。目标站支持时，16688 每店最多复核 12 条列表缺失的已收录商品，仅源站明确回复商品不存在才提交下架确认。',
+      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 默认逐条复核所有列表缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品不存在才提交下架确认。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
       delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },
@@ -273,7 +299,7 @@ export async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.explain) { console.log(JSON.stringify(describeWorkflow(), null, 2)); return; }
   if (options.help) {
-    console.log('本地采集并推送店铺快照（默认只预览）\n用法：node local-sync/sync.mjs [--explain] [--apply] [--delete-unavailable] [--resume] [--shop=店铺ID或地址末段] [--limit=数量] [--concurrency=1..8] [--interval-ms=100以上] [--shard=序号/总数] [--checkpoint=文件]\n配置：local-sync/config.env 或 API_BASE、INGEST_SECRET 环境变量；密钥也可使用项目 .dev.vars');
+    console.log('本地采集并推送店铺快照（默认只预览）\n用法：node local-sync/sync.mjs [--explain] [--apply] [--delete-unavailable] [--verify-all-16688] [--resume] [--shop=店铺ID或地址末段] [--limit=数量] [--concurrency=1..8] [--interval-ms=100以上] [--shard=序号/总数] [--checkpoint=文件]\n配置：local-sync/config.env 或 API_BASE、INGEST_SECRET 环境变量；密钥也可使用项目 .dev.vars');
     return;
   }
   const config = loadConfig();

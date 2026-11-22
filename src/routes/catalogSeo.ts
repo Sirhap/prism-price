@@ -1,5 +1,6 @@
 import { cachedQuery, catalogVersion } from "../cache/queryCache";
 import { isCurrentStockWarning } from "../collector/etl/stockObservations";
+import { readOfferSyncTimes } from "../collector/etl/offerSyncTimes";
 import {
   extractMainCategories,
   hideTelegramContacts,
@@ -26,6 +27,15 @@ import { PRODUCT_GROUPS } from "../types";
 import { GROUP_DISPLAY_NAMES, normalizeProductGroup } from "./search";
 
 const PAGE_SIZE = 30;
+const shanghaiTime = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
+
+function renderCatalogSyncTime(iso: string | null | undefined): string {
+  if (!iso || !Number.isFinite(Date.parse(iso))) return "未记录";
+  return `<time datetime="${esc(iso)}">${esc(shanghaiTime.format(new Date(iso)))}（北京时间）</time>`;
+}
 
 const TYPE_LABELS: Readonly<Record<string, string>> = {
   ready: "成品账号",
@@ -486,7 +496,7 @@ async function handleShopDetail(id: string, env: Env): Promise<Response> {
   const shopSource = shopReadSource(caps);
   const row = await env.DB.prepare(
     `SELECT id, shop_name, shop_url, canonical_url, effective_system_type AS system_type, description,
-            submitted_integration_code, product_count, product_summary_json, shop_sell_count, updated_at
+            submitted_integration_code, product_count, product_summary_json, shop_sell_count, updated_at, last_synced_at
      FROM ${shopSource}
      WHERE id = ?
      LIMIT 1`,
@@ -504,6 +514,7 @@ async function handleShopDetail(id: string, env: Env): Promise<Response> {
       product_summary_json: string;
       shop_sell_count: number | null;
       updated_at: string;
+      last_synced_at: string | null;
     }>();
 
   if (!row) {
@@ -574,6 +585,7 @@ async function handleShopDetail(id: string, env: Env): Promise<Response> {
         <div class="kv-item"><span>已收录商品数</span><strong>${Number(row.product_count) || 0} 件</strong></div>
         <div class="kv-item"><span>源站参考销量</span><strong>${esc(sellCountText)}</strong></div>
         <div class="kv-item"><span>最近档案更新</span><strong>${esc(String(row.updated_at || "").slice(0, 10) || "—")}</strong></div>
+        <div class="kv-item"><span>最近同步</span><strong>${renderCatalogSyncTime(row.last_synced_at)}</strong></div>
       </div>
       ${codesHtml}
       <h2>主营品牌与品类分布</h2>
@@ -674,6 +686,7 @@ async function handleProductList(url: URL, env: Env): Promise<Response> {
 }
 
 interface PreviewOfferItem {
+  id?: string;
   shopId?: string;
   shopName?: string;
   price?: number;
@@ -737,9 +750,9 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
     offers = [];
   }
 
-  const offersTableRows = offers
-    .slice(0, 12)
-    .map((offer) => {
+  const preview = offers.slice(0, 12);
+  const syncTimes = await readOfferSyncTimes(env.DB, preview.flatMap(offer => typeof offer.id === "string" ? [offer.id] : []));
+  const offersTableRows = preview.map((offer) => {
       const shopName = safeText(offer.shopName || "未知店铺");
       const shopId = typeof offer.shopId === "string" ? offer.shopId.trim() : "";
       const shopCell = shopId
@@ -756,6 +769,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         <td>${shopCell}</td>
         <td><strong>${fmtPrice(offerPrice)}</strong></td>
         <td>${esc(stockText)}</td>
+        <td>${renderCatalogSyncTime(offer.id ? syncTimes.get(offer.id) : null)}</td>
         <td>${actionCell}</td>
       </tr>`;
     })
@@ -764,7 +778,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
   const offersSection = offersTableRows
     ? `<h2>多店报价对比预览（前 ${Math.min(offers.length, 12)} 家）</h2>
        <div class="table-wrap"><table>
-         <thead><tr><th>收录店铺</th><th>参考报价</th><th>库存状态</th><th>源站核实</th></tr></thead>
+         <thead><tr><th>收录店铺</th><th>参考报价</th><th>库存状态</th><th>最近同步</th><th>源站核实</th></tr></thead>
          <tbody>${offersTableRows}</tbody>
        </table></div>`
     : `<p style="color:#64748b;">当前暂无多店报价明细预览，可前往首页搜索对比实时收录结果。</p>`;

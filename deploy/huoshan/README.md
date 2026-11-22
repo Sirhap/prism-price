@@ -45,7 +45,7 @@ bash deploy/huoshan/deploy.sh --ref HEAD --apply --expect <当前版本目录名
 
 脚本通过 `huoshan-server` 上传并验证发布包，在服务器上锁定发布、核对上一版本、备份并校验 SQLite，再切换 `current` 并重启服务。它会验证源站和正式域名的首页、后台静态资源与公共 API。验证失败时自动切回上一应用版本。数据库备份保存于 `/opt/ldxp-cf-demo/backups/<新版本>/pre-deploy.sqlite`。
 
-数据库迁移、运行依赖升级及系统配置变更单独执行。常规发布复用上一版本的运行依赖，并校验依赖清单一致。清理历史版本时，保留 `current`、回退版本及仍被引用的 `node_modules` 所在目录。
+数据库迁移、运行依赖升级及系统配置变更单独执行。同步时间功能需要先备份生产 SQLite，再在事务中应用 `0023_offer_sync_timestamps.sql`。旧报价在下一次成功观察后开始显示同步时间。常规发布复用上一版本的运行依赖，并校验依赖清单一致。清理历史版本时，保留 `current`、回退版本及仍被引用的 `node_modules` 所在目录。
 
 上线访客时间筛选及爬虫拦截前，先备份生产 SQLite，再按顺序应用 `0011_visit_logs_day_ip_index.sql` 和 `0012_crawler_access.sql`（按当前库已应用的迁移跳过）。黑名单只信任 `CF-Connecting-IP`，须先确认源站只接受可信 Cloudflare 回源，或由 OpenResty 丢弃直连请求携带的该头部。若配置了公开页面/API 的边缘缓存，也应确认这些请求会到达应用，否则命中缓存的请求既不会拦截也不会被记录。
 

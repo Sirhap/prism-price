@@ -17,16 +17,12 @@ export function isMarket16688OfferKey(value) {
 
 /** Verify only offers absent from this listing. Ambiguous responses stop the extra checks. */
 export async function confirmMissingMarket16688Offers(previous, observedKeys, {
-  maxChecks = MARKET16688_MISSING_LIMIT,
   beforeRequest,
 } = {}) {
   const candidates = previous.filter(({ itemKey }) => isMarket16688OfferKey(itemKey) && !observedKeys.has(itemKey));
-  const count = Math.min(candidates.length, maxChecks);
-  const start = candidates.length > count ? Math.floor(Math.random() * candidates.length) : 0;
   const confirmed = [];
 
-  for (let i = 0; i < count; i++) {
-    const candidate = candidates[(start + i) % candidates.length];
+  for (const candidate of candidates) {
     await beforeRequest?.();
     try {
       const response = await fetch(`${marketOrigin}/shopApi/goods/detail`, {

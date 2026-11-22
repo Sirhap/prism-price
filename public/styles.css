@@ -2098,6 +2098,16 @@ a.product-title:hover {
   color: var(--text-muted);
 }
 
+.sync-time {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.sync-time time {
+  white-space: nowrap;
+}
+
 .offer-tag {
   font-size: 11px;
   padding: 2px 8px;

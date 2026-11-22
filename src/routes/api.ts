@@ -42,6 +42,7 @@ import {
   type PushedShopEntry,
 } from "../collector/scheduler";
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
+import { offerLastSyncedAt, readOfferSyncTimes } from "../collector/etl/offerSyncTimes";
 import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
@@ -209,6 +210,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     )
       .bind(offerKey)
       .all<Record<string, unknown>>();
+    const syncTimes = await readOfferSyncTimes(env.DB, fullOffers.map(row => String(row.id)));
 
     return jsonPublic({
       items: [
@@ -227,6 +229,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
             ...stockWarning({ stockWarningDay: stockWarningDay(row) }),
             itemUrl: row.item_url,
             updatedAt: row.updated_at,
+            lastSyncedAt: syncTimes.get(String(row.id)) ?? null,
             staleDays: computeStaleDays(
               typeof row.last_synced_at === "string" ? row.last_synced_at : null,
               Number(row.stale_days ?? 0),
@@ -369,7 +372,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
   const [listRes, offerStatsRes] = await Promise.all([readPage(), cachedShopCount(url, env.DB, version)]);
 
   const items = (listRes.results || []).map((row) => {
-    let offers: unknown[] = [];
+    let offers: Array<Record<string, unknown>> = [];
     try {
       const parsed: unknown = JSON.parse(row.offers_preview_json);
       if (Array.isArray(parsed)) {
@@ -420,6 +423,10 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     };
   });
 
+  const syncTimes = await readOfferSyncTimes(env.DB, items.flatMap(item => item.offers.map(offer => String(offer.id))));
+  for (const item of items) {
+    item.offers = item.offers.map(offer => ({ ...offer, lastSyncedAt: syncTimes.get(String(offer.id)) ?? null }));
+  }
   const { total, offerTotal } = stats;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -662,6 +669,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
         partialSnapshotSupport: true,
         market16688RemovalSupport: true,
         stockObservationSupport: await hasStockObservations(env.DB),
+        syncTimestampSupport: true,
         shops: (results || []).map((s) => {
           const systemType = inferShopSystem(s.shop_url, s.canonical_url) !== "unknown" ? inferShopSystem(s.shop_url, s.canonical_url) : (normalizeShopSystem(s.system_type) ?? "unknown");
           return {
@@ -923,6 +931,7 @@ async function handleGetShopDetail(shopId: string, env: Env): Promise<Response> 
         ...stockWarning({ stockWarningDay: stockWarningDay(o) }),
         itemUrl: o.item_url,
         updatedAt: o.updated_at,
+        lastSyncedAt: offerLastSyncedAt(o.last_observed_at, shop.last_full_sync_at),
       })),
     },
     capabilities: {
@@ -1115,8 +1124,9 @@ async function handleBrowserShopSync(request: Request, env: Env): Promise<Respon
     if (items.length > 2000) return Response.json({ error: '合并后商品超过 2000 件，请使用管理员同步' }, { status: 400 });
     const incomingName = typeof body.shopName === 'string' ? hideTelegramContacts(body.shopName.trim()).slice(0, 120) : '';
     const displayName = shop.id.startsWith('submitted-') && shop.sync_state === 'pending' && incomingName ? incomingName : shop.shop_name;
-    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, new Date().toISOString(), { observedItemKeys: keys });
-    return Response.json({ ok:true, status:result.status, itemCount:result.itemCount });
+    const lastSyncedAt = new Date().toISOString();
+    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, lastSyncedAt, { observedItemKeys: keys });
+    return Response.json({ ok:true, status:result.status, itemCount:result.itemCount, lastSyncedAt });
   } finally { browserSyncInFlight.delete(id); }
 }
 
@@ -1254,6 +1264,8 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
         : undefined;
     return {
       ...cleanEntry,
+      // A truncated payload cannot refresh the observation time of carried-forward offers.
+      ...(snap.items.length > items.length ? { partial: true } : {}),
       snapshot: {
         ...snap,
         shopName: typeof snap.shopName === "string" && snap.shopName ? snap.shopName : new URL(cleanEntry.shopUrl).hostname,
@@ -1292,8 +1304,12 @@ async function handlePostSync(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: auth.message }, { status: auth.status });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { shopId?: string };
-  const summary = await runSyncBatch(env, "manual", body?.shopId);
+  const body = (await request.json().catch(() => ({}))) as { shopId?: string; market16688Cursor?: unknown } | null;
+  const cursor = body?.market16688Cursor;
+  if (cursor !== undefined && (typeof body?.shopId !== "string" || !body.shopId.trim() || !isMarket16688OfferKey(cursor))) {
+    return Response.json({ error: "16688 复核续页需要有效的店铺 ID 和游标" }, { status: 400 });
+  }
+  const summary = await runSyncBatch(env, "manual", body?.shopId, typeof cursor === "string" ? cursor : undefined);
   return Response.json(summary);
 }
 

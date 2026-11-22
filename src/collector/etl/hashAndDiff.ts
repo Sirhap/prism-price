@@ -300,8 +300,6 @@ export async function clearShopOffers(
 export interface PersistSnapshotOptions {
   /** 调用方已知当前数据库是否存在 shops.description 列时直接传入，避免重复探测 */
   hasDescriptionColumn?: boolean;
-  /** 推送重复快照时合并心跳更新；定时采集仍按 next_sync_at 调度。 */
-  minUnchangedIntervalMs?: number;
   /** Partial snapshots may include carried-forward offers; those are not stock observations. */
   observedItemKeys?: ReadonlySet<string>;
 }
@@ -325,6 +323,16 @@ export async function persistShopSnapshot(
   const newHash = await computeSnapshotHash(snapshot);
   const nextSyncAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   const today = nowIso.slice(0, 10);
+  const observedKeys = options?.observedItemKeys;
+  const supportsOfferTimes = shop.last_full_sync_at !== undefined;
+  const fullSyncAt = supportsOfferTimes && !observedKeys ? nowIso : null;
+  const fullSyncSql = fullSyncAt ? "last_full_sync_at = MAX(COALESCE(last_full_sync_at, ''), ?)," : "";
+  const partialObservation = supportsOfferTimes && observedKeys?.size
+    ? db.prepare(`UPDATE offers SET last_observed_at = ?
+        WHERE shop_id = ? AND id IN (SELECT value FROM json_each(?))
+          AND (last_observed_at IS NULL OR last_observed_at < ?)`)
+      .bind(nowIso, shop.id, JSON.stringify(Array.from(observedKeys, key => `${shop.id}:${key}`)), nowIso)
+    : null;
   const zeroStockOfferIds = snapshot.items.filter((item) =>
     item.stockCount === 0 && (!options?.observedItemKeys || options.observedItemKeys.has(item.itemKey)) &&
     !isNonSalePlaceholderItem(item.rawName, item.shopCategory, item.price),
@@ -350,36 +358,24 @@ export async function persistShopSnapshot(
   if (shop.content_hash && shop.content_hash === newHash) {
     const observed = await observeZeroStock(db, zeroStockOfferIds, nowIso);
     const stockWrites = observed.writes + await rebuildProductGroups(db, [...new Set(observed.groups)], nowIso);
-    const elapsed = Date.parse(nowIso) - Date.parse(shop.last_synced_at || "");
-    if (!descriptionChanged && shop.sync_state === "ready" && !shop.last_error && !shop.consecutive_failures &&
-        Number.isFinite(elapsed) && elapsed >= 0 && elapsed < (options?.minUnchangedIntervalMs || 0)) {
-      return { status: "unchanged", contentHash: newHash, itemCount: shop.product_count, estimatedWrites: stockWrites, descriptionUpdated: false };
-    }
-    if (descriptionChanged) {
-      await db
-        .prepare(
-          `UPDATE shops
-           SET description = ?, last_synced_at = ?, next_sync_at = ?, consecutive_failures = 0, last_error = '', stale_days = 0, sync_state = 'ready', updated_at = ?
-           WHERE id = ?`,
-        )
-        .bind(nextDescription, nowIso, nextSyncAt, nowIso, shop.id)
-        .run();
+    const shopUpdate = db.prepare(`UPDATE shops SET ${descriptionChanged ? "description = ?, " : ""}${fullSyncSql}
+      last_synced_at = ?, next_sync_at = ?, consecutive_failures = 0, last_error = '', stale_days = 0, sync_state = 'ready'
+      ${descriptionChanged ? ", updated_at = ?" : ""} WHERE id = ?`)
+      .bind(...(descriptionChanged ? [nextDescription] : []), ...(fullSyncAt ? [fullSyncAt] : []),
+        nowIso, nextSyncAt, ...(descriptionChanged ? [nowIso] : []), shop.id);
+    let observationWrites = 0;
+    if (partialObservation) {
+      const [observations] = await db.batch([partialObservation, shopUpdate]);
+      observationWrites = observations.meta.rows_written;
     } else {
-      await db
-        .prepare(
-          `UPDATE shops
-           SET last_synced_at = ?, next_sync_at = ?, consecutive_failures = 0, last_error = '', stale_days = 0, sync_state = 'ready'
-           WHERE id = ?`,
-        )
-        .bind(nowIso, nextSyncAt, shop.id)
-        .run();
+      await shopUpdate.run();
     }
 
     return {
       status: "unchanged",
       contentHash: newHash,
       itemCount: snapshot.items.length,
-      estimatedWrites: 1 + stockWrites,
+      estimatedWrites: 1 + observationWrites + stockWrites,
       descriptionUpdated: descriptionChanged,
     };
   }
@@ -468,6 +464,8 @@ export async function persistShopSnapshot(
     );
   }
 
+  if (partialObservation) batchStmts.push(partialObservation);
+
   // 所有报价写入完成后再更新店铺主记录（绝不覆写 created_at）及当日观察快照
   batchStmts.push(
     db
@@ -480,6 +478,7 @@ export async function persistShopSnapshot(
           sync_state = 'ready',
           content_hash = ?,
           last_synced_at = ?,
+          ${fullSyncSql}
           next_sync_at = ?,
           consecutive_failures = 0,
           last_error = '',
@@ -500,6 +499,7 @@ export async function persistShopSnapshot(
         ...(shouldWriteDescription ? [nextDescription] : []),
         newHash,
         nowIso,
+        ...(fullSyncAt ? [fullSyncAt] : []),
         nextSyncAt,
         snapshot.shopSellCount,
         snapshot.salesVisible ? 1 : 0,

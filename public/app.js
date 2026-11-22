@@ -694,6 +694,19 @@ function formatFullDateTime(iso, emptyText = L("未记录", "Not recorded")) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+function formatSyncTime(iso) {
+  const date = typeof iso === "string" ? new Date(iso) : null;
+  if (!date || !Number.isFinite(date.getTime())) return L("未记录", "Not recorded");
+  return `${formatFullDateTime(iso)}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function renderSyncTime(iso, label = L("最近同步", "Last synced")) {
+  const time = typeof iso === "string" && Number.isFinite(Date.parse(iso))
+    ? `<time datetime="${escapeHtml(iso)}">${escapeHtml(formatSyncTime(iso))}</time>`
+    : escapeHtml(formatSyncTime(null));
+  return `<span class="sync-time">${escapeHtml(label)} ${time}</span>`;
+}
+
 function formatGroupLabel(groupKey) {
   if (isEn()) return GROUP_DISPLAY_NAMES_EN[groupKey] || groupKey;
   return GROUP_DISPLAY_NAMES[groupKey] || groupKey;
@@ -2321,6 +2334,7 @@ function renderOfferPanel(item) {
             ${offer.longTermOutOfStock
               ? `<span class="offer-tag" title="${escapeHtml(L("库存以店铺为准，购买前请核实", "Confirm current stock with the store before buying"))}">${escapeHtml(L("连续 7 天缺货", "Out of stock for 7+ days"))}</span>`
               : `<span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>`}
+            ${renderSyncTime(offer.lastSyncedAt)}
           </div>
           <div class="offer-price-cell">${formatPrice(offer.price)}</div>
           <div class="offer-action-cell">
@@ -2432,6 +2446,8 @@ function renderProductRow(item) {
           </div>
           <div class="lead-shop-col">
             ${item.shopName ? `<span class="offer-hint" title="${escapeHtml(L("最低报价店铺", "Lowest price store"))}">${escapeHtml(L("领衔：", "Best: "))}${escapeHtml(item.shopName)}</span>` : ""}
+            ${renderSyncTime(item.offers?.[0]?.lastSyncedAt,
+              item.offerCount > 1 ? L("最低报价同步", "Lowest offer synced") : undefined)}
           </div>
         </div>
       </div>
@@ -2666,6 +2682,7 @@ function renderShops(append = false) {
               }
             </div>
             <span>${escapeHtml(formatShopSellSummary(s))}${depositText}</span>
+            ${renderSyncTime(s.lastSyncedAt)}
           </div>
           <div class="shop-preview-list" aria-label="${escapeHtml(L("主营类别", "Main categories"))}">${categoryBadges}</div>
           <div class="shop-card-actions">
@@ -2783,6 +2800,10 @@ async function openShopProfile(shopId) {
         <div class="signal-box">
           <span>${escapeHtml(L("收录商品", "Indexed Items"))}</span>
           <strong>${escapeHtml(L(`${Number(s.productCount || 0)} 件`, `${Number(s.productCount || 0)} items`))}</strong>
+        </div>
+        <div class="signal-box">
+          <span>${escapeHtml(L("最近同步", "Last synced"))}</span>
+          <strong>${escapeHtml(formatSyncTime(s.lastSyncedAt))}</strong>
         </div>
         <div class="signal-box">
           <span>${escapeHtml(L("收录时间", "Indexed At"))}</span>
@@ -3693,7 +3714,9 @@ document.addEventListener('click', async (event) => {
   button.textContent = L('读取中…', 'Loading...');
   try {
     const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
-    const { snapshot } = await syncShopFromBrowser(button.dataset.shopId, button.dataset.shopUrl);
+    const { snapshot, result } = await syncShopFromBrowser(button.dataset.shopId, button.dataset.shopUrl);
+    const synced = result?.lastSyncedAt ? formatSyncTime(result.lastSyncedAt) : null;
+    const syncNote = synced ? L(` · 最近同步 ${synced}`, ` · Last synced ${synced}`) : "";
     const container = button.closest('.offer-row, .shop-card');
     if (!container) return;
     let status = container.querySelector('.browser-refresh-result');
@@ -3711,13 +3734,13 @@ document.addEventListener('click', async (event) => {
         status.textContent = L(
           `源站参考：${pricePart} · ${stockPart}（已同步）`,
           `Source ref: ${pricePart} · ${stockPart} (synced)`,
-        );
+        ) + syncNote;
       }
     } else {
       status.textContent = L(
         `源站当前返回 ${snapshot.count} 件商品（已同步，具体库存请进入店铺核实）。`,
         `Source returned ${snapshot.count} items (synced; verify stock on seller site).`,
-      );
+      ) + syncNote;
     }
   } catch (error) {
     showToast(L(

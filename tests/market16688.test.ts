@@ -2,7 +2,7 @@
 import { applyD1Migrations, env, SELF } from 'cloudflare:test';
 import { beforeAll, expect, it, vi } from 'vitest';
 import { market16688Adapter } from '../src/collector/adapters/market16688Adapter';
-import type { ShopRecord } from '../src/types';
+import type { ShopRecord, SyncRunSummary } from '../src/types';
 
 beforeAll(async()=>{await applyD1Migrations(env.DB,env.TEST_MIGRATIONS);});
 it('识别 16688 详情和商品，保留缺货并区分空列表与异常响应',async()=>{
@@ -95,8 +95,9 @@ it('单店同步遇到空列表时只移除详情明确不存在的报价', asyn
     const response = await SELF.fetch('http://localhost/api/sync', {
       method: 'POST', headers: auth, body: JSON.stringify({ shopId }),
     });
-    const data = await response.json<{ failedCount: number }>();
-    expect(data.failedCount).toBe(0);
+    const data = await response.json<SyncRunSummary>();
+    expect(data.failedCount).toBe(1);
+    expect(data.outcomes[0].market16688Verification).toEqual({ interrupted: true });
     expect(requested).toEqual(['G30774515', 'G82504891']);
     const remaining = await env.DB.prepare('SELECT id FROM offers WHERE shop_id = ?').bind(shopId).all<{ id: string }>();
     expect(remaining.results).toEqual([{ id: `${shopId}:G82504891` }]);
@@ -104,3 +105,50 @@ it('单店同步遇到空列表时只移除详情明确不存在的报价', asyn
     source.mockRestore();
   }
 });
+
+it('服务端单店同步能续查下一批，保留详情正常的遗漏报价', async () => {
+  const shopId = 'market-16688-continuation';
+  const shopUrl = 'https://www.16688.com.cn/shop/S345610';
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer test-ingest-secret' };
+  const keys = ['G100', 'G200', 'G300', 'G400'];
+  const items = keys.map(itemKey => ({
+    itemKey, rawName: 'Gemini Pro 三个月', price: 12, stockCount: 3,
+    itemUrl: `https://www.16688.com.cn/goods/${itemKey}`,
+  }));
+  const seed = await SELF.fetch('http://localhost/api/ingest', {
+    method: 'POST', headers,
+    body: JSON.stringify({ shopId, shopUrl, partial: true, snapshot: { shopName: '16688 Shop', canonicalUrl: shopUrl, items } }),
+  });
+  expect(seed.status).toBe(200);
+
+  const requested: string[] = [];
+  const source = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/shop/detail')) return Response.json({ code: 1, data: { shop_no: 'S345610' } });
+    if (url.endsWith('/goodsCategory/list')) return Response.json({ code: 1, data: [] });
+    if (url.endsWith('/goods/list')) return Response.json({ code: 1, data: { list: [] } });
+    expect(url).toMatch(/\/goods\/detail$/);
+    const { goods_no } = JSON.parse(String(init?.body)) as { goods_no: string };
+    requested.push(goods_no);
+    return goods_no === 'G200' ? Response.json({ code: 1, data: { goods_no } })
+      : Response.json({ code: 0, msg: '商品不存在', data: null });
+  });
+  const sync = (market16688Cursor?: string) => SELF.fetch('http://localhost/api/sync', {
+    method: 'POST', headers, body: JSON.stringify({ shopId, market16688Cursor }),
+  });
+  try {
+    const first = await (await sync()).json<SyncRunSummary>();
+    expect(first.failedCount).toBe(0);
+    const cursor = first.outcomes[0].market16688Verification?.nextCursor;
+    expect(cursor).toBe('G300');
+
+    const second = await (await sync(cursor)).json<SyncRunSummary>();
+    expect(second.failedCount).toBe(0);
+    expect(second.outcomes[0].market16688Verification).toEqual({});
+    expect(requested).toEqual(keys);
+    const remaining = await env.DB.prepare('SELECT id FROM offers WHERE shop_id = ?').bind(shopId).all<{ id: string }>();
+    expect(remaining.results).toEqual([{ id: `${shopId}:G200` }]);
+  } finally {
+    source.mockRestore();
+  }
+}, 12000);

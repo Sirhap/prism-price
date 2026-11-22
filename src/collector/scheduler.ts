@@ -8,11 +8,12 @@ import {
 import type { AdapterType, RawOfferItem, RawShopSnapshot, ShopRecord, SyncRunSummary, SyncShopOutcome } from "../types";
 import { resolveAdapter } from "./adapters";
 import { market16688Adapter } from "./adapters/market16688Adapter";
-import { confirmMissingMarket16688Offers, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
+import { confirmMissingMarket16688Offers, isMarket16688OfferKey, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
 import { normalizeDescription } from "./adapters/fetcher";
 import { clearShopOffers, persistShopSnapshot, rebuildProductGroups } from "./etl/hashAndDiff";
 import { INITIAL_SHOPS } from "./seedShops";
 
+const MARKET16688_SERVER_PAGE_SIZE = 3;
 const TERMINAL_ERROR_KEYWORDS = ["已被封禁", "已封禁", "已注销", "店铺链接不存在", "店铺不存在"] as const;
 
 function isTerminalShopError(errorMessage: string): boolean {
@@ -137,6 +138,7 @@ export async function runSyncBatch(
   env: Env,
   triggerSource: "cron" | "manual",
   targetShopId?: string,
+  market16688Cursor?: string,
 ): Promise<SyncRunSummary> {
   const startedAt = Date.now();
   const cols = await getShopColumnCapabilities(env.DB);
@@ -185,23 +187,35 @@ export async function runSyncBatch(
     try {
       const snapshot = await adapter.fetchSnapshot(shop, env);
       const observedItemKeys = is16688 ? new Set(snapshot.items.map((item) => item.itemKey)) : undefined;
+      let verification: SyncShopOutcome["market16688Verification"];
       if (observedItemKeys) {
         const previous = await readStoredOffers(env.DB, shop.id);
-        const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observedItemKeys, {
-          maxChecks: 3,
+        const candidates = previous.filter(offer =>
+          isMarket16688OfferKey(offer.itemKey) && !observedItemKeys.has(offer.itemKey) &&
+          (!market16688Cursor || offer.itemKey > market16688Cursor),
+        ).slice(0, MARKET16688_SERVER_PAGE_SIZE + 1);
+        const page = candidates.slice(0, MARKET16688_SERVER_PAGE_SIZE);
+        const { confirmed, interrupted } = await confirmMissingMarket16688Offers(page, observedItemKeys, {
           beforeRequest: () => new Promise(resolve => setTimeout(resolve, 1000)),
         });
-        if (interrupted) console.warn(JSON.stringify({ event: "market16688_detail_check_interrupted", shopId: shop.id }));
-        if (!snapshot.items.length && !confirmed.length) throw new Error("16688 商品列表为空且没有确认下架的商品，未覆盖已有商品");
-        const latest = confirmed.length ? await readStoredOffers(env.DB, shop.id) : previous;
+        verification = {};
+        if (interrupted) verification.interrupted = true;
+        else if (candidates.length > page.length) verification.nextCursor = page[page.length - 1].itemKey;
+
+        if (!snapshot.items.length && !previous.length && !market16688Cursor) {
+          throw new Error("16688 商品列表为空且没有旧报价需要复核");
+        }
+        const latest = page.length ? await readStoredOffers(env.DB, shop.id) : previous;
         mergePartialOffers(snapshot, latest, observedItemKeys, confirmed);
       }
-      const res = await persistShopSnapshot(env.DB, shop, snapshot, nowIso, {
+      const res = await persistShopSnapshot(env.DB, shop, snapshot, new Date().toISOString(), {
         hasDescriptionColumn: cols.description,
         observedItemKeys,
       });
 
-      if (res.status === "unchanged") {
+      if (verification?.interrupted) {
+        failedCount += 1;
+      } else if (res.status === "unchanged") {
         skippedUnchanged += 1;
       } else {
         updatedCount += 1;
@@ -212,12 +226,14 @@ export async function runSyncBatch(
         shopId: shop.id,
         shopName: snapshot.shopName,
         adapterType: shop.adapter_type,
-        status: res.status,
+        status: verification?.interrupted ? "failed" : res.status,
         itemCount: res.itemCount,
         estimatedWrites: res.estimatedWrites,
         durationMs: Date.now() - shopStart,
         contentHash: res.contentHash.slice(0, 12),
         ...(res.descriptionUpdated ? { descriptionUpdated: true } : {}),
+        ...(verification ? { market16688Verification: verification } : {}),
+        ...(verification?.interrupted ? { error: "16688 详情复核中断，未确认的旧报价保留" } : {}),
       });
     } catch (err) {
       failedCount += 1;
@@ -429,7 +445,6 @@ export async function ingestPushedSnapshots(
     }
     const res = await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
       hasDescriptionColumn: cols.description,
-      minUnchangedIntervalMs: 12 * 60 * 60 * 1000,
       observedItemKeys,
     });
     const activeAdapter = shop.adapter_type === "manual" || shop.adapter_type === "ka123_api"

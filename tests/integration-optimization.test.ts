@@ -39,7 +39,7 @@ it("对接码筛选准确计数、分页、联动系统；公开简介及响应�
 });
 
 describe("按商品差异写入", () => {
-  it("百件商品仅改一个价格时保留其余报价和聚合时间，移除商品并清理旧组，重复推送不写心跳", async () => {
+  it("百件商品仅改一个价格时保留其余报价和聚合时间，移除商品并清理旧组，重复推送仅刷新同步时间", async () => {
     const id = "diff-shop";
     const url = "https://diff-shop.example/";
     await upsertAdminShops(env.DB, [{ id, shopName: "差异测试店", shopUrl: url }]);
@@ -59,9 +59,10 @@ describe("按商品差异写入", () => {
     expect(times.results).toContainEqual({ updated_at: "2026-11-12T01:00:00Z", count: 1 });
     expect(await env.DB.prepare("SELECT COUNT(*) FROM product_groups WHERE updated_at=? AND group_key IN (SELECT group_key FROM offers WHERE shop_id=?)")
       .bind("2026-11-12T01:00:00Z", id).first("COUNT(*)")).toBe(1);
-    const unchanged = await persistShopSnapshot(env.DB, await current(), snapshot, "2026-11-12T02:00:00Z", { minUnchangedIntervalMs: 12 * 3600000 });
-    expect(unchanged.estimatedWrites).toBe(0);
-    expect((await current()).last_synced_at).toBe("2026-11-12T01:00:00Z");
+    const unchanged = await persistShopSnapshot(env.DB, await current(), snapshot, "2026-11-12T02:00:00Z");
+    expect(unchanged.estimatedWrites).toBe(1);
+    expect((await current()).last_synced_at).toBe("2026-11-12T02:00:00Z");
+    expect((await current()).last_full_sync_at).toBe("2026-11-12T02:00:00Z");
     const removed = snapshot.items.pop()!;
     await persistShopSnapshot(env.DB, await current(), snapshot, "2026-11-12T03:00:00Z");
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM offers WHERE id=?").bind(`${id}:${removed.itemKey}`).first("count")).toBe(0);
@@ -77,4 +78,44 @@ it("重复导入相同店铺配置时不执行无效 UPDATE，简介变更仍写
   expect(await env.DB.prepare("SELECT updated_at FROM shops WHERE id=?").bind(entry.id).first("updated_at")).toBe("2020-01-01");
   await upsertAdminShops(env.DB, [{ ...entry, description: "对接码：changed123" }]);
   expect(await env.DB.prepare("SELECT description FROM shops WHERE id=?").bind(entry.id).first("description")).toBe("对接码：changed123");
+});
+
+it("同步时间区分完整与部分观察，商品聚合时间不随相同快照变化", async () => {
+  const id = "sync-timestamp-shop";
+  const url = "https://sync-times.example/";
+  await upsertAdminShops(env.DB, [{ id, shopName: "同步时间测试店", shopUrl: url }]);
+  const current = async () => (await env.DB.prepare("SELECT * FROM shops WHERE id = ?").bind(id).first<ShopRecord>())!;
+  const snapshot: RawShopSnapshot = {
+    shopName: "同步时间测试店", canonicalUrl: url, telegram: "", shopSellCount: null,
+    salesVisible: false, depositVisible: false, depositMoney: null,
+    items: ["seen", "carried"].map((itemKey, index) => ({
+      itemKey, rawName: "Gemini Pro 同步时间独立回归", shopCategory: "Gemini",
+      price: 12 + index, stockCount: 3, stockStatus: "low", itemUrl: url + itemKey,
+    })),
+  };
+  const initial = "2026-11-22T01:00:00.000Z";
+  const full = "2026-11-22T01:01:00.000Z";
+  const partial = "2026-11-22T01:02:00.000Z";
+  await persistShopSnapshot(env.DB, await current(), snapshot, initial);
+  expect((await persistShopSnapshot(env.DB, await current(), snapshot, full)).estimatedWrites).toBe(1);
+  const result = await persistShopSnapshot(env.DB, await current(), snapshot, partial, { observedItemKeys: new Set(["seen"]) });
+  expect(result).toMatchObject({ status: "unchanged", estimatedWrites: 2 });
+  expect(await current()).toMatchObject({ last_synced_at: partial, last_full_sync_at: full });
+
+  type OfferTime = { id: string; lastSyncedAt: string; updatedAt: string };
+  const search = await SELF.fetch("http://localhost/api/products?q=同步时间独立回归");
+  expect(search.ok).toBe(true);
+  const { items } = await search.json<{ items: Array<{ id: string; updatedAt: string; offers: OfferTime[] }> }>();
+  expect(items).toHaveLength(1);
+  expect(items[0].updatedAt).toBe(initial);
+  const expected = [
+    { id: `${id}:seen`, lastSyncedAt: partial, updatedAt: initial },
+    { id: `${id}:carried`, lastSyncedAt: full, updatedAt: initial },
+  ];
+  expect(items[0].offers).toMatchObject(expected);
+  const expanded = await SELF.fetch(`http://localhost/api/products?offerKey=${encodeURIComponent(items[0].id)}`);
+  expect((await expanded.json<{ items: Array<{ offers: OfferTime[] }> }>()).items[0].offers).toMatchObject(expected);
+  const profile = await SELF.fetch(`http://localhost/api/shops/${id}/products`);
+  expect((await profile.json<{ shop: { lastSyncedAt: string; productItems: OfferTime[] } }>()).shop)
+    .toMatchObject({ lastSyncedAt: partial, productItems: expected });
 });

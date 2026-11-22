@@ -130,6 +130,7 @@ export interface ShopRecord {
   sync_state: string;
   content_hash: string;
   last_synced_at: string | null;
+  last_full_sync_at?: string | null;
   next_sync_at: string;
   consecutive_failures: number;
   last_error: string;
@@ -159,6 +160,8 @@ export interface SyncShopOutcome {
   contentHash?: string;
   /** 当商品摘要命中跳过但简介增量更新时为 true */
   descriptionUpdated?: boolean;
+  /** 16688 服务端分批复核的进度。中断时保留未确认报价。 */
+  market16688Verification?: { nextCursor?: string; interrupted?: true };
   error?: string;
 }
 

@@ -88,12 +88,12 @@ it("同步简介后公开分销码自动替代人工兜底，重复简介无需�
   await persistShopSnapshot(env.DB, await current(), snapshot, '2026-11-12T00:00:00Z');
   expect(resolveIntegrationCodes(await current()).codes).toEqual(['Lucky plus']);
   snapshot.description = '分销码：NewCode007';
-  const updated = await persistShopSnapshot(env.DB, await current(), snapshot, '2026-11-12T01:00:00Z', { minUnchangedIntervalMs: 12 * 3600000 });
+  const updated = await persistShopSnapshot(env.DB, await current(), snapshot, '2026-11-12T01:00:00Z');
   expect(updated.descriptionUpdated).toBe(true);
   expect(updated.status).toBe('unchanged');
   expect(resolveIntegrationCodes(await current())).toEqual({ codes: ['NewCode007'], source: 'public' });
-  const repeated = await persistShopSnapshot(env.DB, await current(), snapshot, '2026-11-12T02:00:00Z', { minUnchangedIntervalMs: 12 * 3600000 });
-  expect(repeated.estimatedWrites).toBe(0);
+  const repeated = await persistShopSnapshot(env.DB, await current(), snapshot, '2026-11-12T02:00:00Z');
+  expect(repeated.estimatedWrites).toBe(1);
 });
 
 it("三家补录保留真实公开信息、等待商品同步，重复导入不重复收录", async () => {
