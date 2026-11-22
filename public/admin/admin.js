@@ -40,7 +40,16 @@ function selectPanel(key) {
 document.addEventListener('click',e=>{const button=e.target.closest('[data-panel]');if(button)selectPanel(button.dataset.panel);});
 window.addEventListener('hashchange',()=>selectPanel(location.hash.slice(1)));
 async function api(path,data) {
-  const res=await fetch(path,data===undefined?{cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),cache:'no-store'});
+  const options = { cache: 'no-store' };
+  if (data !== undefined) {
+    options.method = 'POST';
+    if (data instanceof FormData) options.body = data;
+    else {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(data);
+    }
+  }
+  const res=await fetch(path,options);
   const result=await res.json();if(!res.ok)throw new Error(result.error||'请求失败');return result;
 }
 function submitForm(selector,action) {
@@ -717,6 +726,125 @@ function sponsorPreviewLink(label, href) {
   link.rel = 'noopener noreferrer';
   return link;
 }
+const sponsorDialog = $('#sponsorRecordDialog');
+const sponsorEditForm = $('#sponsorEditForm');
+const sponsorRecordImage = $('#sponsorRecordImage');
+const sponsorRecordImageLink = $('#sponsorRecordImageLink');
+const sponsorRecordImageError = $('#sponsorRecordImageError');
+const sponsorEditError = $('#sponsorEditError');
+let selectedSponsor;
+let sponsorImageObjectUrl;
+const sponsorTime = value => value == null ? '—' : formatBjTime(new Date(value).toISOString());
+const sponsorImagePath = id => sponsorEndpoint + '/image/' + encodeURIComponent(id);
+const sponsorPlacement = code => code.placementChoice && code.redeemedAt == null
+  ? '投稿人选择' : sponsorPlacements[code.placement];
+const sponsorStatus = (code, enabled) => code.status === 'active' && !enabled
+  ? '已使用 · 暂停展示' : sponsorStatuses[code.status];
+const sponsorDuration = code => code.duration + (code.unit === 'days' ? ' 天' : ' 个月');
+
+function showSponsorImage(url) {
+  if (sponsorImageObjectUrl) URL.revokeObjectURL(sponsorImageObjectUrl);
+  sponsorImageObjectUrl = url.startsWith('blob:') ? url : undefined;
+  sponsorRecordImageError.hidden = true;
+  sponsorRecordImageLink.hidden = !url;
+  if (url) sponsorRecordImage.src = url;
+  else sponsorRecordImage.removeAttribute('src');
+  if (url && !sponsorImageObjectUrl) sponsorRecordImageLink.href = url;
+  else sponsorRecordImageLink.removeAttribute('href');
+}
+
+function showSponsorEditor() {
+  $('#sponsorRecordHeading').textContent = '编辑赞助内容';
+  $('#sponsorRecordDetails').hidden = true;
+  sponsorEditForm.hidden = false;
+  sponsorEditForm.elements.title.focus();
+}
+
+function openSponsorRecord(code, enabled, edit) {
+  selectedSponsor = code;
+  $('#sponsorRecordHeading').textContent = '赞助详情';
+  const details = $('#sponsorRecordFields');
+  const link = /^https?:\/\//i.test(code.linkUrl || '') ? sponsorPreviewLink(code.linkUrl, code.linkUrl) : '—';
+  details.replaceChildren();
+  for (const [label, value] of [
+    ['标题', code.title || '—'], ['跳转链接', link],
+    ['授权码尾号', '…' + code.codeHint], ['状态', sponsorStatus(code, enabled)],
+    ['投放位置', sponsorPlacement(code)], ['时长', sponsorDuration(code)],
+    ['生成时间', sponsorTime(code.createdAt)], ['提交时间', sponsorTime(code.redeemedAt)],
+    ['审批时间', sponsorTime(code.reviewedAt)], ['到期时间', sponsorTime(code.expiresAt)],
+    ['作废时间', sponsorTime(code.revokedAt)],
+  ]) {
+    const field = document.createElement('div');
+    const term = document.createElement('dt');
+    const description = document.createElement('dd');
+    term.textContent = label;
+    description.append(value);
+    field.append(term, description);
+    details.append(field);
+  }
+  sponsorEditForm.reset();
+  sponsorEditForm.elements.title.value = code.title || '';
+  sponsorEditForm.elements.linkUrl.value = code.linkUrl || '';
+  sponsorEditError.hidden = true;
+  sponsorEditForm.hidden = true;
+  $('#sponsorRecordDetails').hidden = false;
+  $('#sponsorRecordEdit').hidden = code.redeemedAt == null;
+  showSponsorImage(code.redeemedAt == null ? '' : sponsorImagePath(code.id));
+  sponsorDialog.showModal();
+  if (edit) showSponsorEditor();
+}
+
+sponsorRecordImage.addEventListener('error', () => { sponsorRecordImageError.hidden = false; });
+$('#sponsorRecordEdit').addEventListener('click', showSponsorEditor);
+for (const button of sponsorDialog.querySelectorAll('[data-sponsor-close]')) {
+  button.addEventListener('click', () => sponsorDialog.close());
+}
+sponsorDialog.addEventListener('close', () => showSponsorImage(''));
+sponsorDialog.addEventListener('cancel', event => {
+  if (sponsorEditForm.hasAttribute('aria-busy')) event.preventDefault();
+});
+sponsorEditForm.elements.image.addEventListener('change', event => {
+  const file = event.target.files[0];
+  sponsorEditError.hidden = true;
+  if (file?.size > 5 * 1024 * 1024) {
+    event.target.value = '';
+    sponsorEditError.textContent = '图片最大支持 5 MB，请重新选择。';
+    sponsorEditError.hidden = false;
+    showSponsorImage(sponsorImagePath(selectedSponsor.id));
+    return;
+  }
+  showSponsorImage(file ? URL.createObjectURL(file) : sponsorImagePath(selectedSponsor.id));
+});
+sponsorEditForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (sponsorEditForm.hasAttribute('aria-busy')) return;
+  const { title, linkUrl, image } = sponsorEditForm.elements;
+  const payload = new FormData();
+  payload.set('title', title.value);
+  payload.set('linkUrl', linkUrl.value);
+  if (image.files[0]) payload.set('image', image.files[0]);
+  const controls = sponsorEditForm.querySelectorAll('fieldset, button');
+  const save = sponsorEditForm.querySelector('[type=submit]');
+  sponsorEditForm.setAttribute('aria-busy', 'true');
+  controls.forEach(control => { control.disabled = true; });
+  save.textContent = '保存中…';
+  sponsorEditError.hidden = true;
+  try {
+    await api(sponsorEndpoint + '/content/' + encodeURIComponent(selectedSponsor.id), payload);
+  } catch (error) {
+    sponsorEditError.textContent = error.message;
+    sponsorEditError.hidden = false;
+    return;
+  } finally {
+    sponsorEditForm.removeAttribute('aria-busy');
+    controls.forEach(control => { control.disabled = false; });
+    save.textContent = '保存修改';
+  }
+  sponsorDialog.close();
+  message('赞助内容已保存');
+  refreshSponsors();
+});
+
 function renderSponsorSwitch(setting) {
   const input = $('#' + setting.id);
   if (!setting.saving) input.checked = setting.value;
@@ -770,15 +898,24 @@ async function loadSponsors() {
   const tableBody = table.createTBody();
   for (const code of data.codes) {
     const row = tableBody.insertRow();
-    const timestamp = value => value == null ? '—' : formatBjTime(new Date(value).toISOString());
     row.insertCell().textContent = '…' + code.codeHint;
     const content = row.insertCell();
-    content.className = 'sponsor-review-content';
     content.textContent = code.title || '—';
-    if (code.redeemedAt) {
+    const contentActions = document.createElement('div');
+    contentActions.className = 'sponsor-admin-actions sponsor-content-actions';
+    for (const label of code.redeemedAt == null ? ['查看详情'] : ['查看详情', '编辑']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary';
+      button.textContent = label;
+      button.addEventListener('click', () => openSponsorRecord(code, data.enabled, label === '编辑'));
+      contentActions.append(button);
+    }
+    content.append(contentActions);
+    if (code.redeemedAt != null) {
       const previewLinks = document.createElement('div');
       previewLinks.className = 'sponsor-review-links';
-      const preview = sponsorPreviewLink('查看大图', sponsorEndpoint + '/image/' + encodeURIComponent(code.id));
+      const preview = sponsorPreviewLink('查看大图', sponsorImagePath(code.id));
       preview.className = 'sponsor-review-preview';
       const image = document.createElement('img');
       image.alt = '';
@@ -798,10 +935,8 @@ async function loadSponsors() {
       content.append(previewLinks);
     }
     for (const value of [
-      code.placementChoice && !code.redeemedAt ? '投稿人选择' : sponsorPlacements[code.placement],
-      code.status === 'active' && !data.enabled ? '已使用 · 暂停展示' : sponsorStatuses[code.status],
-      code.duration + (code.unit === 'days' ? ' 天' : ' 个月'),
-      timestamp(code.createdAt), timestamp(code.redeemedAt), timestamp(code.reviewedAt), timestamp(code.expiresAt),
+      sponsorPlacement(code), sponsorStatus(code, data.enabled), sponsorDuration(code),
+      sponsorTime(code.createdAt), sponsorTime(code.redeemedAt), sponsorTime(code.reviewedAt), sponsorTime(code.expiresAt),
     ]) row.insertCell().textContent = value;
     const actions = document.createElement('div');
     actions.className = 'sponsor-admin-actions';

@@ -7,8 +7,8 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.17aa2367f5ac.css">
-  <script type="module" src="/admin/admin.450306e2e5ab.js"></script>
+  <link rel="stylesheet" href="/admin/admin.bd13f75c5bed.css">
+  <script type="module" src="/admin/admin.fc6ed1f4f462.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -327,6 +327,34 @@
           <button type="button" class="btn btn-secondary" id="sponsorNextBtn" disabled>下一页</button>
         </div>
       </section>
+      <dialog id="sponsorRecordDialog" class="admin-card sponsor-record-dialog" aria-labelledby="sponsorRecordHeading">
+        <h2 id="sponsorRecordHeading">赞助详情</h2>
+        <a id="sponsorRecordImageLink" class="sponsor-record-image" target="_blank" rel="noopener noreferrer" aria-label="在新窗口查看原图" hidden>
+          <img id="sponsorRecordImage" alt="赞助图片">
+        </a>
+        <p id="sponsorRecordImageError" class="muted" role="status" hidden>图片加载失败。</p>
+        <div id="sponsorRecordDetails">
+          <dl id="sponsorRecordFields"></dl>
+          <div class="sponsor-record-footer">
+            <button type="button" class="btn btn-secondary" data-sponsor-close>关闭</button>
+            <button type="button" class="btn btn-primary" id="sponsorRecordEdit">编辑</button>
+          </div>
+        </div>
+        <form id="sponsorEditForm" hidden>
+          <fieldset>
+            <label>标题<input name="title" maxlength="80" required></label>
+            <label>跳转链接<input name="linkUrl" type="url" maxlength="2048" placeholder="https://…" aria-describedby="sponsorLinkHint"></label>
+            <p class="muted" id="sponsorLinkHint">留空将清除跳转链接。</p>
+            <label>更换图片<input name="image" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="sponsorImageHint"></label>
+            <p class="muted" id="sponsorImageHint">支持 JPG、PNG、WebP，最大 5 MB。未选新文件时保留当前图片。</p>
+          </fieldset>
+          <p id="sponsorEditError" role="alert" hidden></p>
+          <div class="sponsor-record-footer">
+            <button type="button" class="btn btn-secondary" data-sponsor-close>取消</button>
+            <button type="submit" class="btn btn-primary">保存修改</button>
+          </div>
+        </form>
+      </dialog>
     </div>
 
     <div class="admin-panel" id="panel-settings" hidden>

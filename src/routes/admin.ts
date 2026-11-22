@@ -652,7 +652,7 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     return Response.json({ok:true},{headers:{...headers,'Set-Cookie':cookie(req,token,86400)}});
   }
   if (!await authenticated(req,db)) return json({error:'请先登录'},401);
-  if (path === '/api/control/sponsors' || path.startsWith('/api/control/sponsors/image/')) return handleSponsorAdmin(req, db);
+  if (path === '/api/control/sponsors' || path.startsWith('/api/control/sponsors/')) return handleSponsorAdmin(req, db);
   if (path === '/api/control/session' && req.method === 'GET') return json({ok:true});
   if (path === '/api/control/crawler-block' && req.method === 'POST') {
     let data: Record<string, unknown>;

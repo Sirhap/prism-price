@@ -122,31 +122,56 @@ async function readSponsorForm(request: Request) {
   }
 }
 
+function validateSponsorText(rawTitle: unknown, rawLink: unknown): { title: string; linkUrl: string | null } | { error: string } {
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+  if (!title || title.length > 80 || /[\u0000-\u001f\u007f]/.test(title)) return { error: '请填写 1～80 字的赞助标题' };
+  const submittedLink = typeof rawLink === 'string' ? rawLink.trim() : rawLink;
+  const linkUrl = typeof submittedLink === 'string' && submittedLink ? normalizeSponsorLink(submittedLink) : null;
+  if (submittedLink != null && submittedLink !== '' && !linkUrl) return { error: '请输入有效的 http:// 或 https:// 跳转链接' };
+  return { title, linkUrl };
+}
+
+async function readSponsorImage(file: unknown): Promise<{ bytes: Uint8Array<ArrayBuffer>; type: string } | { error: string }> {
+  if (!(file instanceof File) || file.size > MAX_IMAGE) return { error: '请上传不超过 5 MB 的 JPG、PNG 或 WebP 图片' };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const type = identifyImage(bytes);
+  return type ? { bytes, type } : { error: '请上传 JPG、PNG 或 WebP 图片' };
+}
+
+function insertImageParts(db: D1Database, id: string, key: string, bytes: Uint8Array<ArrayBuffer>) {
+  const insert = db.prepare(`INSERT INTO sponsor_image_parts(sponsor_id, part, content)
+    SELECT id, ?, ? FROM sponsor_ads WHERE id = ? AND image_key = ?`);
+  const parts = [];
+  for (let offset = 0; offset < bytes.length; offset += IMAGE_PART_SIZE) {
+    parts.push(insert.bind(offset / IMAGE_PART_SIZE, bytes.slice(offset, offset + IMAGE_PART_SIZE).buffer, id, key));
+  }
+  return parts;
+}
+
 /** Public access is rechecked when fetching bytes so a revoked or expired upload cannot be served. */
 async function sponsorImage(db: D1Database, id: string, method: string, adminPreview = false): Promise<Response> {
   const visibility = `redeemed_at IS NOT NULL AND (? = 1 OR (${activeSql} AND ${sponsorsEnabledSql}))`;
-  const preview = Number(adminPreview);
-  const row = await db.prepare(`SELECT image_type AS imageType, image_key AS imageKey FROM sponsor_ads
-    WHERE id = ? AND ${visibility}`)
-    .bind(id, preview, Date.now()).first<{ imageType: string | null; imageKey: string | null }>();
-  if (!row?.imageType) return failure('赞助内容不可用', 404);
+  const params = [id, Number(adminPreview), Date.now()];
+  let imageType: string | null | undefined;
   let data: Blob | null = null;
   if (method === 'GET') {
-    if (row.imageKey) {
-      const { results } = await db.prepare(`SELECT parts.content FROM sponsor_image_parts AS parts JOIN sponsor_ads AS ads
-        ON ads.id = parts.sponsor_id WHERE ads.id = ? AND ads.image_key = ?
-        AND ${visibility} ORDER BY parts.part`)
-        .bind(id, row.imageKey, preview, Date.now()).all<{ content: number[] }>();
-      if (results.length) data = new Blob(results.map(part => Uint8Array.from(part.content)));
-    } else {
-      const legacy = await db.prepare(`SELECT image FROM sponsor_ads WHERE id = ? AND image_key IS NULL AND ${visibility}`)
-        .bind(id, preview, Date.now()).first<{ image: number[] | null }>();
-      if (legacy?.image) data = new Blob([Uint8Array.from(legacy.image)]);
-    }
-    if (!data) return failure('赞助图片不可用', 404);
+    // Read the MIME type and all chunks from the same snapshot during a replacement.
+    const { results } = await db.prepare(`SELECT ads.image_type AS imageType,
+      CASE WHEN ads.image_key IS NULL THEN ads.image ELSE parts.content END AS content
+      FROM sponsor_ads AS ads LEFT JOIN sponsor_image_parts AS parts
+        ON ads.image_key IS NOT NULL AND parts.sponsor_id = ads.id
+      WHERE ads.id = ? AND ${visibility} ORDER BY parts.part`)
+      .bind(...params).all<{ imageType: string | null; content: number[] | null }>();
+    imageType = results[0]?.imageType;
+    if (results[0]?.content) data = new Blob(results.map(part => Uint8Array.from(part.content!)));
+  } else {
+    imageType = await db.prepare(`SELECT image_type FROM sponsor_ads WHERE id = ? AND ${visibility}`)
+      .bind(...params).first<string>('image_type');
   }
+  if (!imageType) return failure('赞助内容不可用', 404);
+  if (method === 'GET' && !data) return failure('赞助图片不可用', 404);
   return new Response(data, { headers: {
-    ...headers, 'Content-Type': row.imageType, 'Content-Security-Policy': "default-src 'none'; sandbox",
+    ...headers, 'Content-Type': imageType, 'Content-Security-Policy': "default-src 'none'; sandbox",
   } });
 }
 
@@ -196,16 +221,10 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
     return failure(boundType === 'carousel' ? '此授权码仅可投放顶部轮播' : '此授权码仅可投放固定赞助位', 409);
   }
   const candidates = mayChoose ? requestedType === 'fixed' ? fixedPlacements : ['carousel'] : [row.placement];
-  const title = typeof data.title === 'string' ? data.title.trim() : '';
-  if (!title || title.length > 80 || /[\u0000-\u001f\u007f]/.test(title)) return failure('请填写 1～80 字的赞助标题');
-  const submittedLink = typeof data.linkUrl === 'string' ? data.linkUrl.trim() : data.linkUrl;
-  const linkUrl = typeof submittedLink === 'string' && submittedLink ? normalizeSponsorLink(submittedLink) : null;
-  if (submittedLink != null && submittedLink !== '' && !linkUrl) return failure('请输入有效的 http:// 或 https:// 跳转链接');
-  const file = data.image;
-  if (!(file instanceof File) || file.size > MAX_IMAGE) return failure('请上传不超过 5 MB 的 JPG、PNG 或 WebP 图片');
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const imageType = identifyImage(bytes);
-  if (!imageType) return failure('请上传 JPG、PNG 或 WebP 图片');
+  const text = validateSponsorText(data.title, data.linkUrl);
+  if ('error' in text) return failure(text.error);
+  const imageData = await readSponsorImage(data.image);
+  if ('error' in imageData) return failure(imageData.error);
   const submittedAt = Date.now();
   const imageKey = crypto.randomUUID();
   // Make the automatic decision in the same write that reserves a carousel position.
@@ -227,14 +246,9 @@ export async function handleSponsorPublic(request: Request, db: D1Database): Pro
     expires_at = CASE WHEN (SELECT approved FROM decision) THEN ? END
     WHERE id = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND ${sponsorsEnabledSql}
     RETURNING placement, review_status AS reviewStatus, expires_at AS expiresAt`)
-    .bind(JSON.stringify(candidates), submittedAt, submittedAt, capacities.carousel, title, linkUrl, imageType, imageKey,
+    .bind(JSON.stringify(candidates), submittedAt, submittedAt, capacities.carousel, text.title, text.linkUrl, imageData.type, imageKey,
       submittedAt, submittedAt, sponsorExpiry(submittedAt, row.duration, row.unit), row.id);
-  const insert = db.prepare(`INSERT INTO sponsor_image_parts(sponsor_id, part, content)
-    SELECT id, ?, ? FROM sponsor_ads WHERE id = ? AND image_key = ?`);
-  const parts = [];
-  for (let offset = 0; offset < bytes.length; offset += IMAGE_PART_SIZE) {
-    parts.push(insert.bind(offset / IMAGE_PART_SIZE, bytes.slice(offset, offset + IMAGE_PART_SIZE).buffer, row.id, imageKey));
-  }
+  const parts = insertImageParts(db, row.id, imageKey, imageData.bytes);
   const [saved] = await db.batch<{ placement: Placement; reviewStatus: 'approved' | 'pending'; expiresAt: number | null }>([update, ...parts]);
   const submission = saved.results[0];
   if (submission) return json({ status: submission.reviewStatus === 'approved' ? 'active' : 'pending',
@@ -263,6 +277,33 @@ async function reviewSponsor(db: D1Database, id: string, approve: boolean, now: 
   return failure('该投稿状态已变化，请刷新后重试', 409);
 }
 
+async function updateSponsorContent(request: Request, db: D1Database, id: string): Promise<Response> {
+  const input = await readSponsorForm(request);
+  if (!input) return failure('提交格式不正确或图片过大');
+  const text = validateSponsorText(input.title, input.linkUrl);
+  if ('error' in text) return failure(text.error);
+
+  const submitted = 'WHERE id = ? AND redeemed_at IS NOT NULL RETURNING id';
+  let updated;
+  if (input.image === null) {
+    updated = await db.prepare(`UPDATE sponsor_ads SET title = ?, link_url = ? ${submitted}`)
+      .bind(text.title, text.linkUrl, id).first();
+  } else {
+    const image = await readSponsorImage(input.image);
+    if ('error' in image) return failure(image.error);
+    const key = crypto.randomUUID();
+    const update = db.prepare(`UPDATE sponsor_ads SET title = ?, link_url = ?, image_type = ?, image_key = ?, image = NULL ${submitted}`)
+      .bind(text.title, text.linkUrl, image.type, key, id);
+    const removeParts = db.prepare(`DELETE FROM sponsor_image_parts WHERE sponsor_id = ?
+      AND EXISTS (SELECT 1 FROM sponsor_ads WHERE id = ? AND image_key = ?)`).bind(id, id, key);
+    const [saved] = await db.batch([update, removeParts, ...insertImageParts(db, id, key, image.bytes)]);
+    updated = saved.results[0];
+  }
+  if (updated) return json({ ok: true });
+  if (await db.prepare('SELECT 1 FROM sponsor_ads WHERE id = ?').bind(id).first()) return failure('该授权码尚未提交赞助内容', 409);
+  return failure('授权记录不存在', 404);
+}
+
 /** 由后台路由完成同源和管理员鉴权后调用；只在生成时返回完整授权码。 */
 export async function handleSponsorAdmin(request: Request, db: D1Database): Promise<Response> {
   const url = new URL(request.url);
@@ -270,6 +311,8 @@ export async function handleSponsorAdmin(request: Request, db: D1Database): Prom
   if (url.pathname !== ADMIN_PREFIX) {
     const image = url.pathname.match(new RegExp(`^${ADMIN_PREFIX}/image/(${ID_FORMAT})$`));
     if (image && request.method === 'GET') return sponsorImage(db, image[1], 'GET', true);
+    const content = url.pathname.match(new RegExp(`^${ADMIN_PREFIX}/content/(${ID_FORMAT})$`));
+    if (content && request.method === 'POST') return updateSponsorContent(request, db, content[1]);
     return failure('赞助内容不可用', 404);
   }
   if (request.method === 'GET') {

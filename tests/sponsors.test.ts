@@ -221,6 +221,65 @@ it('可原样上传及读取 5 MB 图片，超限不消耗授权码，删除会�
   expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM sponsor_image_parts WHERE sponsor_id = ?').bind(entry.id).first('count')).toBe(0);
 });
 
+it('管理员可编辑已投稿内容，替换图片分片并保留原审批和投放期限', async () => {
+  const generated = await post(admin, { action: 'create', placement: 'fixed-4', quantity: 2, duration: 7, unit: 'days' }, cookie);
+  const { codes: [code, unusedCode] } = await generated.json<{ codes: string[] }>();
+  const unused = (await list('unused')).find(item => item.codeHint === unusedCode.slice(-8))!;
+  const content = (title: string, linkUrl: string, bytes?: Uint8Array<ArrayBuffer>) => {
+    const form = new FormData();
+    form.set('title', title);
+    form.set('linkUrl', linkUrl);
+    if (bytes) form.set('image', new File([bytes], 'replacement.png', { type: 'image/png' }));
+    return form;
+  };
+  const path = (id: string) => admin + '/content/' + id;
+  const original = new Uint8Array(1024 * 1024 + 1);
+  original.set(pngBytes());
+  expect((await publish(code, '原始标题', original, undefined, 'https://example.test/original')).status).toBe(201);
+  const { id } = (await list('pending')).find(item => item.codeHint === code.slice(-8))!;
+  const imagePath = '/api/sponsors/image/' + id;
+  const readImage = async (url = imagePath) => {
+    const response = await SELF.fetch(origin + url, { headers: { cookie } });
+    expect(response.status).toBe(200);
+    return new Uint8Array(await response.arrayBuffer());
+  };
+  const edit = (form: FormData) => post(path(id), form, cookie);
+  const small = pngBytes();
+  expect((await post(path(id), content('无权限', ''))).status).toBe(401);
+  expect((await post(path(id), content('跨站请求', ''), cookie, 'https://elsewhere.test')).status).toBe(403);
+  expect((await post(path(unused.id), content('未投稿', '', small), cookie)).status).toBe(409);
+  expect((await edit(content('修改标题', 'javascript:alert(1)', small))).status).toBe(400);
+  expect((await edit(content('修改标题', '', new Uint8Array(24)))).status).toBe(400);
+  expect((await list('pending')).find(item => item.id === id))
+    .toMatchObject({ title: '原始标题', linkUrl: 'https://example.test/original' });
+  expect((await edit(content('新标题', ''))).status).toBe(200);
+  expect(await readImage(admin + '/image/' + id)).toEqual(original);
+  expect((await SELF.fetch(origin + imagePath)).status).toBe(404);
+  await approveCode(code);
+  const approval = (await list('active')).find(item => item.id === id)!;
+
+  const linkUrl = 'https://example.test/updated';
+  expect((await edit(content('新图片', linkUrl, small))).status).toBe(200);
+  expect(await readImage()).toEqual(small);
+  expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM sponsor_image_parts WHERE sponsor_id = ?').bind(id).first('count')).toBe(1);
+  expect((await list('active')).find(item => item.id === id))
+    .toMatchObject({ ...approval, title: '新图片', linkUrl });
+  const listing = await (await SELF.fetch(origin + '/api/sponsors')).json<{ ads: Array<{ id: string }> }>();
+  expect(listing.ads.find(ad => ad.id === id)).toMatchObject({ title: '新图片', linkUrl, expiresAt: approval.expiresAt });
+
+  await env.DB.batch([
+    env.DB.prepare('UPDATE sponsor_ads SET image = ?, image_key = NULL WHERE id = ?').bind(small.buffer, id),
+    env.DB.prepare('DELETE FROM sponsor_image_parts WHERE sponsor_id = ?').bind(id),
+  ]);
+  expect(await readImage()).toEqual(small);
+  expect((await edit(content('替换旧版图片', linkUrl, small))).status).toBe(200);
+  expect(await env.DB.prepare('SELECT image FROM sponsor_ads WHERE id = ?').bind(id).first('image')).toBeNull();
+  expect(await readImage()).toEqual(small);
+  expect((await post(admin, { action: 'delete', id }, cookie)).status).toBe(200);
+  expect((await edit(content('记录已删除', ''))).status).toBe(404);
+  expect((await post(admin, { action: 'delete', id: unused.id }, cookie)).status).toBe(200);
+});
+
 it('通用码可选择轮播或固定，固定并发投稿均衡分配，旧码不能改投', async () => {
   for (const entry of await list('active')) await post(admin, { action: 'revoke', id: entry.id }, cookie);
   const generate = async (placement: string, quantity: number) => {
