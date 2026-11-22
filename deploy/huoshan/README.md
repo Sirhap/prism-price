@@ -47,6 +47,8 @@ bash deploy/huoshan/deploy.sh --ref HEAD --apply --expect <当前版本目录名
 
 数据库迁移、运行依赖升级及系统配置变更单独执行。同步时间功能需要先备份生产 SQLite，再在事务中应用 `0023_offer_sync_timestamps.sql`。旧报价在下一次成功观察后开始显示同步时间。常规发布复用上一版本的运行依赖，并校验依赖清单一致。清理历史版本时，保留 `current`、回退版本及仍被引用的 `node_modules` 所在目录。
 
+上线商品详情补查前，在线备份并校验 SQLite，再在事务中应用 `0024_offer_classification_details.sql`。该迁移只新建报价分类证据缓存表。商品在后续成功同步时按新规则归类，已有详情判定随报价删除而清理。
+
 上线访客时间筛选及爬虫拦截前，先备份生产 SQLite，再按顺序应用 `0011_visit_logs_day_ip_index.sql` 和 `0012_crawler_access.sql`（按当前库已应用的迁移跳过）。黑名单只信任 `CF-Connecting-IP`，须先确认源站只接受可信 Cloudflare 回源，或由 OpenResty 丢弃直连请求携带的该头部。若配置了公开页面/API 的边缘缓存，也应确认这些请求会到达应用，否则命中缓存的请求既不会拦截也不会被记录。
 
 自动规则在公开页面及公开 API 的 GET/HEAD 请求上拦截明确的爬虫和脚本标识（包括 curl、wget），不自动写入手动 IP 黑名单，拦截返回不可缓存的 500 并保留记录。`robots.txt` 和其中显式放行的索引爬虫访问公开页面不受自动规则限制（不适用于公开 API）；UA 放行不等于身份校验。后台、写入型同步 API 和默认使用 Node.js `fetch` 的同步客户端不受自动规则影响。部署后的可用性检查用浏览器或 Node.js `fetch`，不要用默认 curl 检查受保护路径的正常状态。

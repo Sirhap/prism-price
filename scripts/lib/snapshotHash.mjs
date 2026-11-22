@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import brandRules from "../../src/config/brand-rules.json" with { type: "json" };
 
-export const SNAPSHOT_NORMALIZATION_VERSION = 11;
+export const SNAPSHOT_NORMALIZATION_VERSION = 12;
 
 /**
  * 与 Worker 使用相同的规则配置与快照字段计算增量摘要。

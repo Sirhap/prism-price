@@ -42,6 +42,7 @@ import {
   type PushedShopEntry,
 } from "../collector/scheduler";
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
+import { createProductDetailBudget } from "../collector/etl/productDetails";
 import { offerLastSyncedAt, readOfferSyncTimes } from "../collector/etl/offerSyncTimes";
 import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
@@ -1125,7 +1126,10 @@ async function handleBrowserShopSync(request: Request, env: Env): Promise<Respon
     const incomingName = typeof body.shopName === 'string' ? hideTelegramContacts(body.shopName.trim()).slice(0, 120) : '';
     const displayName = shop.id.startsWith('submitted-') && shop.sync_state === 'pending' && incomingName ? incomingName : shop.shop_name;
     const lastSyncedAt = new Date().toISOString();
-    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, lastSyncedAt, { observedItemKeys: keys });
+    const result = await persistShopSnapshot(env.DB, shop, { shopName:displayName, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items }, lastSyncedAt, {
+      observedItemKeys: keys,
+      productDetailBudget: createProductDetailBudget(2),
+    });
     return Response.json({ ok:true, status:result.status, itemCount:result.itemCount, lastSyncedAt });
   } finally { browserSyncInFlight.delete(id); }
 }

@@ -106,6 +106,7 @@ describe("ETL 清洗、分类与同款聚合测试", () => {
     const prefix = "相同的商品标题".repeat(15);
     expect(buildGroupKey(`${prefix} 100积分`)).not.toBe(buildGroupKey(`${prefix} 1000积分`));
     expect(buildGroupKey("1-2天")).not.toBe(buildGroupKey("12天"));
+    expect(buildGroupKey("1～2天")).toBe(buildGroupKey("1-2天"));
     expect(buildGroupKey("GPT 5.1")).not.toBe(buildGroupKey("GPT 51"));
     expect(buildGroupKey("Ｐｌｕｓ 月卡")).toBe(buildGroupKey("Plus 月卡"));
     const item = { itemKey: "1", rawName: "独享月卡", price: 10, stockCount: 1, stockStatus: "normal" as const, itemUrl: "https://example.com" };
@@ -331,6 +332,9 @@ describe("ETL 清洗、分类与同款聚合测试", () => {
     const blockedCases: Array<[string, string, number | undefined]> = [
       ["测试商品 请勿拍", "卡密", 0.01],
       ["客服改价 补差价专用链接", "", 1],
+      ["补差价专用", "补差价专用", 1],
+      ["测试专用 勿拍", "其它", 1],
+      ["赞助搬运工-20", "搬运工", 20],
       ["防失联公告", "公告", 1],
       ["此链接勿拍 联系客服", "", 10],
       ["【请勿拍】勿下单 测试", "", 5],

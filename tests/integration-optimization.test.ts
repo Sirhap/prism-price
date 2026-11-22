@@ -119,3 +119,35 @@ it("同步时间区分完整与部分观察，商品聚合时间不随相同快�
   expect((await profile.json<{ shop: { lastSyncedAt: string; productItems: OfferTime[] } }>()).shop)
     .toMatchObject({ lastSyncedAt: partial, productItems: expected });
 });
+
+it("分类复核后拆开模糊月卡并保持明确同款报价的最低价", async () => {
+  const shopA = "classification-review-a", shopB = "classification-review-b";
+  const shops = [shopA, shopB].map(id => ({ id, shopName: id, shopUrl: `https://${id}.example/` }));
+  await upsertAdminShops(env.DB, shops);
+  const name = "Gemini Pro 3个月卡密 xiaomi分类复核";
+  for (const [index, shop] of shops.entries()) {
+    const row = (await env.DB.prepare("SELECT * FROM shops WHERE id=?").bind(shop.id).first<ShopRecord>())!;
+    await persistShopSnapshot(env.DB, row, {
+      shopName: shop.shopName, canonicalUrl: shop.shopUrl, telegram: "", shopSellCount: null,
+      salesVisible: false, depositVisible: false, depositMoney: null,
+      items: [
+        { itemKey: "ambiguous", rawName: "月卡", shopCategory: "Gemini", price: 1,
+          stockCount: 2, stockStatus: "low", itemUrl: shop.shopUrl + "ambiguous" },
+        { itemKey: "explicit", rawName: name, shopCategory: "ChatGPT 教程", price: index ? 10 : 9,
+          stockCount: 2, stockStatus: "low", itemUrl: shop.shopUrl + "explicit" },
+      ],
+    }, "2026-11-22T00:00:00.000Z");
+  }
+  const { results } = await env.DB.prepare(
+    "SELECT group_key, offer_count, min_price FROM product_groups WHERE group_key IN (SELECT group_key FROM offers WHERE shop_id IN (?,?)) ORDER BY min_price",
+  ).bind(shopA, shopB).all<{ group_key: string; offer_count: number; min_price: number }>();
+  expect(results.map(row => [row.offer_count, row.min_price])).toEqual([[1, 1], [1, 1], [2, 9]]);
+  const response = await SELF.fetch("http://localhost/api/products?q=xiaomi分类复核&group=Gemini&type=recharge&plan=pro&duration=quarter");
+  expect(await response.json()).toMatchObject({ total: 1, items: [{ name, minPrice: 9, offerCount: 2 }] });
+  const expanded = await SELF.fetch(`http://localhost/api/products?offerKey=${encodeURIComponent(results[2].group_key)}`);
+  expect(await expanded.json()).toMatchObject({ items: [{ offers: [{ price: 9 }, { price: 10 }] }] });
+  const profile = await SELF.fetch(`http://localhost/api/shops/${shopA}/products`);
+  expect(await profile.json()).toMatchObject({ shop: {
+    productItems: [{ group: "Gemini", price: 1 }, { group: "Gemini", price: 9 }],
+  } });
+});

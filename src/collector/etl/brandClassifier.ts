@@ -16,6 +16,7 @@ export interface BrandRule {
 }
 
 interface CompiledBrandRule {
+  id: string;
   group: ProductGroup;
   includeAny: RegExp[];
   includeAll: RegExp[];
@@ -41,7 +42,7 @@ export function normalizeMatchText(input: string): string {
  * 编译并校验品牌规则。优先级数值越小越先匹配，同优先级沿用文件顺序。
  * 表达式只编译一次；固定使用 iu 标志，避免 g/y 导致跨请求匹配状态泄漏。
  */
-export function createBrandClassifier(rules: readonly BrandRule[]): (text: string) => ProductGroup | undefined {
+function createBrandMatcher(rules: readonly BrandRule[]) {
   const knownGroups: ReadonlySet<string> = new Set(PRODUCT_GROUPS);
   const ids = new Set<string>();
   const compiled: CompiledBrandRule[] = [...rules]
@@ -63,6 +64,7 @@ export function createBrandClassifier(rules: readonly BrandRule[]): (text: strin
       const includeAll = compilePatterns(rule.includeAll);
       if (includeAny.length + includeAll.length === 0) throw new Error(`品牌规则 ${rule.id} 缺少包含条件`);
       return {
+        id: rule.id,
         group: rule.group as ProductGroup,
         includeAny,
         includeAll,
@@ -70,17 +72,24 @@ export function createBrandClassifier(rules: readonly BrandRule[]): (text: strin
       };
     });
 
-  return (input) => {
+  return function* (input: string) {
     const text = normalizeMatchText(input);
     for (const rule of compiled) {
       if (rule.excludeAny.some((pattern) => pattern.test(text))) continue;
       if (rule.includeAny.length > 0 && !rule.includeAny.some((pattern) => pattern.test(text))) continue;
       if (!rule.includeAll.every((pattern) => pattern.test(text))) continue;
-      return rule.group;
+      yield { group: rule.group, ruleId: rule.id };
     }
-    return undefined;
   };
 }
 
+export function createBrandClassifier(rules: readonly BrandRule[]): (text: string) => ProductGroup | undefined {
+  const match = createBrandMatcher(rules);
+  return text => match(text).next().value?.group;
+}
+
 /** 部署时编译默认规则，所有请求复用只读匹配器。 */
-export const classifyBrand = createBrandClassifier(configuredRules);
+export const matchBrandRules = createBrandMatcher(configuredRules);
+export function classifyBrand(text: string): ProductGroup | undefined {
+  return matchBrandRules(text).next().value?.group;
+}

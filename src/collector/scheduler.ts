@@ -11,6 +11,7 @@ import { market16688Adapter } from "./adapters/market16688Adapter";
 import { confirmMissingMarket16688Offers, isMarket16688OfferKey, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
 import { normalizeDescription } from "./adapters/fetcher";
 import { clearShopOffers, persistShopSnapshot, rebuildProductGroups } from "./etl/hashAndDiff";
+import { createProductDetailBudget } from "./etl/productDetails";
 import { INITIAL_SHOPS } from "./seedShops";
 
 const MARKET16688_SERVER_PAGE_SIZE = 3;
@@ -160,6 +161,7 @@ export async function runSyncBatch(
 
   const { results: dueShops } = await shopsQuery.all<ShopRecord>();
   const targets = dueShops || [];
+  const detailBudget = createProductDetailBudget();
 
   const outcomes: SyncShopOutcome[] = [];
   let skippedUnchanged = 0;
@@ -211,6 +213,7 @@ export async function runSyncBatch(
       const res = await persistShopSnapshot(env.DB, shop, snapshot, new Date().toISOString(), {
         hasDescriptionColumn: cols.description,
         observedItemKeys,
+        productDetailBudget: detailBudget,
       });
 
       if (verification?.interrupted) {
@@ -326,6 +329,7 @@ export async function ingestPushedSnapshots(
   const cols = await getShopColumnCapabilities(env.DB);
   await ensureSeedShops(env.DB, cols);
   const nowIso = new Date().toISOString();
+  const detailBudget = createProductDetailBudget();
 
   const outcomes: SyncShopOutcome[] = [];
   let skippedUnchanged = 0;
@@ -446,6 +450,7 @@ export async function ingestPushedSnapshots(
     const res = await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
       hasDescriptionColumn: cols.description,
       observedItemKeys,
+      productDetailBudget: detailBudget,
     });
     const activeAdapter = shop.adapter_type === "manual" || shop.adapter_type === "ka123_api"
       ? shop.adapter_type

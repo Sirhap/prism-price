@@ -9,11 +9,12 @@ import type {
 import { normalizeDescription } from "../adapters/fetcher";
 import { hasShopDescriptionColumn } from "../shopSystems";
 import { calculateMedian, isNonSalePlaceholderItem, normalizeOffer } from "./cleaner";
+import { prepareProductDetails, type ProductDetailBudget } from "./productDetails";
 import { observeZeroStock, stockWarningDay } from "./stockObservations";
 
 const snapshotBrandRules: readonly BrandRule[] = brandRules;
 
-export const SNAPSHOT_NORMALIZATION_VERSION = 11;
+export const SNAPSHOT_NORMALIZATION_VERSION = 12;
 
 /**
  * 计算店铺快照的 SHA-256 摘要（使用原生 Web Crypto，CPU 耗时极低）
@@ -302,6 +303,7 @@ export interface PersistSnapshotOptions {
   hasDescriptionColumn?: boolean;
   /** Partial snapshots may include carried-forward offers; those are not stock observations. */
   observedItemKeys?: ReadonlySet<string>;
+  productDetailBudget?: ProductDetailBudget;
 }
 
 /**
@@ -355,7 +357,12 @@ export async function persistShopSnapshot(
   }
   const descriptionChanged = shouldWriteDescription && nextDescription !== previousDescription;
 
-  if (shop.content_hash && shop.content_hash === newHash) {
+  const unchanged = shop.content_hash === newHash;
+  const details = options?.productDetailBudget && await prepareProductDetails(db, snapshot.items, {
+    budget: options.productDetailBudget, shopId: shop.id, shopUrl: shop.shop_url, nowIso,
+    normalizationVersion: SNAPSHOT_NORMALIZATION_VERSION, unchanged, observedKeys,
+  });
+  if (unchanged && !details?.changed) {
     const observed = await observeZeroStock(db, zeroStockOfferIds, nowIso);
     const stockWrites = observed.writes + await rebuildProductGroups(db, [...new Set(observed.groups)], nowIso);
     const shopUpdate = db.prepare(`UPDATE shops SET ${descriptionChanged ? "description = ?, " : ""}${fullSyncSql}
@@ -363,10 +370,11 @@ export async function persistShopSnapshot(
       ${descriptionChanged ? ", updated_at = ?" : ""} WHERE id = ?`)
       .bind(...(descriptionChanged ? [nextDescription] : []), ...(fullSyncAt ? [fullSyncAt] : []),
         nowIso, nextSyncAt, ...(descriptionChanged ? [nowIso] : []), shop.id);
-    let observationWrites = 0;
-    if (partialObservation) {
-      const [observations] = await db.batch([partialObservation, shopUpdate]);
-      observationWrites = observations.meta.rows_written;
+    let extraWrites = 0;
+    const observations = [...(details?.writes ?? []), ...(partialObservation ? [partialObservation] : [])];
+    if (observations.length) {
+      const results = await db.batch([...observations, shopUpdate]);
+      extraWrites = results.slice(0, -1).reduce((sum, result) => sum + result.meta.rows_written, 0);
     } else {
       await shopUpdate.run();
     }
@@ -375,7 +383,7 @@ export async function persistShopSnapshot(
       status: "unchanged",
       contentHash: newHash,
       itemCount: snapshot.items.length,
-      estimatedWrites: 1 + observationWrites + stockWrites,
+      estimatedWrites: 1 + extraWrites + stockWrites,
       descriptionUpdated: descriptionChanged,
     };
   }
@@ -383,7 +391,7 @@ export async function persistShopSnapshot(
   // 发生变化：执行完整清洗与增量替换（入库前兜底剔除测试/补差价等占位条目）
   const normalizedOffers = snapshot.items
     .filter((item) => !isNonSalePlaceholderItem(item.rawName, item.shopCategory, item.price))
-    .map((item) => normalizeOffer(shop.id, item, nowIso));
+    .map((item) => normalizeOffer(shop.id, item, nowIso, details?.classifications.get(item.itemKey)));
   const summaryJson = buildProductSummaryJson(normalizedOffers);
 
   // 读取已有报价一次，按所有持久字段比较；保留未变化行的 updated_at。
@@ -464,6 +472,7 @@ export async function persistShopSnapshot(
     );
   }
 
+  if (details) batchStmts.push(...details.writes);
   if (partialObservation) batchStmts.push(partialObservation);
 
   // 所有报价写入完成后再更新店铺主记录（绝不覆写 created_at）及当日观察快照
