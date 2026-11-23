@@ -188,7 +188,7 @@ function appendVary(headers: Headers, value: string): void {
  * 为静态前端页面附加按 Cookie/IP 隔离的缓存头与边缘初始语言标记；
  * 当判定为英文访问时，同步改写 <html lang>、元信息并注入防闪烁守卫。
  */
-export function applyHtmlLocale(response: Response, pathname: string, resolved: ResolvedLocale): Response {
+export function applyHtmlLocale(response: Response, pathname: string, resolved: ResolvedLocale, preload?: string): Response {
   const routeKey = canonicalHtmlPath(pathname);
   if (!routeKey) return response;
 
@@ -200,6 +200,7 @@ export function applyHtmlLocale(response: Response, pathname: string, resolved: 
   const headers = new Headers(response.headers);
   appendVary(headers, "Cookie, CF-IPCountry, Accept-Language");
   headers.set("Cache-Control", "private, no-cache");
+  if (preload) headers.append("Link", preload);
 
   const meta = EN_PAGE_META[routeKey];
   const baseResponse = new Response(response.body, { status: response.status, headers });

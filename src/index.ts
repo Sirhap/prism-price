@@ -14,6 +14,24 @@ import { checkCrawlerAccess } from "./routes/crawlerAccess";
 import { handleSponsorPublic } from "./routes/sponsors";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
+const HOME_ASSET_PRELOADS = [
+  '</styles.css?v=sync-timestamps>; rel=preload; as=style',
+  '</i18n.js?v=sponsor-code-guide>; rel=preload; as=script',
+  '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
+  '</app.js?v=sync-timestamps>; rel=preload; as=script',
+].join(", ");
+
+/** Only preload list requests that match the exact unfiltered URL built by app.js. */
+function homePreloads(url: URL): string {
+  for (const key of url.searchParams.keys()) {
+    if (key !== "lang" && key !== "mode" && !key.startsWith("utm_")) return HOME_ASSET_PRELOADS;
+  }
+  const data = url.searchParams.get("mode") === "shop"
+    ? "/api/shops?page=1&pageSize=6"
+    : "/api/products?sort=relevance&page=1&pageSize=6";
+  return `${HOME_ASSET_PRELOADS}, <${data}>; rel=preload; as=fetch; crossorigin=anonymous`;
+}
+
 export default {
   /**
    * HTTP 请求入口：接管 /api/*、/catalog/*、动态 Sitemap 与 llms.txt，其余静态资源由 Workers Static Assets 分发
@@ -84,8 +102,9 @@ export default {
       }
       const assetResponse = await env.ASSETS.fetch(request);
       if ((request.method === "GET" || request.method === "HEAD") && isLocalizedHtmlPath(url.pathname)) {
-        const resolved = await resolveRequestLocale(request, { lookupPublicIp: true });
-        return applyHtmlLocale(assetResponse, url.pathname, resolved);
+        const resolved = await resolveRequestLocale(request, { lookupPublicIp: false });
+        const preload = url.pathname === "/" && request.method === "GET" ? homePreloads(url) : undefined;
+        return applyHtmlLocale(assetResponse, url.pathname, resolved, preload);
       }
       return assetResponse;
     } catch (error) {

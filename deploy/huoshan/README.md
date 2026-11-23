@@ -6,7 +6,7 @@
 Miniflare 是 Cloudflare 的开发/测试工具，本部署是自托管兼容方案，没有 Cloudflare 托管 D1 的高可用和 Time Travel 保证。
 
 - 安装目录：`/opt/ldxp-cf-demo/current`，实际版本以 `readlink -f /opt/ldxp-cf-demo/current` 为准，源码放在 `releases/` 独立目录。
-- 数据：`/var/lib/ldxp-cf-demo/d1`；缓存：同目录 `cache`。
+- 数据：`/var/lib/ldxp-cf-demo/d1`。火山部署禁用 Miniflare 的磁盘 Cache API，应用查询和响应共用进程内缓存，最多 512 项、约 24 MiB。重启后按请求预热。旧版本遗留的 `/var/lib/ldxp-cf-demo/cache` 可以在新版确认运行后单独安排清理。
 - 密钥与服务器配置：`/etc/ldxp-cf-demo.env`，仅 root 可读，由 systemd 注入；不要把密钥放到网站静态目录。
 - 正式域名：`https://parity.sirhao.top`，由 Cloudflare 代理到服务器 OpenResty，再转发至本机 8787。
 - OpenResty 配置：`/opt/1panel/www/conf.d/parity.conf`；Origin CA 证书位于 `/opt/1panel/www/sites/parity/ssl`，私钥权限 0600，证书有效至 2041-11-08。
@@ -46,6 +46,8 @@ bash deploy/huoshan/deploy.sh --ref HEAD --apply --expect <当前版本目录名
 脚本通过 `huoshan-server` 上传并验证发布包，在服务器上锁定发布、核对上一版本、备份并校验 SQLite，再切换 `current` 并重启服务。它会验证源站和正式域名的首页、后台静态资源与公共 API。验证失败时自动切回上一应用版本。数据库备份保存于 `/opt/ldxp-cf-demo/backups/<新版本>/pre-deploy.sqlite`。
 
 数据库迁移、运行依赖升级及系统配置变更单独执行。同步时间功能需要先备份生产 SQLite，再在事务中应用 `0023_offer_sync_timestamps.sql`。旧报价在下一次成功观察后开始显示同步时间。常规发布复用上一版本的运行依赖，并校验依赖清单一致。清理历史版本时，保留 `current`、回退版本及仍被引用的 `node_modules` 所在目录。
+
+切换内存缓存后，用正式域名重复请求同一分页商品或店铺查询，确认 HTTP 200 和第二次请求的 `X-Prism-Cache: HIT`，再检查磁盘可用空间和 `/var/lib/ldxp-cf-demo/cache` 的增长情况。清理旧缓存前确认当前 release 已停用磁盘 Cache API。回滚旧版时 Miniflare 可以重建 Cache API 数据。店铺和报价由 D1 SQLite 读取。
 
 上线商品详情补查前，在线备份并校验 SQLite，再在事务中应用 `0024_offer_classification_details.sql`。该迁移只新建报价分类证据缓存表。商品在后续成功同步时按新规则归类，已有详情判定随报价删除而清理。
 

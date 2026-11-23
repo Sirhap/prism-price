@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { describe, expect, it, vi } from "vitest";
-import { PUBLIC_FRESH_SECONDS, PUBLIC_RETAIN_SECONDS, publicCacheKey, withPublicResponseCache, type ResponseStore } from "../src/cache/publicResponseCache";
+import { PUBLIC_FRESH_SECONDS, PUBLIC_RETAIN_SECONDS, publicCacheKey, withPublicResponseCache } from "../src/cache/publicResponseCache";
+import type { ResponseStore } from "../src/cache/responseStore";
 
 class MemoryStore implements ResponseStore {
   readonly values = new Map<string, Response>();
@@ -88,6 +89,24 @@ describe("公开结果缓存与配额降级", () => {
     expect(publicCacheKey(request("?minPrice=20&maxPrice=10")).url).toBe(publicCacheKey(request("?maxPrice=20&minPrice=10")).url);
     expect(publicCacheKey(new Request("https://cache-fixture.example/api/shops")).url)
       .not.toBe(publicCacheKey(new Request("https://cache-fixture.example/api/shops?page=1")).url);
+  });
+  it("分页店铺结果复用30秒，仍按筛选隔离并绕过内部同步清单", async () => {
+    const store = new MemoryStore();
+    let time = 0;
+    const now = () => time;
+    const shops = (query: string) => new Request(`https://cache-fixture.example/api/shops?${query}`);
+    const load = vi.fn(async () => fresh("shops"));
+    const first = await withPublicResponseCache(shops("page=1"), load, store, now);
+    expect(first.headers.get("Cache-Control")).toBe("public, max-age=30");
+    time = 20_000;
+    const hit = await withPublicResponseCache(shops("page=1"), load, store, now);
+    expect(hit.headers.get("X-D1-Queries")).toBe("0");
+    expect(hit.headers.get("Cache-Control")).toBe("public, max-age=10");
+    expect((await withPublicResponseCache(shops("page=1&systemType=ldxp"), load, store, now)).headers.get("X-Prism-Cache")).toBe("MISS");
+    expect((await withPublicResponseCache(shops("page=1&fields=sync"), load, store, now)).headers.has("X-Prism-Cache")).toBe(false);
+    time = 31_000;
+    expect((await withPublicResponseCache(shops("page=1"), load, store, now)).headers.get("X-Prism-Cache")).toBe("MISS");
+    expect(load).toHaveBeenCalledTimes(4);
   });
 });
 

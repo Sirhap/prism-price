@@ -1,13 +1,11 @@
 import { normalizeProductQuery, normalizeShopSort, positiveInteger } from "../routes/search";
 import { normalizeShopSystem } from "../collector/shopSystems";
+import { responseStore, type ResponseStore } from "./responseStore";
 
 export const PUBLIC_FRESH_SECONDS = 600;
 export const PUBLIC_RETAIN_SECONDS = 86400;
+const SHOP_LIST_FRESH_SECONDS = 30;
 const PREFIX = "/__prism_public_cache__/v2";
-export interface ResponseStore {
-  match(request: Request): Promise<Response | undefined>;
-  put(request: Request, response: Response): Promise<void>;
-}
 
 const SITEMAP_PATHS = new Set(["/sitemap.xml", "/sitemap-shops.xml", "/sitemap-products.xml"]);
 const LLMS_PATHS = new Set(["/llms.txt", "/llms-full.txt"]);
@@ -17,7 +15,9 @@ export function isPublicCacheRequest(request: Request): boolean {
   return request.method === "GET" && !request.headers.has("Authorization") &&
     !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
     url.searchParams.get("fields")?.trim() !== "sync" &&
-    (url.pathname === "/catalog" || url.pathname.startsWith("/catalog/") || SITEMAP_PATHS.has(url.pathname) || LLMS_PATHS.has(url.pathname) || url.pathname === "/api/products" || /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
+    (url.pathname === "/catalog" || url.pathname.startsWith("/catalog/") || SITEMAP_PATHS.has(url.pathname) || LLMS_PATHS.has(url.pathname) ||
+      url.pathname === "/api/products" || (url.pathname === "/api/shops" && url.searchParams.has("page")) ||
+      /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
 }
 
 function isCatalogCursorListPath(pathname: string): boolean {
@@ -83,30 +83,32 @@ export function quotaUnavailable(now = Date.now(), noDatabaseAttempt = false): R
   });
 }
 
-function cachedResponse(response: Response, stale: boolean, ageMs: number, originAttempted = false): Response {
+function cachedResponse(response: Response, maxAge: number, stale = false, originAttempted = false): Response {
   const headers = new Headers(response.headers);
   headers.delete("X-Prism-Stored-At");
   headers.set("X-Prism-Cache", stale ? "STALE" : "HIT");
   headers.set("X-D1-Rows-Read", originAttempted ? "unknown" : "0");
   headers.set("X-D1-Queries", originAttempted ? "unknown" : "0");
-  headers.set("Cache-Control", stale ? "no-store" : `public, max-age=${Math.max(0, Math.min(60, PUBLIC_FRESH_SECONDS - Math.floor(ageMs / 1000)))}`);
+  headers.set("Cache-Control", stale ? "no-store" : `public, max-age=${maxAge}`);
   if (stale) headers.set("X-Data-Stale", "1");
   return new Response(response.body, { status: response.status, headers });
 }
 
 /**
- * 公开结果新鲜10分钟、成功副本保留24小时。限额触发后在当前节点熔断至UTC零点；
+ * 公开结果新鲜10分钟（分页店铺列表30秒）、成功副本最长保留24小时。限额触发后在当前节点熔断至UTC零点；
  * 有匹配副本则回退，没有副本返回明确503，不把其它搜索结果冒充当前结果。
  * Cache API按节点缓存且可能被淘汰，不是持久备份。
  */
 export async function withPublicResponseCache(
   request: Request,
   load: () => Promise<Response>,
-  store: ResponseStore = caches.default,
+  store: ResponseStore = responseStore(),
   now: () => number = Date.now,
 ): Promise<Response> {
   if (!isPublicCacheRequest(request)) return load();
   const key = publicCacheKey(request);
+  const freshSeconds = new URL(request.url).pathname === "/api/shops" ? SHOP_LIST_FRESH_SECONDS : PUBLIC_FRESH_SECONDS;
+  const browserMaxAge = Math.min(60, freshSeconds);
   const time = now();
   const blockUrl = new URL(PREFIX + "/quota/" + new Date(time).toISOString().slice(0, 10), request.url);
   const blockKey = new Request(blockUrl);
@@ -122,12 +124,14 @@ export async function withPublicResponseCache(
   const storedAt = saved ? Number(saved.headers.get("X-Prism-Stored-At")) : NaN;
   const age = time - storedAt;
   if (!Number.isFinite(age) || age < 0 || age > PUBLIC_RETAIN_SECONDS * 1000) saved = undefined;
-  if (saved && age <= PUBLIC_FRESH_SECONDS * 1000) return cachedResponse(saved, false, age);
-  if (await match(blockKey)) return saved ? cachedResponse(saved, true, age) : quotaUnavailable(time, true);
+  if (saved && age <= freshSeconds * 1000) {
+    return cachedResponse(saved, Math.min(browserMaxAge, freshSeconds - Math.floor(age / 1000)));
+  }
+  if (await match(blockKey)) return saved ? cachedResponse(saved, 0, true) : quotaUnavailable(time, true);
 
   try {
     const response = await load();
-    if (response.status >= 500 && saved) return cachedResponse(saved, true, age, true);
+    if (response.status >= 500 && saved) return cachedResponse(saved, 0, true, true);
     const publicResponse = response.ok && response.headers.get("Cache-Control")?.startsWith("public,") && !response.headers.has("Set-Cookie");
     if (publicResponse) {
       const stored = response.clone();
@@ -140,18 +144,18 @@ export async function withPublicResponseCache(
     }
     const headers = new Headers(response.headers);
     headers.set("X-Prism-Cache", publicResponse ? "MISS" : "BYPASS");
-    if (publicResponse) headers.set("Cache-Control", "public, max-age=60");
+    if (publicResponse) headers.set("Cache-Control", `public, max-age=${browserMaxAge}`);
     else if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-store");
     return new Response(response.body, { status: response.status, headers });
   } catch (error) {
     if (isDailyD1Limit(error)) {
       await put(blockKey, new Response("quota", { headers: { "Cache-Control": `public, max-age=${Math.max(1, Math.ceil((nextReset(time) - time) / 1000))}` } }));
       console.warn(JSON.stringify({ event: "d1_daily_limit_circuit_open", path: new URL(request.url).pathname }));
-      return saved ? cachedResponse(saved, true, age, true) : quotaUnavailable(time);
+      return saved ? cachedResponse(saved, 0, true, true) : quotaUnavailable(time);
     }
     if (saved) {
       console.warn(JSON.stringify({ event: "public_stale_on_origin_error", path: new URL(request.url).pathname }));
-      return cachedResponse(saved, true, age, true);
+      return cachedResponse(saved, 0, true, true);
     }
     throw error;
   }

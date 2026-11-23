@@ -1,5 +1,9 @@
 import worker from "../../src/index";
+import { configureLocalResponseStore } from "../../src/cache/responseStore";
 import { runSyncBatch } from "../../src/collector/scheduler";
+import { createMemoryCache } from "./memory-cache";
+
+configureLocalResponseStore(createMemoryCache());
 
 type ServerEnv = Env & { SERVER_CRON_SECRET: string };
 

@@ -16,6 +16,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({
   resourcePersistencePath: state,
   workers: [{
     name: "ldxp",
+    cacheAPI: false,
     modules: true,
     scriptPath: resolve(import.meta.dirname, "worker.mjs"),
     compatibilityDate: "2026-08-22",

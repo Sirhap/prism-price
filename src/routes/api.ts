@@ -328,10 +328,13 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
         return (results || []).map(row=>row.id);
       },60);
       if (topShops.length) {
-        const ids = JSON.stringify(topShops).replace(/'/g,"''");
-        const bonus = `COALESCE((SELECT MAX(4.0 / (1.0 + CAST(recommended.key AS INTEGER) * 0.1)) FROM json_each(CASE WHEN json_valid(offers_preview_json) THEN offers_preview_json ELSE '[]' END) AS preview JOIN json_each('${ids}') AS recommended ON json_extract(preview.value,'$.shopId')=recommended.value),0)`;
+        // Match each preview offer once instead of joining it against all 20 ranked shops.
+        const scores = topShops.map((_, rank) => `WHEN ? THEN 4.0 / (1.0 + ${rank} * 0.1)`).join(" ");
+        const bonus = `COALESCE((SELECT MAX(CASE json_extract(preview.value,'$.shopId') ${scores} END)
+          FROM json_each(CASE WHEN json_valid(offers_preview_json) THEN offers_preview_json ELSE '[]' END) AS preview),0)`;
         const popularity = `(10.0 * shop_count / (shop_count + 10.0))`;
         orderSql = orderSql.replace('shop_count DESC, min_price ASC', `(${popularity} + ${bonus}) DESC, shop_count DESC, min_price ASC`);
+        orderParams.push(...topShops);
         recommendationKey = `${config.revision}:${slot}`;
       }
     } catch (error) { if (!/no such table/i.test(String(error))) throw error; }

@@ -22,6 +22,24 @@ function extractJsBlock(source: string, marker: string): string {
 }
 
 describe("前端静态资源与前后端契约对齐验证", () => {
+  it("首页提前加载实际使用的样式和默认列表，筛选链接不额外拉取默认数据", async () => {
+    const home = await SELF.fetch("http://localhost/?lang=zh");
+    const html = await home.text();
+    const stylesheet = html.match(/rel="stylesheet" href="([^"]+)"/)?.[1];
+    expect(stylesheet).toBeTruthy();
+    expect(home.headers.get("Link")).toContain(`<${stylesheet}>; rel=preload; as=style`);
+    const initialScripts = [...html.split("</head>")[0].matchAll(/<script src="([^"]+)" defer>/g)];
+    expect(initialScripts).toHaveLength(3);
+    for (const [, script] of initialScripts) {
+      expect(home.headers.get("Link")).toContain(`<${script}>; rel=preload; as=script`);
+    }
+    expect(home.headers.get("Link")).toContain("</api/products?sort=relevance&page=1&pageSize=6>; rel=preload; as=fetch; crossorigin=anonymous");
+    const shop = await SELF.fetch("http://localhost/?mode=shop");
+    expect(shop.headers.get("Link")).toContain("</api/shops?page=1&pageSize=6>");
+    const filtered = await SELF.fetch("http://localhost/?group=ChatGPT");
+    expect(filtered.headers.get("Link")).not.toContain("as=fetch");
+  });
+
   it("index.html 应提供精简后的排序、店铺在售过滤开关及风险提示弹窗容器", async () => {
     const res = await SELF.fetch("http://localhost/");
     expect(res.status).toBe(200);
