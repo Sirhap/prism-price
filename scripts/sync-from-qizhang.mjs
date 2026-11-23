@@ -426,6 +426,8 @@ async function main() {
   while (true) {
     const existingRes = await fetch(`${apiBase}/api/shops?page=${page}&pageSize=100`, {
       signal: AbortSignal.timeout(15000),
+      redirect: "error",
+      headers: { Authorization: `Bearer ${adminSecret}` },
     });
     if (!existingRes.ok) break;
     const existingJson = await existingRes.json();

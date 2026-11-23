@@ -8,7 +8,7 @@ import {
 import { withPublicResponseCache, isDailyD1Limit, quotaUnavailable } from "./cache/publicResponseCache";
 import { observeD1 } from "./observability/d1Metrics";
 import { runSyncBatch } from "./collector/scheduler";
-import { handleApiRequest } from "./routes/api";
+import { handleApiRequest, isSyncCatalogRead, verifyAdminSecret } from "./routes/api";
 import { handleAdminRoute } from "./routes/admin";
 import { checkCrawlerAccess } from "./routes/crawlerAccess";
 import { handleSponsorPublic } from "./routes/sponsors";
@@ -40,7 +40,9 @@ export default {
     const url = new URL(request.url);
 
     try {
-      const crawlerResponse = await checkCrawlerAccess(request, url.pathname, env.DB, ctx);
+      const syncReadWithCredentials = isSyncCatalogRead(request, url.pathname) && /^Bearer\s+\S/i.test(request.headers.get("Authorization") || "");
+      const crawlerResponse = await checkCrawlerAccess(request, url.pathname, env.DB, ctx,
+        syncReadWithCredentials ? async () => (await verifyAdminSecret(request, env)).ok : undefined);
       if (crawlerResponse) return crawlerResponse;
       if (url.pathname === '/go/open-store') return (await handleAdminRoute(request, env)) ?? new Response('Not found', {status:404});
       if (url.pathname === '/admin') return Response.redirect(new URL('/admin/', url).href, 302);
@@ -90,6 +92,7 @@ export default {
             const response = await handleApiRequest(request, { ...env, DB: observed.db });
             complete = true;
             const headers = new Headers(response.headers);
+            if (syncReadWithCredentials) headers.set("Cache-Control", "private, no-store");
             headers.set("X-D1-Rows-Read", String(observed.cost.rowsRead));
             headers.set("X-D1-Queries", String(observed.cost.queries));
             return new Response(response.body, { status: response.status, headers });

@@ -708,6 +708,8 @@ async function main() {
   console.log(`[push-sync] 拉取待推送店铺清单: ${apiBase}/api/shops?fields=sync`);
   const shopsRes = await fetch(`${apiBase}/api/shops?fields=sync`, {
     signal: AbortSignal.timeout(15000),
+    redirect: "error",
+    headers: { Authorization: `Bearer ${ingestSecret}` },
   });
   if (!shopsRes.ok) {
     throw new Error(`获取店铺列表失败: HTTP ${shopsRes.status}`);

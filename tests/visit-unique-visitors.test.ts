@@ -269,4 +269,51 @@ describe('流量访客 IP 去重统计', () => {
       expect.objectContaining({ ip: otherIp, path: '/catalog/', blocked: 0, userAgent: 'Mozilla/5.0 (compatible; OAI-SearchBot/1.0)' }),
     ]));
   });
+
+  it('仅已鉴权的同步读取可通过爬虫规则和共享 IP 黑名单', async () => {
+    const ip = '192.0.2.130';
+    const secret = 'test-ingest-secret';
+    const shopId = 'crawler-sync-fixture';
+    const shopUrl = `https://catfk.com/shop/${shopId}`;
+    const list = '/api/shops?fields=sync';
+    const detail = `/api/shops/${shopId}/products`;
+    const read = (path: string, token?: string, userAgent = 'curl/8.9.1', method = 'GET') => SELF.fetch(`${origin}${path}`, {
+      method, headers: { 'CF-Connecting-IP': ip, 'User-Agent': userAgent, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    const ingest = await SELF.fetch(`${origin}/api/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip, 'User-Agent': 'curl/8.9.1', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({ shopId, shopUrl, snapshot: { shopName: '同步测试店铺', canonicalUrl: shopUrl, items: [] } }),
+    });
+    expect(ingest.status).toBe(200);
+
+    expect((await read(list)).status).toBe(500);
+    expect((await read(list, 'wrong-secret')).status).toBe(500);
+    expect((await read(list, secret)).status).toBe(200);
+
+    await env.DB.prepare('INSERT INTO crawler_blocked_ips(ip, blocked_at) VALUES (?, ?)').bind(ip, new Date().toISOString()).run();
+    try {
+      expect((await read(detail, undefined, 'node')).status).toBe(500);
+      const response = await read(detail, secret, 'node');
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(await response.json()).toMatchObject({ shop: { id: shopId, productItems: [] } });
+      expect((await read('/api/shops?page=1&pageSize=100', secret)).status).toBe(200);
+      expect((await read('/api/products', secret)).status).toBe(500);
+      expect((await read(list, secret, 'curl/8.9.1', 'HEAD')).status).toBe(500);
+
+      const nextSecret = 'crawler-sync-rotated-secret';
+      const rotated = await SELF.fetch(`${origin}/api/control/ingest-secret`, {
+        method: 'POST', headers: { origin, cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: nextSecret }),
+      });
+      expect(rotated.status).toBe(200);
+      expect((await read(list, secret)).status).toBe(500);
+      expect((await read(list, nextSecret)).status).toBe(200);
+    } finally {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM crawler_blocked_ips WHERE ip = ?').bind(ip),
+        env.DB.prepare('UPDATE admin_settings SET ingest_hash = NULL WHERE id = 1'),
+      ]);
+    }
+  });
 });

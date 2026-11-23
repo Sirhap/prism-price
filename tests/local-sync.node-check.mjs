@@ -1,8 +1,11 @@
+import { execFile } from 'node:child_process';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { runSync, parseArgs, loadConfig, shardForShop, createRequestGate } from '../local-sync/sync.mjs';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
 
@@ -59,9 +62,14 @@ test('严格限制参数、店铺范围和远程明文地址', async () => {
 test('本地 HTTP 接口实际收发同步清单与鉴权快照', async () => {
   const http = await import('node:http');
   const received = [];
+  const catalogAuth = [];
   const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    if (req.method === 'GET') return res.end(JSON.stringify({ shops: [shops[0]], descriptionPersistence: true }));
+    if (req.method === 'GET') {
+      catalogAuth.push(req.headers.authorization);
+      const targets = catalogAuth.length === 1 ? [] : [shops[0]];
+      return res.end(JSON.stringify({ shops: targets, descriptionPersistence: true }));
+    }
     let body = ''; for await (const chunk of req) body += chunk;
     received.push({ auth: req.headers.authorization, body: JSON.parse(body) });
     res.end(JSON.stringify(result('a')));
@@ -69,7 +77,14 @@ test('本地 HTTP 接口实际收发同步清单与鉴权快照', async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-http-')), 'state.json');
-    const stats = await runSync(options(checkpoint, { apiBase: `http://127.0.0.1:${server.address().port}`, apply: true, secret: 'test-secret' }), { collect: async () => snapshot });
+    const apiBase = `http://127.0.0.1:${server.address().port}`;
+    const cli = fileURLToPath(new URL('../scripts/local-sync.mjs', import.meta.url));
+    await promisify(execFile)(process.execPath, [cli], {
+      env: { ...process.env, API_BASE: apiBase, INGEST_SECRET: 'preview-secret' },
+    });
+    assert.deepEqual(received, []);
+    const stats = await runSync(options(checkpoint, { apiBase, apply: true, secret: 'test-secret' }), { collect: async () => snapshot });
+    assert.deepEqual(catalogAuth, ['Bearer preview-secret', 'Bearer test-secret']);
     assert.equal(stats.pushed, 1); assert.equal(received[0].auth, 'Bearer test-secret'); assert.equal(received[0].body.shops[0].shopId, 'a');
     assert.equal(fs.readFileSync(checkpoint, 'utf8').includes('test-secret'), false);
   } finally { await new Promise((resolve) => server.close(resolve)); }

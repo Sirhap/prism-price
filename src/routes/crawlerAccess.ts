@@ -44,8 +44,14 @@ function isPublicContent(path: string): boolean {
     /^\/llms(?:-full)?\.txt$/.test(path) || /^\/api\/(?:products|shops(?:\/.*)?|sponsors(?:\/.*)?|visit|locale|public-settings|shop-favorite)$/.test(path);
 }
 
-/** 只拦公开内容；后台和同步接口不经过访客黑名单。客户端 IP 必须由可信入口提供。 */
-export async function checkCrawlerAccess(request: Request, path: string, db: D1Database, ctx: ExecutionContext): Promise<Response | null> {
+/** 只拦公开内容，命中规则时再验证可使用同步豁免的请求。客户端 IP 必须由可信入口提供。 */
+export async function checkCrawlerAccess(
+  request: Request,
+  path: string,
+  db: D1Database,
+  ctx: ExecutionContext,
+  verifySyncRead?: () => Promise<boolean>,
+): Promise<Response | null> {
   if (!isPublicContent(path)) return null;
   const ip = normalizeCrawlerIp(request.headers.get('CF-Connecting-IP') || '');
   const userAgent = (request.headers.get('User-Agent') || '').trim();
@@ -61,6 +67,8 @@ export async function checkCrawlerAccess(request: Request, path: string, db: D1D
       }
     }
   }
+
+  if (blocked && verifySyncRead && await verifySyncRead()) return null;
 
   if (blocked || (isRead && isCrawlerAgent(userAgent))) {
     const now = Date.now();

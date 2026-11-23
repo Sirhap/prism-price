@@ -135,7 +135,8 @@ export async function runSync(options, deps = {}) {
   const remove = deps.remove || ((shop) => jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${options.secret}` } }));
   const push = deps.push || ((entry) => jsonFetch(`${base}/api/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` }, body: JSON.stringify({ shops: [entry] }) }));
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
-  const data = await load(`${base}/api/shops?fields=sync`);
+  const readHeaders = options.secret ? { Authorization: `Bearer ${options.secret}` } : undefined;
+  const data = await load(`${base}/api/shops?fields=sync`, { headers: readHeaders });
   if (!Array.isArray(data.shops)) throw new Error('同步清单格式不正确');
   if (options.only16688 && (!data.market16688RemovalSupport || !data.partialSnapshotSupport)) {
     throw new Error('目标站不支持 16688 商品下架确认');
@@ -188,8 +189,7 @@ export async function runSync(options, deps = {}) {
         let confirmedMissingOffers = [];
         let detailCheckInterrupted = false;
         if (is16688(shop) && data.market16688RemovalSupport && data.partialSnapshotSupport) {
-          const headers = options.apply && options.secret ? { Authorization: `Bearer ${options.secret}` } : undefined;
-          const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store', headers });
+          const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store', headers: readHeaders });
           if (stored?.id !== shop.id || !Array.isArray(stored.productItems)) throw new Error('目标站已有报价清单无效');
           const prefix = `${shop.id}:`;
           const previous = stored.productItems
@@ -303,7 +303,7 @@ export async function main() {
     return;
   }
   const config = loadConfig();
-  const result = await runSync({ ...options, apiBase: config.apiBase, intervalMinMs: config.intervalMinMs, intervalMaxMs: config.intervalMaxMs, secret: options.apply ? config.secret : '' });
+  const result = await runSync({ ...options, apiBase: config.apiBase, intervalMinMs: config.intervalMinMs, intervalMaxMs: config.intervalMaxMs, secret: config.secret });
   if (result.failed) process.exitCode = 1;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((error) => { console.error(`[local-sync] ${error.message}`); process.exitCode = 1; });

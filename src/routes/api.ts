@@ -154,7 +154,7 @@ function safeDecodeRouteParam(raw: string): string | null {
 /**
  * 使用 SHA-256 + timingSafeEqual 校验管理员/推送密钥，防止时序泄露与未授权写入
  */
-async function verifyAdminSecret(request: Request, env: Env): Promise<{ ok: boolean; status: number; message: string }> {
+export async function verifyAdminSecret(request: Request, env: Env): Promise<{ ok: boolean; status: number; message: string }> {
   const expected = env.INGEST_SECRET;
   let override: string | null = null;
   try { override = await getIngestHash(env.DB); } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
@@ -1494,6 +1494,13 @@ async function handleGetSyncLogs(env: Env): Promise<Response> {
   );
 }
 
+const SHOP_PRODUCTS_PATH = /^\/api\/shops\/([^/]+)\/products$/;
+
+/** 同步工具用这两个 GET 入口读取目标店铺及已有报价。 */
+export function isSyncCatalogRead(request: Request, pathname: string): boolean {
+  return request.method === "GET" && (pathname === "/api/shops" || SHOP_PRODUCTS_PATH.test(pathname));
+}
+
 /**
  * 路由总入口（处理所有 /api/* 动态请求）
  */
@@ -1541,7 +1548,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return handleGetShops(url, env);
   }
 
-  const shopDetailMatch = pathname.match(/^\/api\/shops\/([^/]+)\/products$/);
+  const shopDetailMatch = pathname.match(SHOP_PRODUCTS_PATH);
   if (request.method === "GET" && shopDetailMatch) {
     const shopId = safeDecodeRouteParam(shopDetailMatch[1]);
     if (!shopId) {
