@@ -11,6 +11,8 @@ SYNC_INTERVAL_MAX_MS=2000
 
 配置文件不应提交或分享。若不存在，可从 `config.example.env` 复制；环境变量优先，密钥为空时兼容项目根目录 `.dev.vars`。Node.js 需支持 JSON 模块导入（建议 Node 22 以上）。
 
+仅通过环境变量把 `API_BASE` 切换到另一域名、协议或端口时，预览会匿名读取，正式同步需显式提供新目标的 `INGEST_SECRET`。目标地址须使用 HTTPS，本机回环地址可用 HTTP 测试。
+
 ```bash
 npm run sync:local -- --shop=King                 # 仅预览
 npm run sync:local -- --shop=King --apply         # 同步一店

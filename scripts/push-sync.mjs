@@ -1,4 +1,5 @@
 import { computeSnapshotHash } from "./lib/snapshotHash.mjs";
+import { readSyncConfigFile, resolveSyncTarget } from "./lib/syncTarget.mjs";
 import {
   isIncompleteGoodsBatch,
   isNonSalePlaceholderItem,
@@ -43,22 +44,6 @@ const RESERVED_TG_SUBDOMAINS = new Set([
 ]);
 
 const URL_PATH_PREFIX_RE = /(?:https?:\/\/[^\s/]+(?:\/[^\s]*)?|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s]*)?)\/$/;
-
-/**
- * 读取本地 .dev.vars（若环境变量未显式传 INGEST_SECRET）
- */
-function loadIngestSecret() {
-  if (process.env.INGEST_SECRET) {
-    return process.env.INGEST_SECRET.trim();
-  }
-  const devVarsPath = path.resolve(import.meta.dirname, "../.dev.vars");
-  if (!fs.existsSync(devVarsPath)) {
-    return "";
-  }
-  const content = fs.readFileSync(devVarsPath, "utf8");
-  const match = content.match(/^INGEST_SECRET=(.+)$/m);
-  return match ? match[1].trim() : "";
-}
 
 /**
  * 规范化源站店铺简介：统一换行符并裁剪首尾空白，保留安全纯文本多行换行
@@ -694,8 +679,7 @@ async function pushBatchWithRetry(apiBase, ingestSecret, batch) {
 
 async function main() {
   const { importPath, concurrency, limit, offset, backfillDescription } = parseCliArgs(process.argv.slice(2));
-  const apiBase = (process.env.API_BASE || "https://parity.sirhao.top").replace(/\/+$/, "");
-  const ingestSecret = loadIngestSecret();
+  const { apiBase, secret: ingestSecret } = resolveSyncTarget(process.env, {}, readSyncConfigFile());
   if (!ingestSecret) {
     console.error("缺少 INGEST_SECRET（请通过环境变量传入或写入 .dev.vars）");
     process.exit(1);

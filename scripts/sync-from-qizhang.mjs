@@ -1,22 +1,5 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-
-/**
- * 读取推送/管理员密钥（优先环境变量 INGEST_SECRET，其次本地 .dev.vars）
- */
-function loadAdminSecret() {
-  if (process.env.INGEST_SECRET) {
-    return process.env.INGEST_SECRET.trim();
-  }
-  const devVarsPath = path.resolve(import.meta.dirname, "../.dev.vars");
-  if (!fs.existsSync(devVarsPath)) {
-    return "";
-  }
-  const content = fs.readFileSync(devVarsPath, "utf8");
-  const match = content.match(/^INGEST_SECRET=(.+)$/m);
-  return match ? match[1].trim() : "";
-}
+import { readSyncConfigFile, resolveSyncTarget } from "./lib/syncTarget.mjs";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -407,10 +390,9 @@ async function main() {
   const args = new Set(process.argv.slice(2));
   const syncProducts = args.has("--sync-products");
   const refreshExisting = args.has("--refresh-existing");
-  const apiBase = (process.env.API_BASE || "https://parity.sirhao.top").replace(/\/+$/, "");
+  const { apiBase, secret: adminSecret } = resolveSyncTarget(process.env, {}, readSyncConfigFile());
   const sourceUrl = process.env.UPSTREAM_SHOPS_URL || "https://ldxp.qizhang.org/api/shops";
   const upstreamOrigin = new URL(sourceUrl).origin;
-  const adminSecret = loadAdminSecret();
   if (!adminSecret) {
     console.error("缺少 INGEST_SECRET（请通过环境变量传入或写入 .dev.vars）");
     process.exit(1);
@@ -429,15 +411,20 @@ async function main() {
       redirect: "error",
       headers: { Authorization: `Bearer ${adminSecret}` },
     });
-    if (!existingRes.ok) break;
-    const existingJson = await existingRes.json();
-    for (const s of existingJson.shops || []) {
+    if (!existingRes.ok) {
+      throw new Error(`读取目标店铺清单第 ${page} 页失败：HTTP ${existingRes.status}`);
+    }
+    const existingJson = await existingRes.json().catch(() => null);
+    if (!Array.isArray(existingJson?.shops) || !Number.isSafeInteger(existingJson.totalPages) || existingJson.totalPages < 1) {
+      throw new Error(`目标店铺清单第 ${page} 页格式无效`);
+    }
+    for (const s of existingJson.shops) {
       usedIds.add(s.id);
       if (s.canonicalUrl) {
         existingByCanonical.set(s.canonicalUrl, s);
       }
     }
-    if (page >= (existingJson.totalPages || 1)) break;
+    if (page >= existingJson.totalPages) break;
     page += 1;
   }
 

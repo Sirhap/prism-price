@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
 import { MARKET16688_MISSING_LIMIT, confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
+import { normalizeSyncApiBase, readSyncConfigFile, resolveSyncTarget } from '../scripts/lib/syncTarget.mjs';
 import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
 const syncDir = path.dirname(fileURLToPath(import.meta.url));
@@ -43,33 +44,15 @@ export function parseArgs(args) {
   return result;
 }
 
-function readConfigFile(file) {
-  if (!fs.existsSync(file)) return {};
-  const result = {};
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*(API_BASE|INGEST_SECRET|SYNC_INTERVAL_MIN_MS|SYNC_INTERVAL_MAX_MS)\s*=\s*(.*?)\s*$/);
-    if (!match) continue;
-    result[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2');
-  }
-  return result;
-}
-
-/** Environment overrides the dedicated configuration; legacy .dev.vars is a secret fallback. */
+/** Environment overrides the dedicated configuration, with legacy settings as a fallback. */
 export function loadConfig(env = process.env, files = {}) {
-  const config = readConfigFile(files.config || path.join(syncDir, 'config.env'));
-  const legacy = readConfigFile(files.legacy || path.join(root, '.dev.vars'));
+  const config = readSyncConfigFile(files.config || path.join(syncDir, 'config.env'));
+  const legacy = readSyncConfigFile(files.legacy);
   return {
-    apiBase: env.API_BASE?.trim() || config.API_BASE || 'https://parity.sirhao.top',
-    secret: env.INGEST_SECRET?.trim() || config.INGEST_SECRET || legacy.INGEST_SECRET || '',
+    ...resolveSyncTarget(env, config, legacy),
     intervalMinMs: Number(env.SYNC_INTERVAL_MIN_MS ?? (config.SYNC_INTERVAL_MIN_MS || 1000)),
     intervalMaxMs: Number(env.SYNC_INTERVAL_MAX_MS ?? (config.SYNC_INTERVAL_MAX_MS || 2000)),
   };
-}
-
-function apiUrl(input) {
-  const url = new URL(input);
-  if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) throw new Error('API_BASE 必须是 HTTPS 地址（本地测试可用 HTTP），且不能包含凭据或查询参数');
-  return url.href.replace(/\/+$/, '');
 }
 
 function saveCheckpoint(file, state) {
@@ -122,7 +105,7 @@ export function createRequestGate(intervalMs = 1000, { maxIntervalMs = 2000, sle
 
 /** Returns a nonzero failure count for partial runs; injected dependencies permit offline tests. */
 export async function runSync(options, deps = {}) {
-  const base = apiUrl(options.apiBase);
+  const base = normalizeSyncApiBase(options.apiBase);
   const load = deps.load || jsonFetch;
   const minInterval = options.intervalMs ?? options.intervalMinMs ?? 1000;
   const maxInterval = options.intervalMs != null ? options.intervalMs + 1000 : options.intervalMaxMs ?? 2000;

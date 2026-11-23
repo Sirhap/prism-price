@@ -91,15 +91,32 @@ test('本地 HTTP 接口实际收发同步清单与鉴权快照', async () => {
 });
 
 
-test('配置文件集中设置地址和密钥，环境变量优先且兼容旧密钥', () => {
+test('配置文件集中设置地址和密钥，环境变量优先且兼容旧密钥', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-config-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const files = { config: path.join(dir, 'config.env'), legacy: path.join(dir, 'legacy') };
   fs.writeFileSync(files.config, 'API_BASE=https://target.test\nINGEST_SECRET="configured"\n');
   fs.writeFileSync(files.legacy, 'INGEST_SECRET=legacy\n');
   assert.deepEqual(loadConfig({}, files), { apiBase: 'https://target.test', secret: 'configured', intervalMinMs: 1000, intervalMaxMs: 2000 });
   assert.deepEqual(loadConfig({ API_BASE: 'https://override.test', INGEST_SECRET: 'override' }, files), { apiBase: 'https://override.test', secret: 'override', intervalMinMs: 1000, intervalMaxMs: 2000 });
+  assert.equal(loadConfig({ API_BASE: 'https://override.test' }, files).secret, '');
+  assert.equal(loadConfig({ API_BASE: 'https://target.test:8443' }, files).secret, '');
+  assert.equal(loadConfig({ API_BASE: 'https://TARGET.test:443/staging/' }, files).secret, 'configured');
   fs.writeFileSync(files.config, 'API_BASE=https://target.test\nINGEST_SECRET=\n');
   assert.equal(loadConfig({}, files).secret, 'legacy');
+  assert.equal(loadConfig({ API_BASE: 'https://override.test' }, files).secret, '');
+  fs.writeFileSync(files.legacy, 'API_BASE=https://legacy.test\nINGEST_SECRET=legacy\n');
+  assert.equal(loadConfig({}, files).secret, '');
+  assert.equal(loadConfig({ API_BASE: 'https://legacy.test' }, files).secret, 'legacy');
+});
+
+test('旧推送入口在发送密钥之前拒绝远程明文 HTTP', async () => {
+  const cli = fileURLToPath(new URL('../scripts/push-sync.mjs', import.meta.url));
+  const noFetch = 'data:text/javascript,' + encodeURIComponent("globalThis.fetch = () => { throw new Error('unexpected fetch'); };");
+  await assert.rejects(promisify(execFile)(process.execPath, ['--import', noFetch, cli], {
+    env: { ...process.env, API_BASE: 'http://target.invalid', INGEST_SECRET: 'test-secret' },
+    timeout: 5000,
+  }), { stderr: /API_BASE 必须是 HTTPS/ });
 });
 
 
