@@ -43,7 +43,8 @@ import {
 } from "../collector/scheduler";
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
 import { createProductDetailBudget } from "../collector/etl/productDetails";
-import { offerLastSyncedAt, readOfferSyncTimes } from "../collector/etl/offerSyncTimes";
+import { offerLastSyncedAt, readOfferObservations } from "../collector/etl/offerSyncTimes";
+import { recentStockCutoff, recentZeroStockSql, stockFilteredGroupsSql } from "./productStockFilter";
 import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
@@ -191,6 +192,11 @@ export async function verifyAdminSecret(request: Request, env: Env): Promise<{ o
 async function handleGetProducts(url: URL, env: Env, enableRecommendation = true): Promise<Response> {
   await ensureSeedShops(env.DB);
 
+  const normalizedQuery = normalizeProductQuery(url.searchParams);
+  const { appliedFilters, appliedPriceRange } = normalizedQuery;
+  const { q, group, type, plan, duration, price, sort, hideRecentOutOfStock } = appliedFilters;
+  const stockCutoff = await recentStockCutoff(env.DB, hideRecentOutOfStock);
+
   // 同款商品展开剩余报价的按需查询分支
   const offerKey = (url.searchParams.get("offerKey") || "").trim();
   if (offerKey) {
@@ -206,12 +212,12 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
         s.shop_name, s.shop_url, s.telegram, s.last_synced_at, s.stale_days, s.product_count AS shop_product_count
        FROM offers o
        INNER JOIN shops s ON s.id = o.shop_id
-       WHERE o.group_key = ?
-       ORDER BY o.price ASC`,
+       WHERE o.group_key = ? ${stockCutoff ? `AND (${recentZeroStockSql}) IS NOT TRUE` : ""}
+       ORDER BY o.price ASC, o.id ASC`,
     )
-      .bind(offerKey)
+      .bind(offerKey, ...(stockCutoff ? [stockCutoff, stockCutoff] : []))
       .all<Record<string, unknown>>();
-    const syncTimes = await readOfferSyncTimes(env.DB, fullOffers.map(row => String(row.id)));
+    const observations = await readOfferObservations(env.DB, fullOffers.map(row => String(row.id)));
 
     return jsonPublic({
       items: [
@@ -230,7 +236,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
             ...stockWarning({ stockWarningDay: stockWarningDay(row) }),
             itemUrl: row.item_url,
             updatedAt: row.updated_at,
-            lastSyncedAt: syncTimes.get(String(row.id)) ?? null,
+            lastSyncedAt: observations.get(String(row.id))?.lastSyncedAt ?? null,
             staleDays: computeStaleDays(
               typeof row.last_synced_at === "string" ? row.last_synced_at : null,
               Number(row.stale_days ?? 0),
@@ -242,9 +248,6 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     });
   }
 
-  const normalizedQuery = normalizeProductQuery(url.searchParams);
-  const { appliedFilters, appliedPriceRange } = normalizedQuery;
-  const { q, group, type, plan, duration, price, sort } = appliedFilters;
   const page = positiveInteger(url.searchParams.get("page"), 1, 1_000_000);
   const pageSize = positiveInteger(url.searchParams.get("pageSize"), 30, 50);
 
@@ -254,7 +257,8 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     const matches = ["display_name", "shop_category", "shop_name"].map((column) => containsMatch(column, term));
     searchParts.push(`(${matches[0].sql} OR ${matches[1].sql}
       OR group_key IN (SELECT group_key FROM offers WHERE shop_id IN
-        (SELECT id FROM shops WHERE ${matches[2].sql}))) `);
+        (SELECT id FROM shops WHERE ${matches[2].sql})
+        ${stockCutoff ? "AND id NOT IN (SELECT id FROM hidden_offers)" : ""}))`);
     searchParams.push(...matches.map((match) => match.value));
   }
   const searchWhereSql = searchParts.length ? `WHERE ${searchParts.join(" AND ")}` : "";
@@ -340,10 +344,12 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
   }
   const scopeKey = searchTerms(q).join(" ");
-  const buckets = await cachedQuery(url, `product-stats:${version}:${scopeKey}`, () =>
-    loadProductBuckets(env.DB, searchWhereSql, searchParams));
+  const buckets = stockCutoff
+    ? await loadProductBuckets(env.DB, searchWhereSql, searchParams, stockCutoff)
+    : await cachedQuery(url, `product-stats:${version}:${scopeKey}`, () =>
+      loadProductBuckets(env.DB, searchWhereSql, searchParams));
   const stats = summarizeProducts(buckets, normalizedQuery);
-  const siteGroups = includeFacets ? catalogGroups(q
+  const siteGroups = includeFacets ? catalogGroups(q || stockCutoff
     ? await cachedQuery(url, `product-stats:${version}:`, () => loadProductBuckets(env.DB, "", []))
     : buckets) : undefined;
   // 搜索已在统计扫描中确定匹配键，列表不再重新执行文本扫描和店名关联子查询。
@@ -355,6 +361,11 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
   const listParams = useMatchedKeys ? [JSON.stringify(stats.groupKeys), ...selectedScope.params] : params;
   const readPage = async (): Promise<{ results: ProductGroupRow[] }> => {
     if (offset >= stats.total) return { results: [] };
+    if (stockCutoff) {
+      return env.DB.prepare(`${stockFilteredGroupsSql}
+        SELECT * FROM stock_filtered_groups ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
+        .bind(stockCutoff, stockCutoff, ...params, ...orderParams, pageSize, offset).all<ProductGroupRow>();
+    }
     if (useMatchedKeys || !indexes.popular || recommendationKey) {
       // 排名只算一次，后续页按12/30个主键取行；不每翻一页就重排整个搜索结果。
       const ordered = await cachedQuery(url, `product-order:${version}:${recommendationKey}:${JSON.stringify([appliedFilters, appliedPriceRange])}`, async () => {
@@ -380,7 +391,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     try {
       const parsed: unknown = JSON.parse(row.offers_preview_json);
       if (Array.isArray(parsed)) {
-        offers = parsed.map(({ stockWarningDay, ...offer }) => ({ ...offer, ...stockWarning({ stockWarningDay }) }));
+        offers = parsed.map(({ stockWarningDay, ...offer }) => offer);
       }
     } catch {
       offers = [];
@@ -427,9 +438,12 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     };
   });
 
-  const syncTimes = await readOfferSyncTimes(env.DB, items.flatMap(item => item.offers.map(offer => String(offer.id))));
+  const observations = await readOfferObservations(env.DB, items.flatMap(item => item.offers.map(offer => String(offer.id))));
   for (const item of items) {
-    item.offers = item.offers.map(offer => ({ ...offer, lastSyncedAt: syncTimes.get(String(offer.id)) ?? null }));
+    item.offers = item.offers.map(offer => {
+      const observation = observations.get(String(offer.id));
+      return { ...offer, ...stockWarning(observation ?? {}), lastSyncedAt: observation?.lastSyncedAt ?? null };
+    });
   }
   const { total, offerTotal } = stats;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

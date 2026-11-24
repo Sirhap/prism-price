@@ -15,20 +15,20 @@ import { handleSponsorPublic } from "./routes/sponsors";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 const HOME_ASSET_PRELOADS = [
-  '</styles.css?v=sync-timestamps>; rel=preload; as=style',
-  '</i18n.js?v=sponsor-code-guide>; rel=preload; as=script',
+  '</styles.css?v=stock-filter>; rel=preload; as=style',
+  '</i18n.js?v=stock-filter>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
-  '</app.js?v=sync-timestamps>; rel=preload; as=script',
+  '</app.js?v=stock-filter>; rel=preload; as=script',
 ].join(", ");
 
-/** Only preload list requests that match the exact unfiltered URL built by app.js. */
+/** Only preload list requests that match the exact default URL built by app.js. */
 function homePreloads(url: URL): string {
   for (const key of url.searchParams.keys()) {
     if (key !== "lang" && key !== "mode" && !key.startsWith("utm_")) return HOME_ASSET_PRELOADS;
   }
   const data = url.searchParams.get("mode") === "shop"
     ? "/api/shops?page=1&pageSize=6"
-    : "/api/products?sort=relevance&page=1&pageSize=6";
+    : "/api/products?hideRecentOutOfStock=1&sort=relevance&page=1&pageSize=6";
   return `${HOME_ASSET_PRELOADS}, <${data}>; rel=preload; as=fetch; crossorigin=anonymous`;
 }
 

@@ -107,6 +107,8 @@
     "home.resetFilters": "Reset Filters",
     "home.facetHelp": "Filter help",
     "home.facetHelpText": "Counts show matching product groups when only that filter changes. Switching brands or types clears incompatible filters. Preset prices include the lower bound, not the upper bound.",
+    "home.hideRecentOutOfStock": "Hide offers seen out of stock in the last 24h",
+    "home.productStockFilterNote": "Stock may change after we check it. Verify availability with the store.",
     "home.customPriceLabel": "Custom price (¥)",
     "home.customMinPlaceholder": "Min",
     "home.customMaxPlaceholder": "Max",

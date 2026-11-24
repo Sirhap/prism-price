@@ -1,4 +1,5 @@
 import { PRODUCT_GROUPS } from "../types";
+import { stockFilteredGroupsSql } from "./productStockFilter";
 import { PRODUCT_DURATION_OPTIONS, PRODUCT_PLAN_SET, PRODUCT_TYPE_OPTIONS, type NormalizedProductQuery } from "./search";
 
 export const TYPE_SQL_EXPR = "CASE WHEN attr_sms = 'service' THEN 'sms-service' WHEN attr_type = 'cdk' THEN 'recharge' ELSE attr_type END";
@@ -23,12 +24,14 @@ interface ProductScopeRow extends Omit<ProductStatBucket, "groups" | "offers" | 
 }
 
 /** 一次紧凑投影扫描，内存合并规格/精确价格桶，避免 SQLite 临时排序表再计一次读取。 */
-export async function loadProductBuckets(db: D1Database, searchWhere: string, params: Array<string | number>): Promise<ProductStatBucket[]> {
-  const { results } = await db.prepare(`SELECT brand_group, (${TYPE_SQL_EXPR}) AS normalized_type,
+export async function loadProductBuckets(
+  db: D1Database, searchWhere: string, params: Array<string | number>, stockCutoff?: string | null,
+): Promise<ProductStatBucket[]> {
+  const { results } = await db.prepare(`${stockCutoff ? stockFilteredGroupsSql : ""} SELECT brand_group, (${TYPE_SQL_EXPR}) AS normalized_type,
     (${PLAN_SQL_EXPR}) AS normalized_plan, attr_duration, min_price, offer_count,
     group_key
-    FROM product_groups ${searchWhere}`)
-    .bind(...params).all<ProductScopeRow>();
+    FROM ${stockCutoff ? "stock_filtered_groups" : "product_groups"} ${searchWhere}`)
+    .bind(...(stockCutoff ? [stockCutoff, stockCutoff] : []), ...params).all<ProductScopeRow>();
   const buckets = new Map<string, ProductStatBucket>();
   for (const row of results) {
     const key = JSON.stringify([row.brand_group, row.normalized_type, row.normalized_plan, row.attr_duration, row.min_price]);

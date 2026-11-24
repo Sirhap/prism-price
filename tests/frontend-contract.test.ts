@@ -33,11 +33,13 @@ describe("前端静态资源与前后端契约对齐验证", () => {
     for (const [, script] of initialScripts) {
       expect(home.headers.get("Link")).toContain(`<${script}>; rel=preload; as=script`);
     }
-    expect(home.headers.get("Link")).toContain("</api/products?sort=relevance&page=1&pageSize=6>; rel=preload; as=fetch; crossorigin=anonymous");
+    expect(home.headers.get("Link")).toContain("</api/products?hideRecentOutOfStock=1&sort=relevance&page=1&pageSize=6>; rel=preload; as=fetch; crossorigin=anonymous");
     const shop = await SELF.fetch("http://localhost/?mode=shop");
     expect(shop.headers.get("Link")).toContain("</api/shops?page=1&pageSize=6>");
     const filtered = await SELF.fetch("http://localhost/?group=ChatGPT");
     expect(filtered.headers.get("Link")).not.toContain("as=fetch");
+    const stockOptOut = await SELF.fetch("http://localhost/?hideRecentOutOfStock=0");
+    expect(stockOptOut.headers.get("Link")).not.toContain("as=fetch");
   });
 
   it("index.html 应提供精简后的排序、店铺在售过滤开关及风险提示弹窗容器", async () => {
@@ -53,6 +55,7 @@ describe("前端静态资源与前后端契约对齐验证", () => {
     expect(sortOptionValues).not.toContain("shop-desc");
 
     // 店铺筛选控件：仅看有在售商品开关、清空筛选按钮与提示栏
+    expect(html).toContain('id="hideRecentOutOfStockInput" type="checkbox" checked aria-describedby="productStockFilterNote"');
     expect(html).toContain('id="shopOnlyInStockInput"');
     expect(html).toContain("仅看有收录商品");
     expect(html).toContain('id="shopResetFiltersBtn"');

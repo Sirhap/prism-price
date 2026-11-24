@@ -1,6 +1,6 @@
 const DAY_MS = 86_400_000;
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
-const WARNING_DAYS = 7;
+export const STOCK_WARNING_DAYS = 3;
 
 function beijingDay(time: number): string {
   return new Date(time + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
@@ -28,10 +28,10 @@ export async function observeZeroStock(db: D1Database, offerIds: string[], nowIs
     WHERE id IN (SELECT value FROM json_each(?)) AND stock_count = 0
       AND (stock_zero_day IS NULL OR stock_zero_day < ?)
     RETURNING group_key, stock_zero_days`)
-    .bind(yesterday, WARNING_DAYS, today, JSON.stringify(offerIds), today)
+    .bind(yesterday, STOCK_WARNING_DAYS, today, JSON.stringify(offerIds), today)
     .all<{ group_key: string; stock_zero_days: number }>();
   return {
-    groups: result.results.filter((row) => row.stock_zero_days === WARNING_DAYS)
+    groups: result.results.filter((row) => row.stock_zero_days === STOCK_WARNING_DAYS)
       .map((row) => row.group_key),
     writes: result.meta.rows_written,
   };
@@ -39,7 +39,7 @@ export async function observeZeroStock(db: D1Database, offerIds: string[], nowIs
 
 /** Only mature streaks are included in the materialized preview. */
 export function stockWarningDay(row: { stock_zero_day?: unknown; stock_zero_days?: unknown }): string | undefined {
-  return Number(row.stock_zero_days) >= WARNING_DAYS && typeof row.stock_zero_day === "string"
+  return Number(row.stock_zero_days) >= STOCK_WARNING_DAYS && typeof row.stock_zero_day === "string"
     ? row.stock_zero_day : undefined;
 }
 

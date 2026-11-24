@@ -1466,7 +1466,7 @@ html[data-theme="dark"] .metric-icon-cyan {
   min-width: 0;
 }
 
-.shop-stock-filter {
+:is(.shop-stock-filter, .product-stock-filter) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1483,16 +1483,29 @@ html[data-theme="dark"] .metric-icon-cyan {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.shop-stock-filter:hover {
+:is(.shop-stock-filter, .product-stock-filter):hover {
   border-color: var(--accent-border);
 }
 
-.shop-stock-filter input[type="checkbox"] {
+:is(.shop-stock-filter, .product-stock-filter) input[type="checkbox"] {
   width: 15px;
   height: 15px;
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+.product-stock-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.product-stock-filter {
+  min-height: var(--filter-control-height);
 }
 
 .shop-system-note {

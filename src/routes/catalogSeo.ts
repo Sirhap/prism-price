@@ -1,6 +1,6 @@
 import { cachedQuery, catalogVersion } from "../cache/queryCache";
-import { isCurrentStockWarning } from "../collector/etl/stockObservations";
-import { readOfferSyncTimes } from "../collector/etl/offerSyncTimes";
+import { isCurrentStockWarning, STOCK_WARNING_DAYS } from "../collector/etl/stockObservations";
+import { readOfferObservations } from "../collector/etl/offerSyncTimes";
 import {
   extractMainCategories,
   hideTelegramContacts,
@@ -692,7 +692,6 @@ interface PreviewOfferItem {
   price?: number;
   stockStatus?: string;
   stockCount?: number | null;
-  stockWarningDay?: string;
   itemUrl?: string;
 }
 
@@ -751,7 +750,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
   }
 
   const preview = offers.slice(0, 12);
-  const syncTimes = await readOfferSyncTimes(env.DB, preview.flatMap(offer => typeof offer.id === "string" ? [offer.id] : []));
+  const observations = await readOfferObservations(env.DB, preview.flatMap(offer => typeof offer.id === "string" ? [offer.id] : []));
   const offersTableRows = preview.map((offer) => {
       const shopName = safeText(offer.shopName || "未知店铺");
       const shopId = typeof offer.shopId === "string" ? offer.shopId.trim() : "";
@@ -759,7 +758,8 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         ? `<a href="/catalog/shops/${encodeURIComponent(shopId)}/">${esc(shopName)}</a>`
         : esc(shopName);
       const offerPrice = Number(offer.price);
-      const stockText = isCurrentStockWarning(offer.stockWarningDay) ? "连续 7 天缺货，购买前请核实"
+      const observation = offer.id ? observations.get(offer.id) : undefined;
+      const stockText = isCurrentStockWarning(observation?.stockWarningDay) ? `连续 ${STOCK_WARNING_DAYS} 天缺货，购买前请核实`
         : offer.stockCount === 0 ? "采集时缺货" : STOCK_LABELS[String(offer.stockStatus || "")] || "库存以店铺为准";
       const safeItemHref = safeHttpUrl(offer.itemUrl);
       const actionCell = safeItemHref
@@ -769,7 +769,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         <td>${shopCell}</td>
         <td><strong>${fmtPrice(offerPrice)}</strong></td>
         <td>${esc(stockText)}</td>
-        <td>${renderCatalogSyncTime(offer.id ? syncTimes.get(offer.id) : null)}</td>
+        <td>${renderCatalogSyncTime(observation?.lastSyncedAt)}</td>
         <td>${actionCell}</td>
       </tr>`;
     })

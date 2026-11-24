@@ -542,6 +542,7 @@ const state = {
   price: "all",
   minPrice: "",
   maxPrice: "",
+  hideRecentOutOfStock: true,
   sort: "relevance",
   page: 1,
   shopPage: 1,
@@ -611,6 +612,7 @@ const els = {
   customMinPrice: document.querySelector("#customMinPrice"),
   customMaxPrice: document.querySelector("#customMaxPrice"),
   applyCustomPriceBtn: document.querySelector("#applyCustomPriceBtn"),
+  hideRecentOutOfStockInput: document.querySelector("#hideRecentOutOfStockInput"),
   resetFiltersBtn: document.querySelector("#resetFiltersBtn"),
   shareFiltersBtn: document.querySelector("#shareFiltersBtn"),
   primaryFilters: document.querySelector("#primaryFilters"),
@@ -1184,6 +1186,7 @@ function readStateFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("mode");
   state.mode = mode === "shop" ? "shop" : "product";
+  state.hideRecentOutOfStock = params.get("hideRecentOutOfStock") !== "0";
   state.q = (params.get("q") || "").trim();
   state.searchDraft = state.q;
 
@@ -1322,6 +1325,7 @@ function syncStateToUrl() {
     } else if (state.price !== "all") {
       params.set("price", state.price);
     }
+    if (!state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "0");
     if (state.sort !== "relevance") params.set("sort", state.sort);
   }
 
@@ -1361,7 +1365,9 @@ function syncControlsFromState() {
   if (els.customMaxPrice && document.activeElement !== els.customMaxPrice) els.customMaxPrice.value = state.maxPrice;
   if (els.customPriceWrap) els.customPriceWrap.classList.toggle("is-active", hasCustomPriceFilter());
 
+  els.hideRecentOutOfStockInput.checked = state.hideRecentOutOfStock;
   const hasProductFilters =
+    state.hideRecentOutOfStock ||
     state.type !== "all" ||
     state.plan !== "all" ||
     state.duration !== "all" ||
@@ -1501,6 +1507,7 @@ function buildProductApiParams(reuseFacets = false) {
   } else if (state.price !== "all") {
     params.set("price", state.price);
   }
+  if (state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "1");
   params.set("sort", state.sort);
   params.set("page", String(state.page));
   params.set("pageSize", String(LIST_PAGE_SIZE));
@@ -1516,6 +1523,7 @@ function currentFacetScopeKey() {
     state.price,
     state.minPrice,
     state.maxPrice,
+    state.hideRecentOutOfStock,
   ]);
 }
 
@@ -1529,6 +1537,7 @@ function applyAppliedFilters(data) {
   state.plan = data.appliedFilters.plan || "all";
   state.duration = data.appliedFilters.duration || "all";
   state.price = data.appliedFilters.price || "all";
+  state.hideRecentOutOfStock = data.appliedFilters.hideRecentOutOfStock === true;
   state.sort = SORT_OPTIONS.has(data.appliedFilters.sort) ? data.appliedFilters.sort : "relevance";
   if (data.appliedPriceRange) {
     const { minPrice, maxPrice } = data.appliedPriceRange;
@@ -1769,6 +1778,7 @@ async function fetchProducts(append = false, reuseStats = false, options = {}) {
       state.plan === "all" &&
       state.duration === "all" &&
       state.price === "all" &&
+      !state.hideRecentOutOfStock &&
       !hasCustomPriceFilter();
     if (data.catalogGroups) {
       state.catalogGroupCounts = { ...data.catalogGroups };
@@ -1997,13 +2007,20 @@ async function fetchShops(append = false, options = {}) {
   }
 }
 
+function fullOffersKey(groupKey) {
+  return `${Number(state.hideRecentOutOfStock)}:${groupKey}`;
+}
+
 async function fetchFullOffersForGroup(groupKey) {
-  if (state.loadingOfferKeys.has(groupKey)) return;
-  state.loadingOfferKeys.add(groupKey);
+  const cacheKey = fullOffersKey(groupKey);
+  if (state.loadingOfferKeys.has(cacheKey)) return;
+  state.loadingOfferKeys.add(cacheKey);
   renderProductGroup(groupKey);
 
   try {
-    const res = await fetch(`/api/products?offerKey=${encodeURIComponent(groupKey)}`);
+    const params = new URLSearchParams({ offerKey: groupKey });
+    if (state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "1");
+    const res = await fetch(`/api/products?${params}`);
     const data = await readPublicJson(res);
     if (data._stale) {
       showRequestError(
@@ -2015,13 +2032,13 @@ async function fetchFullOffersForGroup(groupKey) {
     const matched = (data.items || [])[0];
     if (matched && Array.isArray(matched.offers)) {
       if (state.fullOffersCache.size >= 50) state.fullOffersCache.delete(state.fullOffersCache.keys().next().value);
-      state.fullOffersCache.set(groupKey, matched.offers);
+      state.fullOffersCache.set(cacheKey, matched.offers);
     }
   } catch (err) {
     showRequestError(L("完整报价加载失败，可点击展开按钮重试。", "Failed to load full offers. Click expand to retry."));
     console.error("展开完整报价失败:", err);
   } finally {
-    state.loadingOfferKeys.delete(groupKey);
+    state.loadingOfferKeys.delete(cacheKey);
     renderProductGroup(groupKey);
   }
 }
@@ -2209,6 +2226,9 @@ function renderActiveFilters() {
     } else if (state.price !== "all") {
       tags.push(["price", filterValueLabel("price", state.price)]);
     }
+    if (state.hideRecentOutOfStock) {
+      tags.push(["hideRecentOutOfStock", L("隐藏近 24 小时缺货报价", "Hide recent out-of-stock offers")]);
+    }
   }
   els.activeFilters.innerHTML = tags
     .map(
@@ -2308,9 +2328,10 @@ function browserRefreshSupported(rawUrl) {
 }
 
 function renderOfferPanel(item) {
-  const offers = state.fullOffersCache.get(item.id) || item.offers || [];
-  const isLoadedFull = state.fullOffersCache.has(item.id);
-  const isLoading = state.loadingOfferKeys.has(item.id);
+  const cacheKey = fullOffersKey(item.id);
+  const offers = state.fullOffersCache.get(cacheKey) || item.offers || [];
+  const isLoadedFull = state.fullOffersCache.has(cacheKey);
+  const isLoading = state.loadingOfferKeys.has(cacheKey);
   const remaining = Math.max(0, Number(item.offerCount || 0) - offers.length);
 
   const rowsHtml = offers
@@ -2332,7 +2353,7 @@ function renderOfferPanel(item) {
             ${browserRefreshSupported(shopLink) ? `<button type="button" class="copy-inline-btn" data-browser-refresh="offer" data-shop-id="${escapeHtml(offer.shopId || '')}" data-shop-url="${escapeHtml(shopLink)}" data-item-url="${escapeHtml(link || '')}" title="${escapeHtml(L("使用当前网络读取源站", "Fetch live source via your network"))}">${escapeHtml(L("↻ 刷新参考", "↻ Refresh"))}</button>` : ''}
             ${isBest ? `<span class="offer-tag is-best">${escapeHtml(L("★ 当前最低", "★ Best Price"))}</span>` : ""}
             ${offer.longTermOutOfStock
-              ? `<span class="offer-tag" title="${escapeHtml(L("库存以店铺为准，购买前请核实", "Confirm current stock with the store before buying"))}">${escapeHtml(L("连续 7 天缺货", "Out of stock for 7+ days"))}</span>`
+              ? `<span class="offer-tag" title="${escapeHtml(L("库存以店铺为准，购买前请核实", "Confirm current stock with the store before buying"))}">${escapeHtml(L("连续 3 天缺货", "Out of stock for 3+ days"))}</span>`
               : `<span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>`}
             ${renderSyncTime(offer.lastSyncedAt)}
           </div>
@@ -2389,8 +2410,8 @@ function renderProductRow(item) {
       : `<span class="badge">${escapeHtml(item.shopName)}</span>`;
   const stockBadge = item.offers?.[0]?.longTermOutOfStock
     ? `<span class="badge badge-warn">${escapeHtml(item.offerCount > 1
-        ? L("最低价报价连续 7 天缺货", "Lowest offer out of stock for 7+ days")
-        : L("连续 7 天缺货", "Out of stock for 7+ days"))}</span>`
+        ? L("最低价报价连续 3 天缺货", "Lowest offer out of stock for 3+ days")
+        : L("连续 3 天缺货", "Out of stock for 3+ days"))}</span>`
     : "";
   const itemLink = safeUrl(item.itemUrl);
   const titleHtml = itemLink
@@ -3088,6 +3109,7 @@ function resetProductFilters() {
   state.price = "all";
   state.minPrice = "";
   state.maxPrice = "";
+  state.hideRecentOutOfStock = false;
   state.moreFiltersOpen = false;
   setFilterNotice("");
   syncControlsFromState();
@@ -3226,6 +3248,8 @@ function bindEvents() {
       state.shopSort = "default";
     } else if (key === "shopSystemType") {
       state.shopSystemType = "all";
+    } else if (key === "hideRecentOutOfStock") {
+      state.hideRecentOutOfStock = false;
     } else if (key === "customPrice") {
       state.minPrice = "";
       state.maxPrice = "";
@@ -3279,6 +3303,14 @@ function bindEvents() {
     syncControlsFromState();
     syncStateToUrl();
     fetchProducts(false, true, { preserveNotice: true });
+  });
+
+  els.hideRecentOutOfStockInput.addEventListener("change", () => {
+    state.hideRecentOutOfStock = els.hideRecentOutOfStockInput.checked;
+    setFilterNotice("");
+    syncControlsFromState();
+    syncStateToUrl();
+    fetchProducts(false);
   });
 
   els.applyCustomPriceBtn?.addEventListener("click", applyCustomPriceFilter);
