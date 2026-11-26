@@ -693,7 +693,7 @@ interface PreviewOfferItem {
 }
 
 const STOCK_BAND_LABELS = {
-  out: "0 件（缺货）", low: "库存少量", normal: "库存一般", sufficient: "库存充足", unknown: "未记录",
+  out: "缺货", low: "库存少量", normal: "库存一般", sufficient: "库存充足", unknown: "未记录",
 };
 
 async function handleProductDetail(id: string, env: Env): Promise<Response> {
@@ -760,10 +760,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         : esc(shopName);
       const offerPrice = Number(offer.price);
       const observation = offer.id ? observations.get(offer.id) : undefined;
-      const stock = offer.stockCount;
-      const stockLabel = STOCK_BAND_LABELS[observedStockBand(stock, offer.stockStatus)];
-      const stockText = typeof stock === "number" && Number.isFinite(stock) && stock > 0
-        ? `${stockLabel} · ${stock} 件` : stockLabel;
+      const stockText = STOCK_BAND_LABELS[observedStockBand(offer.stockCount, offer.stockStatus)];
       const stockWarning = isCurrentStockWarning(observation?.stockWarningDay)
         ? `<br><small>连续 ${STOCK_WARNING_DAYS} 天缺货，购买前请核实</small>` : "";
       const safeItemHref = safeHttpUrl(offer.itemUrl);

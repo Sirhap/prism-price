@@ -183,13 +183,13 @@ it("同步展示保留隐藏数量的明确库存档位，未知库存不再被�
   const items = counts.map((stock_count, index) => ({
     ...item(`band-${index}`, stock_count, index + 1),
     rawName: "Codex Plus 成品号 库存档位测试 月卡",
-    ...readShopApiStock({ stock_count, show_stock_type: 0 }),
+    ...readShopApiStock({ stock_count, show_stock_type: index === 1 ? 1 : 0 }),
   }));
   await send(shopId, items, date(24), true);
   await send(shopId, [items[0]], date(25), true);
   const group = (await stockRow(`${shopId}:band-0`))!.group_key;
   const expected = ["out", "low", "normal", "sufficient", "unknown"].map((stockBand, index) => ({
-    id: `${shopId}:band-${index}`, stockBand, stockCount: index === 0 ? 0 : null,
+    id: `${shopId}:band-${index}`, stockBand, stockCount: index <= 1 ? counts[index] : null,
     stockStatus: ["low", "low", "normal", "sufficient", "sufficient"][index],
   }));
 
@@ -200,7 +200,7 @@ it("同步展示保留隐藏数量的明确库存档位，未知库存不再被�
   }
   const seo = await handleCatalogSeo(new URL(`http://localhost/catalog/products/${encodeURIComponent(group)}/`), env);
   const html = await seo.text();
-  for (const text of ["0 件（缺货）", "库存少量", "库存一般", "库存充足", "未记录"]) {
+  for (const text of ["缺货", "库存少量", "库存一般", "库存充足", "未记录"]) {
     expect(html).toContain(`<td>${text}</td>`);
   }
 });

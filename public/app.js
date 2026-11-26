@@ -722,27 +722,20 @@ function formatAdapterBadge(adapterType) {
   return L("接口收录", "API Sync");
 }
 
-function formatStockObservation(offer) {
-  const stock = offer?.stockCount;
-  if (offer?.stockBand === "out" || stock === 0) return L("0 件（缺货）", "0 (out of stock)");
-
+function formatStockObservation(stockBand) {
   const labels = {
+    out: L("缺货", "Out of stock"),
     low: L("库存少量", "Limited stock"),
     normal: L("库存一般", "Moderate stock"),
     sufficient: L("库存充足", "Plenty in stock"),
   };
-  const label = labels[offer?.stockBand];
-  if (Number.isFinite(stock)) {
-    const quantity = L(`${stock} 件`, `${stock} units`);
-    return label ? `${label} · ${quantity}` : quantity;
-  }
-  return label || L("未记录", "Not recorded");
+  return labels[stockBand] || L("未记录", "Not recorded");
 }
 
 function renderOfferObservation(offer, lowest = false) {
   return `<div class="offer-observation">
     ${renderSyncTime(offer?.lastSyncedAt, lowest ? L("最低价报价上传同步", "Lowest offer synced") : L("上传同步时间", "Uploaded and synced"))}
-    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(formatStockObservation(offer))}</strong></span>
+    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(formatStockObservation(offer?.stockBand))}</strong></span>
   </div>`;
 }
 
@@ -3802,7 +3795,7 @@ document.addEventListener('click', async (event) => {
         const price = Number(item.price);
         const pricePart = Number.isFinite(price) ? `¥${price.toFixed(2)}` : L('价格未提供', 'Price N/A');
         const stockPart = stockBand === 'unknown' ? L('库存以店铺为准', 'Verify stock in store')
-          : formatStockObservation({ stockCount, stockBand });
+          : formatStockObservation(stockBand);
         status.textContent = L(
           `源站参考：${pricePart} · ${stockPart}（已同步）`,
           `Source ref: ${pricePart} · ${stockPart} (synced)`,
