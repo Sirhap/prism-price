@@ -1,0 +1,2 @@
+export const LEGACY_MAX_SNAPSHOT_ITEMS: 2000;
+export const MAX_SNAPSHOT_ITEMS: 5000;

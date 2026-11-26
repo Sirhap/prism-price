@@ -44,7 +44,9 @@ export function publicCacheKey(request: Request): Request {
     const offerKey = (source.get("offerKey") || "").trim();
     if (offerKey) {
       key.searchParams.set("offerKey", offerKey);
-      if (source.get("hideRecentOutOfStock") === "1") key.searchParams.set("hideRecentOutOfStock", "1");
+      for (const filter of ["hideRecentOutOfStock", "hideLastSyncOutOfStock"]) {
+        if (source.get(filter) === "1") key.searchParams.set(filter, "1");
+      }
     } else {
       const normalized = normalizeProductQuery(source);
       for (const [name, value] of Object.entries(normalized.appliedFilters)) key.searchParams.set(name, String(value));
@@ -97,7 +99,7 @@ function cachedResponse(response: Response, maxAge: number, stale = false, origi
 }
 
 /**
- * 公开结果新鲜10分钟（分页店铺列表和近24小时库存筛选30秒）、成功副本最长保留24小时。限额触发后在当前节点熔断至UTC零点；
+ * 公开结果新鲜10分钟（分页店铺列表和库存筛选30秒）、成功副本最长保留24小时。限额触发后在当前节点熔断至UTC零点；
  * 有匹配副本则回退，没有副本返回明确503，不把其它搜索结果冒充当前结果。
  * Cache API按节点缓存且可能被淘汰，不是持久备份。
  */
@@ -111,7 +113,9 @@ export async function withPublicResponseCache(
   const key = publicCacheKey(request);
   const url = new URL(request.url);
   const useShortCache = url.pathname === "/api/shops" ||
-    (url.pathname === "/api/products" && url.searchParams.get("hideRecentOutOfStock") === "1");
+    (url.pathname === "/api/products" && ["hideRecentOutOfStock", "hideLastSyncOutOfStock"].some(
+      filter => url.searchParams.get(filter) === "1",
+    ));
   const freshSeconds = useShortCache ? FILTERED_RESULTS_FRESH_SECONDS : PUBLIC_FRESH_SECONDS;
   const browserMaxAge = Math.min(60, freshSeconds);
   const time = now();

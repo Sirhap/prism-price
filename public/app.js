@@ -543,6 +543,7 @@ const state = {
   minPrice: "",
   maxPrice: "",
   hideRecentOutOfStock: true,
+  hideLastSyncOutOfStock: false,
   sort: "relevance",
   page: 1,
   shopPage: 1,
@@ -613,6 +614,7 @@ const els = {
   customMaxPrice: document.querySelector("#customMaxPrice"),
   applyCustomPriceBtn: document.querySelector("#applyCustomPriceBtn"),
   hideRecentOutOfStockInput: document.querySelector("#hideRecentOutOfStockInput"),
+  hideLastSyncOutOfStockInput: document.querySelector("#hideLastSyncOutOfStockInput"),
   resetFiltersBtn: document.querySelector("#resetFiltersBtn"),
   shareFiltersBtn: document.querySelector("#shareFiltersBtn"),
   primaryFilters: document.querySelector("#primaryFilters"),
@@ -720,12 +722,17 @@ function formatAdapterBadge(adapterType) {
   return L("接口收录", "API Sync");
 }
 
-function formatStockText(stockCount, stockStatus) {
-  if (stockCount !== null && stockCount !== undefined) {
-    if (Number(stockCount) <= 0) return L("采集时缺货，库存以店铺为准", "Out of stock at sync; check store");
-    return L(`余 ${stockCount}`, `Stock ${stockCount}`);
-  }
-  return L("库存以店铺为准", "Check store stock");
+function renderOfferObservation(offer, lowest = false) {
+  const stock = offer?.stockCount;
+  const quantity = !Number.isFinite(stock)
+    ? L("未记录", "Not recorded")
+    : stock === 0
+      ? L("0 件（缺货）", "0 (out of stock)")
+      : L(`${stock} 件`, `${stock} units`);
+  return `<div class="offer-observation">
+    ${renderSyncTime(offer?.lastSyncedAt, lowest ? L("最低价报价上传同步", "Lowest offer synced") : L("上传同步时间", "Uploaded and synced"))}
+    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(quantity)}</strong></span>
+  </div>`;
 }
 
 function normalizeGroupValue(raw) {
@@ -1187,6 +1194,7 @@ function readStateFromUrl() {
   const mode = params.get("mode");
   state.mode = mode === "shop" ? "shop" : "product";
   state.hideRecentOutOfStock = params.get("hideRecentOutOfStock") !== "0";
+  state.hideLastSyncOutOfStock = params.get("hideLastSyncOutOfStock") === "1";
   state.q = (params.get("q") || "").trim();
   state.searchDraft = state.q;
 
@@ -1326,6 +1334,7 @@ function syncStateToUrl() {
       params.set("price", state.price);
     }
     if (!state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "0");
+    if (state.hideLastSyncOutOfStock) params.set("hideLastSyncOutOfStock", "1");
     if (state.sort !== "relevance") params.set("sort", state.sort);
   }
 
@@ -1366,8 +1375,10 @@ function syncControlsFromState() {
   if (els.customPriceWrap) els.customPriceWrap.classList.toggle("is-active", hasCustomPriceFilter());
 
   els.hideRecentOutOfStockInput.checked = state.hideRecentOutOfStock;
+  els.hideLastSyncOutOfStockInput.checked = state.hideLastSyncOutOfStock;
   const hasProductFilters =
     state.hideRecentOutOfStock ||
+    state.hideLastSyncOutOfStock ||
     state.type !== "all" ||
     state.plan !== "all" ||
     state.duration !== "all" ||
@@ -1494,6 +1505,11 @@ async function ensureCatalogGroupBaseline(force = false) {
   }
 }
 
+function appendProductStockFilters(params) {
+  if (state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "1");
+  if (state.hideLastSyncOutOfStock) params.set("hideLastSyncOutOfStock", "1");
+}
+
 function buildProductApiParams(reuseFacets = false) {
   const params = new URLSearchParams();
   if (state.q.trim()) params.set("q", state.q.trim());
@@ -1507,7 +1523,7 @@ function buildProductApiParams(reuseFacets = false) {
   } else if (state.price !== "all") {
     params.set("price", state.price);
   }
-  if (state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "1");
+  appendProductStockFilters(params);
   params.set("sort", state.sort);
   params.set("page", String(state.page));
   params.set("pageSize", String(LIST_PAGE_SIZE));
@@ -1524,6 +1540,7 @@ function currentFacetScopeKey() {
     state.minPrice,
     state.maxPrice,
     state.hideRecentOutOfStock,
+    state.hideLastSyncOutOfStock,
   ]);
 }
 
@@ -1538,6 +1555,7 @@ function applyAppliedFilters(data) {
   state.duration = data.appliedFilters.duration || "all";
   state.price = data.appliedFilters.price || "all";
   state.hideRecentOutOfStock = data.appliedFilters.hideRecentOutOfStock === true;
+  state.hideLastSyncOutOfStock = data.appliedFilters.hideLastSyncOutOfStock === true;
   state.sort = SORT_OPTIONS.has(data.appliedFilters.sort) ? data.appliedFilters.sort : "relevance";
   if (data.appliedPriceRange) {
     const { minPrice, maxPrice } = data.appliedPriceRange;
@@ -1779,6 +1797,7 @@ async function fetchProducts(append = false, reuseStats = false, options = {}) {
       state.duration === "all" &&
       state.price === "all" &&
       !state.hideRecentOutOfStock &&
+      !state.hideLastSyncOutOfStock &&
       !hasCustomPriceFilter();
     if (data.catalogGroups) {
       state.catalogGroupCounts = { ...data.catalogGroups };
@@ -2008,7 +2027,7 @@ async function fetchShops(append = false, options = {}) {
 }
 
 function fullOffersKey(groupKey) {
-  return `${Number(state.hideRecentOutOfStock)}:${groupKey}`;
+  return `${Number(state.hideRecentOutOfStock)}:${Number(state.hideLastSyncOutOfStock)}:${groupKey}`;
 }
 
 async function fetchFullOffersForGroup(groupKey) {
@@ -2019,7 +2038,7 @@ async function fetchFullOffersForGroup(groupKey) {
 
   try {
     const params = new URLSearchParams({ offerKey: groupKey });
-    if (state.hideRecentOutOfStock) params.set("hideRecentOutOfStock", "1");
+    appendProductStockFilters(params);
     const res = await fetch(`/api/products?${params}`);
     const data = await readPublicJson(res);
     if (data._stale) {
@@ -2229,6 +2248,9 @@ function renderActiveFilters() {
     if (state.hideRecentOutOfStock) {
       tags.push(["hideRecentOutOfStock", L("隐藏近 24 小时缺货报价", "Hide recent out-of-stock offers")]);
     }
+    if (state.hideLastSyncOutOfStock) {
+      tags.push(["hideLastSyncOutOfStock", L("隐藏上次同步缺货报价", "Hide offers out of stock at last sync")]);
+    }
   }
   els.activeFilters.innerHTML = tags
     .map(
@@ -2354,8 +2376,8 @@ function renderOfferPanel(item) {
             ${isBest ? `<span class="offer-tag is-best">${escapeHtml(L("★ 当前最低", "★ Best Price"))}</span>` : ""}
             ${offer.longTermOutOfStock
               ? `<span class="offer-tag" title="${escapeHtml(L("库存以店铺为准，购买前请核实", "Confirm current stock with the store before buying"))}">${escapeHtml(L("连续 3 天缺货", "Out of stock for 3+ days"))}</span>`
-              : `<span class="offer-hint">${escapeHtml(formatStockText(offer.stockCount, offer.stockStatus))}</span>`}
-            ${renderSyncTime(offer.lastSyncedAt)}
+              : ""}
+            ${renderOfferObservation(offer)}
           </div>
           <div class="offer-price-cell">${formatPrice(offer.price)}</div>
           <div class="offer-action-cell">
@@ -2467,8 +2489,7 @@ function renderProductRow(item) {
           </div>
           <div class="lead-shop-col">
             ${item.shopName ? `<span class="offer-hint" title="${escapeHtml(L("最低报价店铺", "Lowest price store"))}">${escapeHtml(L("领衔：", "Best: "))}${escapeHtml(item.shopName)}</span>` : ""}
-            ${renderSyncTime(item.offers?.[0]?.lastSyncedAt,
-              item.offerCount > 1 ? L("最低报价同步", "Lowest offer synced") : undefined)}
+            ${renderOfferObservation(item.offers?.[0], item.offerCount > 1)}
           </div>
         </div>
       </div>
@@ -3110,6 +3131,7 @@ function resetProductFilters() {
   state.minPrice = "";
   state.maxPrice = "";
   state.hideRecentOutOfStock = false;
+  state.hideLastSyncOutOfStock = false;
   state.moreFiltersOpen = false;
   setFilterNotice("");
   syncControlsFromState();
@@ -3248,8 +3270,8 @@ function bindEvents() {
       state.shopSort = "default";
     } else if (key === "shopSystemType") {
       state.shopSystemType = "all";
-    } else if (key === "hideRecentOutOfStock") {
-      state.hideRecentOutOfStock = false;
+    } else if (key === "hideRecentOutOfStock" || key === "hideLastSyncOutOfStock") {
+      state[key] = false;
     } else if (key === "customPrice") {
       state.minPrice = "";
       state.maxPrice = "";
@@ -3305,13 +3327,16 @@ function bindEvents() {
     fetchProducts(false, true, { preserveNotice: true });
   });
 
-  els.hideRecentOutOfStockInput.addEventListener("change", () => {
+  function applyStockFilters() {
     state.hideRecentOutOfStock = els.hideRecentOutOfStockInput.checked;
+    state.hideLastSyncOutOfStock = els.hideLastSyncOutOfStockInput.checked;
     setFilterNotice("");
     syncControlsFromState();
     syncStateToUrl();
     fetchProducts(false);
-  });
+  }
+  els.hideRecentOutOfStockInput.addEventListener("change", applyStockFilters);
+  els.hideLastSyncOutOfStockInput.addEventListener("change", applyStockFilters);
 
   els.applyCustomPriceBtn?.addEventListener("click", applyCustomPriceFilter);
   [els.customMinPrice, els.customMaxPrice].forEach((input) => {

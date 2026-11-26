@@ -2,23 +2,35 @@ import { hasOfferSyncTimes } from "../collector/etl/offerSyncTimes";
 
 const RECENT_STOCK_MS = 24 * 60 * 60 * 1000;
 
-/** Match actual observations; a partial sync of other items does not refresh this offer. */
-export const recentZeroStockSql =
-  "o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?)";
+interface StockFilter {
+  hiddenOfferClause: string;
+  groupsSql: string;
+  params: string[];
+}
 
-export async function recentStockCutoff(db: D1Database, hideRecentOutOfStock?: true): Promise<string | null> {
-  if (!hideRecentOutOfStock || !await hasOfferSyncTimes(db)) return null;
-  return new Date(Date.now() - RECENT_STOCK_MS).toISOString();
+/** The 24-hour filter uses this offer's observation or a complete snapshot of its shop. */
+export async function resolveProductStockFilter(
+  db: D1Database, hideRecent?: true, hideLastSync?: true,
+): Promise<StockFilter | null> {
+  if (hideLastSync) {
+    const hiddenOfferClause = "o.stock_count = 0";
+    return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params: [] };
+  }
+  if (!hideRecent || !await hasOfferSyncTimes(db)) return null;
+  const cutoff = new Date(Date.now() - RECENT_STOCK_MS).toISOString();
+  const hiddenOfferClause = "o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?)";
+  return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params: [cutoff, cutoff] };
 }
 
 /**
  * Reuse materialized groups except where a quote was filtered. Recompute those groups
  * before search, price filters and pagination including quotes beyond the stored preview.
  */
-export const stockFilteredGroupsSql = `WITH hidden_offers AS MATERIALIZED (
+function filteredGroupsSql(hiddenOfferClause: string): string {
+  return `WITH hidden_offers AS MATERIALIZED (
   SELECT o.id, o.group_key
   FROM offers o JOIN shops s ON s.id = o.shop_id
-  WHERE ${recentZeroStockSql}
+  WHERE ${hiddenOfferClause}
 ), affected_groups AS MATERIALIZED (
   SELECT DISTINCT group_key FROM hidden_offers
 ), available_offers AS (
@@ -61,3 +73,4 @@ export const stockFilteredGroupsSql = `WITH hidden_offers AS MATERIALIZED (
   FROM product_groups p LEFT JOIN available_groups a ON a.group_key = p.group_key
   WHERE a.group_key IS NOT NULL OR p.group_key NOT IN (SELECT group_key FROM affected_groups)
 )`;
+}

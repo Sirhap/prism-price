@@ -153,8 +153,25 @@ it("按报价最近一次实际同步筛选，重算商品组、价格、分面�
   const expanded = `offerKey=${encodeURIComponent(key)}`;
   expect((await products(`${expanded}&${filter}`)).items[0].offers.map(offer => offer.id)).toEqual(retained);
   expect((await products(expanded)).items[0].offers).toHaveLength(17);
+
+  // A carried-forward zero-stock quote may predate per-offer timestamps entirely.
+  await env.DB.prepare("UPDATE offers SET last_observed_at = NULL WHERE id = ?").bind("stockfilter-partial:old").run();
+  expect((await products(`${expanded}&${filter}`)).items[0].offers.map(offer => offer.id)).toEqual(retained);
+  const lastSyncFilter = "hideLastSyncOutOfStock=1";
+  const filteredLastSync = await products(`${query}&${lastSyncFilter}&page=2`);
+  expect(filteredLastSync).toMatchObject({
+    total: 2, offerTotal: 3, appliedFilters: { hideLastSyncOutOfStock: true },
+    items: [{ id: key, minPrice: 28, medianPrice: 31.5, offerCount: 2 }],
+  });
+  const onlyNotZero = ["stockfilter-partial:unknown", "stockfilter-available:in-stock"];
+  expect(filteredLastSync.items[0].offers.map(offer => offer.id)).toEqual(onlyNotZero);
+  for (const flags of [lastSyncFilter, `${filter}&${lastSyncFilter}`]) {
+    expect((await products(`${expanded}&${flags}`)).items[0].offers.map(offer => offer.id)).toEqual(onlyNotZero);
+  }
+
   for (const scope of [query, expanded]) {
     const cacheUrl = (params: string) => publicCacheKey(new Request(`${root}?${params}`)).url;
     expect(cacheUrl(`${scope}&${filter}`)).not.toBe(cacheUrl(scope));
+    expect(cacheUrl(`${scope}&${lastSyncFilter}`)).not.toBe(cacheUrl(`${scope}&${filter}`));
   }
 });

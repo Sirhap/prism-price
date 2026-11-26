@@ -92,3 +92,33 @@ describe("超大店铺重新归类的 D1 调用预算", () => {
     expect(sample).toMatchObject({ min_price: 2009, median_price: 2009, max_price: 2009, shop_count: 1, offer_count: 1 });
   });
 });
+
+it("真实推送入口接受单店 5000 件，超过上限只更新前 5000 件且保留旧报价", async () => {
+  const { handleApiRequest } = await import("../src/routes/api");
+  const shopId = "ingest-5000";
+  const shopUrl = "https://ingest-5000.example/shop/demo";
+  const offer = (index: number) => ({
+    itemKey: String(index), rawName: "Gemini Pro 季卡规格 " + index, price: 10,
+    stockCount: 5, itemUrl: `${shopUrl}/item/${index}`,
+  });
+  const ingest = (items: ReturnType<typeof offer>[]) => handleApiRequest(new Request("http://localhost/api/ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer test-ingest-secret" },
+    body: JSON.stringify({ shopId, shopUrl, snapshot: { shopName: "五千条测试", canonicalUrl: shopUrl, items } }),
+  }), env);
+
+  const catalog = await handleApiRequest(new Request("http://localhost/api/shops?fields=sync"), env);
+  expect(await catalog.json()).toMatchObject({ maxSnapshotItems: 5000 });
+  expect((await ingest(Array.from({ length: 5000 }, (_, index) => offer(index)))).status).toBe(200);
+  expect(await env.DB.prepare("SELECT product_count,last_full_sync_at FROM shops WHERE id=?").bind(shopId).first())
+    .toMatchObject({ product_count: 5000, last_full_sync_at: expect.any(String) });
+  const fullSyncAt = await env.DB.prepare("SELECT last_full_sync_at FROM shops WHERE id=?").bind(shopId).first("last_full_sync_at");
+
+  const next = await ingest(Array.from({ length: 5001 }, (_, index) => offer(index + 1)));
+  expect(await next.json()).toMatchObject({ failedCount: 0, updatedCount: 1 });
+  expect(await env.DB.prepare("SELECT product_count,last_full_sync_at FROM shops WHERE id=?").bind(shopId).first())
+    .toEqual({ product_count: 5001, last_full_sync_at: fullSyncAt });
+  const present = await env.DB.prepare("SELECT id FROM offers WHERE id IN (?, ?, ?) ORDER BY id")
+    .bind(`${shopId}:0`, `${shopId}:5000`, `${shopId}:5001`).all();
+  expect(present.results).toEqual([{ id: `${shopId}:0` }, { id: `${shopId}:5000` }]);
+}, 30000);

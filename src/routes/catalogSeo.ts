@@ -66,11 +66,7 @@ const DURATION_LABELS: Readonly<Record<string, string>> = {
   year: "年卡",
 };
 
-const STOCK_LABELS: Readonly<Record<string, string>> = {
-  sufficient: "库存充足",
-  normal: "有货",
-  low: "库存紧张",
-};
+
 
 const HOT_BRANDS = ["ChatGPT", "Codex", "Claude", "Gemini", "Cursor", "Grok", "DeepSeek", "中转"] as const;
 
@@ -690,7 +686,6 @@ interface PreviewOfferItem {
   shopId?: string;
   shopName?: string;
   price?: number;
-  stockStatus?: string;
   stockCount?: number | null;
   itemUrl?: string;
 }
@@ -759,8 +754,11 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
         : esc(shopName);
       const offerPrice = Number(offer.price);
       const observation = offer.id ? observations.get(offer.id) : undefined;
-      const stockText = isCurrentStockWarning(observation?.stockWarningDay) ? `连续 ${STOCK_WARNING_DAYS} 天缺货，购买前请核实`
-        : offer.stockCount === 0 ? "采集时缺货" : STOCK_LABELS[String(offer.stockStatus || "")] || "库存以店铺为准";
+      const stock = offer.stockCount;
+      const stockText = typeof stock !== "number" || !Number.isFinite(stock)
+        ? "未记录" : stock === 0 ? "0 件（缺货）" : `${stock} 件`;
+      const stockWarning = isCurrentStockWarning(observation?.stockWarningDay)
+        ? `<br><small>连续 ${STOCK_WARNING_DAYS} 天缺货，购买前请核实</small>` : "";
       const safeItemHref = safeHttpUrl(offer.itemUrl);
       const actionCell = safeItemHref
         ? `<a rel="nofollow noopener noreferrer" target="_blank" href="${esc(safeItemHref)}">前往核实 ↗</a>`
@@ -768,7 +766,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
       return `<tr>
         <td>${shopCell}</td>
         <td><strong>${fmtPrice(offerPrice)}</strong></td>
-        <td>${esc(stockText)}</td>
+        <td>${esc(stockText)}${stockWarning}</td>
         <td>${renderCatalogSyncTime(observation?.lastSyncedAt)}</td>
         <td>${actionCell}</td>
       </tr>`;
@@ -778,7 +776,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
   const offersSection = offersTableRows
     ? `<h2>多店报价对比预览（前 ${Math.min(offers.length, 12)} 家）</h2>
        <div class="table-wrap"><table>
-         <thead><tr><th>收录店铺</th><th>参考报价</th><th>库存状态</th><th>最近同步</th><th>源站核实</th></tr></thead>
+         <thead><tr><th>收录店铺</th><th>参考报价</th><th>上次同步库存（供参考）</th><th>上传同步时间</th><th>源站核实</th></tr></thead>
          <tbody>${offersTableRows}</tbody>
        </table></div>`
     : `<p style="color:#64748b;">当前暂无多店报价明细预览，可前往首页搜索对比实时收录结果。</p>`;

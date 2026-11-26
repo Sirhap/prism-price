@@ -56,6 +56,7 @@ describe("前端静态资源与前后端契约对齐验证", () => {
 
     // 店铺筛选控件：仅看有在售商品开关、清空筛选按钮与提示栏
     expect(html).toContain('id="hideRecentOutOfStockInput" type="checkbox" checked aria-describedby="productStockFilterNote"');
+    expect(html).toContain('id="hideLastSyncOutOfStockInput" type="checkbox" aria-describedby="productStockFilterNote"');
     expect(html).toContain('id="shopOnlyInStockInput"');
     expect(html).toContain("仅看有收录商品");
     expect(html).toContain('id="shopResetFiltersBtn"');

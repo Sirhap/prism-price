@@ -90,6 +90,7 @@ export interface AppliedProductFilters {
   duration: string;
   price: string;
   hideRecentOutOfStock?: true;
+  hideLastSyncOutOfStock?: true;
   sort: ProductSortOption;
 }
 
@@ -200,6 +201,7 @@ export function normalizeProductQuery(params: URLSearchParams): NormalizedProduc
     appliedFilters: {
       q, group, type, plan, duration, price, sort,
       ...(params.get("hideRecentOutOfStock") === "1" ? { hideRecentOutOfStock: true } : {}),
+      ...(params.get("hideLastSyncOutOfStock") === "1" ? { hideLastSyncOutOfStock: true } : {}),
     },
     appliedPriceRange,
     allowsPlan,

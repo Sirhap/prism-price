@@ -44,7 +44,8 @@ import {
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
 import { createProductDetailBudget } from "../collector/etl/productDetails";
 import { offerLastSyncedAt, readOfferObservations } from "../collector/etl/offerSyncTimes";
-import { recentStockCutoff, recentZeroStockSql, stockFilteredGroupsSql } from "./productStockFilter";
+import { resolveProductStockFilter } from "./productStockFilter";
+import { MAX_SNAPSHOT_ITEMS } from "../../scripts/lib/syncLimits.mjs";
 import { ldxpShopKey } from "../../scripts/lib/missingOffers.mjs";
 import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
@@ -195,8 +196,8 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
 
   const normalizedQuery = normalizeProductQuery(url.searchParams);
   const { appliedFilters, appliedPriceRange } = normalizedQuery;
-  const { q, group, type, plan, duration, price, sort, hideRecentOutOfStock } = appliedFilters;
-  const stockCutoff = await recentStockCutoff(env.DB, hideRecentOutOfStock);
+  const { q, group, type, plan, duration, price, sort, hideRecentOutOfStock, hideLastSyncOutOfStock } = appliedFilters;
+  const stockFilter = await resolveProductStockFilter(env.DB, hideRecentOutOfStock, hideLastSyncOutOfStock);
 
   // 同款商品展开剩余报价的按需查询分支
   const offerKey = (url.searchParams.get("offerKey") || "").trim();
@@ -213,10 +214,10 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
         s.shop_name, s.shop_url, s.telegram, s.last_synced_at, s.stale_days, s.product_count AS shop_product_count
        FROM offers o
        INNER JOIN shops s ON s.id = o.shop_id
-       WHERE o.group_key = ? ${stockCutoff ? `AND (${recentZeroStockSql}) IS NOT TRUE` : ""}
+       WHERE o.group_key = ? ${stockFilter ? `AND (${stockFilter.hiddenOfferClause}) IS NOT TRUE` : ""}
        ORDER BY o.price ASC, o.id ASC`,
     )
-      .bind(offerKey, ...(stockCutoff ? [stockCutoff, stockCutoff] : []))
+      .bind(offerKey, ...(stockFilter?.params ?? []))
       .all<Record<string, unknown>>();
     const observations = await readOfferObservations(env.DB, fullOffers.map(row => String(row.id)));
 
@@ -259,7 +260,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     searchParts.push(`(${matches[0].sql} OR ${matches[1].sql}
       OR group_key IN (SELECT group_key FROM offers WHERE shop_id IN
         (SELECT id FROM shops WHERE ${matches[2].sql})
-        ${stockCutoff ? "AND id NOT IN (SELECT id FROM hidden_offers)" : ""}))`);
+        ${stockFilter ? "AND id NOT IN (SELECT id FROM hidden_offers)" : ""}))`);
     searchParams.push(...matches.map((match) => match.value));
   }
   const searchWhereSql = searchParts.length ? `WHERE ${searchParts.join(" AND ")}` : "";
@@ -345,12 +346,12 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
   }
   const scopeKey = searchTerms(q).join(" ");
-  const buckets = stockCutoff
-    ? await loadProductBuckets(env.DB, searchWhereSql, searchParams, stockCutoff)
+  const buckets = stockFilter
+    ? await loadProductBuckets(env.DB, searchWhereSql, searchParams, stockFilter)
     : await cachedQuery(url, `product-stats:${version}:${scopeKey}`, () =>
       loadProductBuckets(env.DB, searchWhereSql, searchParams));
   const stats = summarizeProducts(buckets, normalizedQuery);
-  const siteGroups = includeFacets ? catalogGroups(q || stockCutoff
+  const siteGroups = includeFacets ? catalogGroups(q || stockFilter
     ? await cachedQuery(url, `product-stats:${version}:`, () => loadProductBuckets(env.DB, "", []))
     : buckets) : undefined;
   // 搜索已在统计扫描中确定匹配键，列表不再重新执行文本扫描和店名关联子查询。
@@ -362,10 +363,10 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
   const listParams = useMatchedKeys ? [JSON.stringify(stats.groupKeys), ...selectedScope.params] : params;
   const readPage = async (): Promise<{ results: ProductGroupRow[] }> => {
     if (offset >= stats.total) return { results: [] };
-    if (stockCutoff) {
-      return env.DB.prepare(`${stockFilteredGroupsSql}
+    if (stockFilter) {
+      return env.DB.prepare(`${stockFilter.groupsSql}
         SELECT * FROM stock_filtered_groups ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
-        .bind(stockCutoff, stockCutoff, ...params, ...orderParams, pageSize, offset).all<ProductGroupRow>();
+        .bind(...stockFilter.params, ...params, ...orderParams, pageSize, offset).all<ProductGroupRow>();
     }
     if (useMatchedKeys || !indexes.popular || recommendationKey) {
       // 排名只算一次，后续页按12/30个主键取行；不每翻一页就重排整个搜索结果。
@@ -686,6 +687,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
         systemTypePersistence: caps.systemType,
         descriptionPersistence: caps.description,
         partialSnapshotSupport: true,
+        maxSnapshotItems: MAX_SNAPSHOT_ITEMS,
         market16688RemovalSupport: true,
         ldxpRemovalSupport: true,
         stockObservationSupport: await hasStockObservations(env.DB),
@@ -1276,7 +1278,7 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
       return cleanEntry;
     }
     const snap = cleanEntry.snapshot;
-    const items = snap.items.slice(0, 2000).map((it) => ({
+    const items = snap.items.slice(0, MAX_SNAPSHOT_ITEMS).map((it) => ({
       ...it,
       itemKey: it.itemKey.trim(),
       shopCategory: typeof it.shopCategory === "string" ? it.shopCategory : "",

@@ -487,7 +487,7 @@ export async function fetch16688Snapshot(shop, options = {}) {
   const goods = await postJson('https://www.16688.com.cn/shopApi/goods/list', {shop_no:number,goods_category_no:'',keywords:'',sort:'default'}, 1, slowSourceOptions);
   if (goods.code !== 1 || !Array.isArray(goods.data?.list) || (!goods.data.list.length && !options.allowEmptyMarket16688)) throw new Error('16688 商品列表为空或无效，保留原数据');
   const seen = new Set();
-  const items = goods.data.list.slice(0,2000).map(item => {
+  const items = goods.data.list.map(item => {
     const key=String(item?.goods_no || '').trim(), name=String(item?.name || '').trim(), price=Number(item?.price);
     if (!/^[a-zA-Z0-9_-]{1,180}$/.test(key) || !name || !Number.isFinite(price) || price<=0 || seen.has(key)) throw new Error('16688 商品字段不完整或重复，保留原数据');
     seen.add(key);

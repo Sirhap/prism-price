@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
 import { MARKET16688_MISSING_LIMIT, confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
 import { confirmMissingLdxpOffers, ldxpShopKey } from '../scripts/lib/missingOffers.mjs';
+import { LEGACY_MAX_SNAPSHOT_ITEMS, MAX_SNAPSHOT_ITEMS } from '../scripts/lib/syncLimits.mjs';
 import { normalizeSyncApiBase, readSyncConfigFile, resolveSyncTarget } from '../scripts/lib/syncTarget.mjs';
 import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
@@ -122,6 +123,9 @@ export async function runSync(options, deps = {}) {
   const readHeaders = options.secret ? { Authorization: `Bearer ${options.secret}` } : undefined;
   const data = await load(`${base}/api/shops?fields=sync`, { headers: readHeaders });
   if (!Array.isArray(data.shops)) throw new Error('同步清单格式不正确');
+  const maxSnapshotItems = Number.isSafeInteger(data.maxSnapshotItems) && data.maxSnapshotItems > 0
+    ? Math.min(data.maxSnapshotItems, MAX_SNAPSHOT_ITEMS)
+    : LEGACY_MAX_SNAPSHOT_ITEMS;
   if (options.only16688 && (!data.market16688RemovalSupport || !data.partialSnapshotSupport)) {
     throw new Error('目标站不支持 16688 商品下架确认');
   }
@@ -170,7 +174,7 @@ export async function runSync(options, deps = {}) {
       if (options.resume && state.completed[shop.id] === shop.shopUrl) { stats.resumed++; continue; }
       try {
         const snapshot = await collect(shop);
-        const partial = isPartialAdapter(shop) || snapshot.items.length > 2000;
+        const partial = isPartialAdapter(shop) || snapshot.items.length > maxSnapshotItems;
         const verify16688 = is16688(shop) && data.market16688RemovalSupport;
         const verifyLdxp = partial && !isPartialAdapter(shop) && ldxpShopKey(shop.shopUrl) && data.ldxpRemovalSupport;
         let confirmedMissingOffers = [];
@@ -204,8 +208,12 @@ export async function runSync(options, deps = {}) {
         }
         if (partial) {
           if (!data.partialSnapshotSupport) throw new Error('目标站尚不支持部分同步，已停止该店推送以保护原有商品');
-          console.warn(`[local-sync] ${shop.id}: ${isPartialAdapter(shop) ? '源站列表完整性未确认，按部分同步保留其余商品' : `商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`}`);
-          snapshot.items = snapshot.items.slice(0, 2000);
+          if (snapshot.items.length > maxSnapshotItems) {
+            console.warn(`[local-sync] ${shop.id}: 商品共 ${snapshot.items.length} 件，仅同步前 ${maxSnapshotItems} 件，其余保留原数据`);
+            snapshot.items = snapshot.items.slice(0, maxSnapshotItems);
+          } else {
+            console.warn(`[local-sync] ${shop.id}: 源站列表完整性未确认，按部分同步保留其余商品`);
+          }
         }
         const unchanged = !partial && shouldSkipLocalPush({
           shop, snapshot, localHash: computeSnapshotHash(snapshot),

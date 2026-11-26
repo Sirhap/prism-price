@@ -15,10 +15,10 @@ import { handleSponsorPublic } from "./routes/sponsors";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 const HOME_ASSET_PRELOADS = [
-  '</styles.css?v=stock-filter>; rel=preload; as=style',
-  '</i18n.js?v=stock-filter>; rel=preload; as=script',
+  '</styles.css?v=last-sync-stock>; rel=preload; as=style',
+  '</i18n.js?v=last-sync-stock>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
-  '</app.js?v=stock-filter>; rel=preload; as=script',
+  '</app.js?v=last-sync-stock>; rel=preload; as=script',
 ].join(", ");
 
 /** Only preload list requests that match the exact default URL built by app.js. */
