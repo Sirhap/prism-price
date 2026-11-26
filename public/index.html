@@ -34,9 +34,9 @@
       })();
     </script>
     <link rel="stylesheet" href="/styles.css?v=last-sync-stock" />
-    <script src="/i18n.js?v=last-sync-stock" defer></script>
+    <script src="/i18n.js?v=shop-closure" defer></script>
     <script src="/select-picker.js?v=20261119-dropdowns" defer></script>
-    <script src="/app.js?v=stock-bands-only" defer></script>
+    <script src="/app.js?v=stock-label" defer></script>
   </head>
   <body>
     <!-- 极光与透视晶格背景层 -->
@@ -299,7 +299,7 @@
                     <input id="hideLastSyncOutOfStockInput" type="checkbox" aria-describedby="productStockFilterNote" />
                     <span data-i18n="home.hideLastSyncOutOfStock">隐藏上次同步缺货报价</span>
                   </label>
-                  <span id="productStockFilterNote" data-i18n="home.productStockFilterNote">按采集结果筛选，可能有误差。实际库存以店铺为准。</span>
+                  <span id="productStockFilterNote" data-i18n="home.productStockFilterNote">打烊报价也按所选时间范围过滤。采集结果可能有误差，请以店铺为准。</span>
                 </div>
                 <div class="filter-actions">
                   <button id="resetFiltersBtn" class="quick-chip quick-chip-reset" type="button" data-i18n="home.resetFilters" hidden>清空筛选</button>

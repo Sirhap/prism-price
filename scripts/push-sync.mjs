@@ -479,6 +479,7 @@ export async function fetch16688Snapshot(shop, options = {}) {
     }
     throw error;
   }
+  await options.onShopOpen?.();
   const categories = await postJson('https://www.16688.com.cn/shopApi/goodsCategory/list', {shop_no:number}, 1, slowSourceOptions);
   if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效，保留原数据');
   const categoryNames = new Map(categories.data.filter(c => c && typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name.trim()]));
@@ -526,17 +527,18 @@ export async function fetchKa123Snapshot(shop, options = {}) {
 export async function fetchShopApiSnapshot(shop, options = {}) {
   const { apiOrigin, token } = parseShopApiTarget(shop.shopUrl);
   const infoRes = await postJson(`${apiOrigin}/shopApi/Shop/info`, { token }, 1, options);
-  if (infoRes.code !== 1 || !infoRes.data) {
-    const message = String(infoRes.msg || `info 接口失败 (code=${infoRes.code})`);
+  if (infoRes?.code !== 1 || !infoRes.data || typeof infoRes.data !== "object" || Array.isArray(infoRes.data)) {
+    const message = String(infoRes?.msg || `info 接口失败 (code=${infoRes?.code})`);
     const error = new Error(message);
     if (/^(?:店铺链接不存在|店铺不存在)(?:[，,。！？：:\s]|$)/.test(message)) error.shopUnavailable = "not_found";
     else if (/^商家已被关闭交易(?:[，,。！？：:\s]|$)/.test(message)) error.shopUnavailable = "closed";
-    else if (infoRes.code === 0 && /^(?:该)?商家已被封禁(?:[，,。！？：:\s]|$)/.test(message)) {
+    else if (infoRes?.code === 0 && /^(?:该)?商家已被封禁(?:[，,。！？：:\s]|$)/.test(message)) {
       error.shopUnavailable = "banned";
       error.message = "源站确认商家已被封禁";
     }
     throw error;
   }
+  await options.onShopOpen?.();
   const defaultCardPage1 = await postJson(`${apiOrigin}/shopApi/Shop/goodsList`, {
     token, goods_type: "card", page: 1, current: 1, limit: 100, pageSize: 100,
   }, 1, options);

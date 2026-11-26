@@ -1,5 +1,3 @@
-import { hasOfferSyncTimes } from "../collector/etl/offerSyncTimes";
-
 const RECENT_STOCK_MS = 24 * 60 * 60 * 1000;
 
 interface StockFilter {
@@ -8,18 +6,35 @@ interface StockFilter {
   params: string[];
 }
 
-/** The 24-hour filter uses this offer's observation or a complete snapshot of its shop. */
+/** Stock filters also exclude shops with an active closure observation. */
 export async function resolveProductStockFilter(
   db: D1Database, hideRecent?: true, hideLastSync?: true,
 ): Promise<StockFilter | null> {
+  if (!hideRecent && !hideLastSync) return null;
+  const columns = await db.prepare(`SELECT
+    EXISTS(SELECT 1 FROM pragma_table_info('shops') WHERE name = 'last_full_sync_at') AS sync_times,
+    EXISTS(SELECT 1 FROM pragma_table_info('shops') WHERE name = 'last_closed_at') AS closure_grace`)
+    .first<{ sync_times: number; closure_grace: number }>();
+  const clauses: string[] = [];
+  const params: string[] = [];
   if (hideLastSync) {
-    const hiddenOfferClause = "o.stock_count = 0";
-    return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params: [] };
+    clauses.push("o.stock_count = 0");
+    if (columns?.closure_grace) clauses.push("s.last_closed_at IS NOT NULL");
+  } else {
+    const cutoff = new Date(Date.now() - RECENT_STOCK_MS).toISOString();
+    if (columns?.sync_times) {
+      clauses.push("(o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?))");
+      params.push(cutoff, cutoff);
+    }
+    if (columns?.closure_grace) {
+      clauses.push("s.last_closed_at >= ?");
+      params.push(cutoff);
+    }
   }
-  if (!hideRecent || !await hasOfferSyncTimes(db)) return null;
-  const cutoff = new Date(Date.now() - RECENT_STOCK_MS).toISOString();
-  const hiddenOfferClause = "o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?)";
-  return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params: [cutoff, cutoff] };
+  if (!clauses.length) return null;
+
+  const hiddenOfferClause = clauses.join(" OR ");
+  return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params };
 }
 
 /**

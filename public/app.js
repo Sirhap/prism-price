@@ -729,13 +729,13 @@ function formatStockObservation(stockBand) {
     normal: L("库存一般", "Moderate stock"),
     sufficient: L("库存充足", "Plenty in stock"),
   };
-  return labels[stockBand] || L("未记录", "Not recorded");
+  return labels[stockBand] || L("库存未记录", "Stock not recorded");
 }
 
 function renderOfferObservation(offer, lowest = false) {
   return `<div class="offer-observation">
     ${renderSyncTime(offer?.lastSyncedAt, lowest ? L("最低价报价上传同步", "Lowest offer synced") : L("上传同步时间", "Uploaded and synced"))}
-    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(formatStockObservation(offer?.stockBand))}</strong></span>
+    <span class="offer-stock-reference"><strong>${escapeHtml(formatStockObservation(offer?.stockBand))}</strong></span>
   </div>`;
 }
 

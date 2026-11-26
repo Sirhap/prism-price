@@ -109,7 +109,7 @@
     "home.facetHelpText": "Counts show matching product groups when only that filter changes. Switching brands or types clears incompatible filters. Preset prices include the lower bound, not the upper bound.",
     "home.hideLastSyncOutOfStock": "Hide offers out of stock at last sync",
     "home.hideRecentOutOfStock": "Hide offers seen out of stock in the last 24h",
-    "home.productStockFilterNote": "Stock may change after we check it. Verify availability with the store.",
+    "home.productStockFilterNote": "The selected time range also applies to offers from closed stores. Sync results may be out of date, so verify with the store.",
     "home.customPriceLabel": "Custom price (¥)",
     "home.customMinPlaceholder": "Min",
     "home.customMaxPlaceholder": "Max",

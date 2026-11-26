@@ -780,7 +780,7 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
   const offersSection = offersTableRows
     ? `<h2>多店报价对比预览（前 ${Math.min(offers.length, 12)} 家）</h2>
        <div class="table-wrap"><table>
-         <thead><tr><th>收录店铺</th><th>参考报价</th><th>上次同步库存（供参考）</th><th>上传同步时间</th><th>源站核实</th></tr></thead>
+         <thead><tr><th>收录店铺</th><th>参考报价</th><th>库存</th><th>上传同步时间</th><th>源站核实</th></tr></thead>
          <tbody>${offersTableRows}</tbody>
        </table></div>`
     : `<p style="color:#64748b;">当前暂无多店报价明细预览，可前往首页搜索对比实时收录结果。</p>`;

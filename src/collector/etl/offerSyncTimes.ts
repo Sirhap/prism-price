@@ -7,12 +7,6 @@ export function offerLastSyncedAt(observedAt: unknown, fullSyncAt: unknown): str
   return Date.parse(observedAt) >= Date.parse(fullSyncAt) ? observedAt : fullSyncAt;
 }
 
-export async function hasOfferSyncTimes(db: D1Database): Promise<boolean> {
-  return !!await db.prepare(
-    "SELECT 1 FROM pragma_table_info('shops') WHERE name = 'last_full_sync_at'",
-  ).first();
-}
-
 interface OfferObservation {
   lastSyncedAt: string | null;
   stockWarningDay?: string;

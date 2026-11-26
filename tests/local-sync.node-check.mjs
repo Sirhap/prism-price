@@ -204,15 +204,37 @@ test('间隔配置和环境覆盖生效，范围校验且随机取值在边界�
   await gate.before();await gate.before();assert.equal(clock,5000);
 });
 
-test('关闭交易默认不删除，明确启用后才删除', async () => {
-  const checkpoint = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sync-closed-')), 'state.json');
-  let deletes = 0;
+test('关闭交易提交观察，显式开关也不能跳过服务端的等待期', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-closed-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const checkpoint = path.join(directory, 'state.json');
   const collect = async () => { const error = new Error('商家已被关闭交易'); error.shopUnavailable = 'closed'; throw error; };
-  const deps = { load: async () => ({ shops: [shops[0]] }), collect, push: async () => {}, remove: async (shop) => { deletes++; return { deleted: true, shopId: shop.id }; } };
+  const calls = [];
+  const deps = {
+    load: async () => ({ shops: [shops[0]], shopClosureGraceSupport: true }),
+    collect, push: async () => assert.fail('打烊店铺不推送商品'),
+    remove: async () => assert.fail('打烊不走直接删除接口'),
+    observeClosure: async (shop, state, allowDelete) => {
+      calls.push({ state, allowDelete });
+      return { shopId: shop.id, state: 'closed', deleted: false, deleteNotBefore: '2026-12-04T08:00:00.000Z' };
+    },
+  };
+  const preview = await runSync(options(checkpoint), deps);
+  assert.equal(preview.closedPending, 1);
   const first = await runSync(options(checkpoint, { apply: true }), deps);
-  assert.equal(first.failed, 1); assert.equal(deletes, 0);
-  const second = await runSync(options(checkpoint, { apply: true, deleteUnavailable: true }), deps);
-  assert.equal(second.deleted, 1); assert.equal(deletes, 1);
+  assert.equal(first.closedPending, 1);
+  const next = await runSync(options(checkpoint, { apply: true, resume: true, deleteUnavailable: true }), deps);
+  assert.equal(next.closedPending, 1);
+  assert.equal(next.deleted, 0);
+  assert.deepEqual(calls, [{ state: 'closed', allowDelete: false }, { state: 'closed', allowDelete: true }]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(checkpoint, 'utf8')).completed, {});
+
+  const legacy = await runSync(options(checkpoint, { apply: true, deleteUnavailable: true }), {
+    ...deps, load: async () => ({ shops: [shops[0]] }),
+  });
+  assert.equal(legacy.closedPending, 1);
+  assert.equal(legacy.deleted, 0);
+  assert.equal(calls.length, 2);
 });
 
 test('支持 500ms 配置并维持随机范围，低于下限拒绝', async () => {
@@ -493,7 +515,7 @@ test('LDXP 大店只复核完整采集结果里缺失的旧报价，并保留限
   assert.deepEqual(JSON.parse(fs.readFileSync(checkpoint, 'utf8')).completed, {});
 });
 
-test('正式同步删除已确认的空店、商家封禁和 16688 非营业店铺，保留异常响应', async (t) => {
+test('删除已确认的空店、封禁和不存在店铺，保留 16688 打烊与异常响应', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-confirmed-unavailable-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const cases = [
@@ -536,9 +558,29 @@ test('正式同步删除已确认的空店、商家封禁和 16688 非营业店�
     remove: async shop => { removed.push(shop.id); return { deleted: true, shopId: shop.id }; },
     push: async () => assert.fail('遭遇不可用店铺或无效快照时不推送'),
   });
-  assert.deepEqual(removed.sort(), ['ban', 'closed', 'empty', 'missing']);
+  assert.deepEqual(removed.sort(), ['ban', 'empty', 'missing']);
   assert.deepEqual(categoryChecks.sort(), ['EMPTY', 'PARTIAL']);
-  assert.equal(stats.deleted, 4);
+  assert.equal(stats.deleted, 3);
+  assert.equal(stats.closedPending, 1);
   assert.equal(stats.failed, 3);
   assert.equal(stats.riskSkipped, 0);
+});
+
+test('确认店铺恢复营业后清除观察，即使后续采集商品失败', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-reopened-shop-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const shop = { ...shops[0], closedSince: '2026-11-26T00:00:00.000Z' };
+  const order = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url.endsWith('/Shop/info')) return Response.json({ code: 1, data: { nickname: '恢复营业店铺' } });
+    order.push('goodsList');
+    return Response.json({ code: 0, msg: '源站列表暂不可用' });
+  });
+  const stats = await runSync(options(path.join(dir, 'checkpoint.json'), { apply: true }), {
+    load: async () => ({ shops: [shop], shopClosureGraceSupport: true }),
+    observeClosure: async (_shop, state) => { order.push(state); return { shopId: shop.id, state, deleted: false }; },
+    push: async () => assert.fail('列表失败时不应提交商品'),
+  });
+  assert.deepEqual(order, ['open', 'goodsList']);
+  assert.equal(stats.failed, 1);
 });

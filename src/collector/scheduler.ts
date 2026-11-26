@@ -656,28 +656,27 @@ export async function upsertAdminShops(
 /**
  * 管理员下架店铺：级联删除在售报价并自动重算受影响的同款比价组
  */
-export async function deleteShopById(db: D1Database, shopId: string): Promise<{ deleted: boolean }> {
-  const existing = await db.prepare("SELECT id FROM shops WHERE id = ?").bind(shopId).first<{ id: string }>();
-  if (!existing) {
-    return { deleted: false };
-  }
+export async function deleteShopById(
+  db: D1Database, shopId: string, closure?: { shopUrl: string; closedSince: string },
+): Promise<{ deleted: boolean }> {
+  const shopMatch = closure ? "id = ? AND shop_url = ? AND closed_since_at = ?" : "id = ?";
+  const shopParams = closure ? [shopId, closure.shopUrl, closure.closedSince] : [shopId];
+  const existing = await db.prepare(`SELECT id FROM shops WHERE ${shopMatch}`).bind(...shopParams).first<{ id: string }>();
+  if (!existing) return { deleted: false };
 
-  const { results: affected } = await db
-    .prepare("SELECT DISTINCT group_key FROM offers WHERE shop_id = ?")
-    .bind(shopId)
-    .all<{ group_key: string }>();
+  const { results: affected } = await db.prepare("SELECT DISTINCT group_key FROM offers WHERE shop_id = ?")
+    .bind(shopId).all<{ group_key: string }>();
+  const affectedKeys = affected.map(row => row.group_key);
 
-  const affectedKeys = (affected || []).map((r) => r.group_key);
-
-  await db.batch([
-    db.prepare("DELETE FROM offers WHERE shop_id = ?").bind(shopId),
-    db.prepare("DELETE FROM shop_daily_snapshots WHERE shop_id = ?").bind(shopId),
-    db.prepare("DELETE FROM shops WHERE id = ?").bind(shopId),
+  // Recheck the closure in the deletion transaction in case another collector saw the store reopen.
+  const childGuard = closure ? ` AND EXISTS (SELECT 1 FROM shops WHERE ${shopMatch})` : "";
+  const childParams = closure ? [shopId, ...shopParams] : [shopId];
+  const [, , deleted] = await db.batch([
+    db.prepare(`DELETE FROM offers WHERE shop_id = ?${childGuard}`).bind(...childParams),
+    db.prepare(`DELETE FROM shop_daily_snapshots WHERE shop_id = ?${childGuard}`).bind(...childParams),
+    db.prepare(`DELETE FROM shops WHERE ${shopMatch}`).bind(...shopParams),
   ]);
-
-  if (affectedKeys.length > 0) {
-    await rebuildProductGroups(db, affectedKeys, new Date().toISOString());
-  }
-
+  if (!deleted.meta.changes) return { deleted: false };
+  if (affectedKeys.length) await rebuildProductGroups(db, affectedKeys, new Date().toISOString());
   return { deleted: true };
 }

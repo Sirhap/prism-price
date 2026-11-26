@@ -16,9 +16,9 @@ import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLo
 
 const HOME_ASSET_PRELOADS = [
   '</styles.css?v=last-sync-stock>; rel=preload; as=style',
-  '</i18n.js?v=last-sync-stock>; rel=preload; as=script',
+  '</i18n.js?v=shop-closure>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
-  '</app.js?v=stock-bands-only>; rel=preload; as=script',
+  '</app.js?v=stock-label>; rel=preload; as=script',
 ].join(", ");
 
 /** Only preload list requests that match the exact default URL built by app.js. */

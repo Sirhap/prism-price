@@ -114,15 +114,24 @@ export async function runSync(options, deps = {}) {
   const gate = deps.gate || createRequestGate(minInterval, { maxIntervalMs: maxInterval });
   const is16688 = (shop) => Boolean(market16688ShopKey(shop.shopUrl));
   const isPartialAdapter = shop => is16688(shop) || shop.adapterType === 'ka123_api';
-  const collect = deps.collect || ((shop) => (is16688(shop) ? fetch16688Snapshot : shop.adapterType === 'ka123_api' ? fetchKa123Snapshot : fetchShopApiSnapshot)(shop, {
-    requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true, allowEmptyMarket16688: true,
-  }));
   const remove = deps.remove || ((shop) => jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${options.secret}` } }));
   const push = deps.push || ((entry) => jsonFetch(`${base}/api/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` }, body: JSON.stringify({ shops: [entry] }) }));
   if (options.apply && !options.secret && !deps.push) throw new Error('缺少 INGEST_SECRET：请配置 local-sync/config.env、环境变量或项目 .dev.vars');
   const readHeaders = options.secret ? { Authorization: `Bearer ${options.secret}` } : undefined;
   const data = await load(`${base}/api/shops?fields=sync`, { headers: readHeaders });
   if (!Array.isArray(data.shops)) throw new Error('同步清单格式不正确');
+  const observeClosure = deps.observeClosure || ((shop, state, allowDelete = false) =>
+    jsonFetch(`${base}/api/admin/shops/${encodeURIComponent(shop.id)}/closure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.secret}` },
+      body: JSON.stringify({ shopUrl: shop.shopUrl, state, allowDelete }),
+    }));
+  const collect = deps.collect || ((shop) => (is16688(shop) ? fetch16688Snapshot : shop.adapterType === 'ka123_api' ? fetchKa123Snapshot : fetchShopApiSnapshot)(shop, {
+    requestGate: gate, allowChallengeSolve: false, skipRiskRetry: true, allowEmptyMarket16688: true,
+    onShopOpen: options.apply && data.shopClosureGraceSupport && shop.closedSince
+      ? () => observeClosure(shop, 'open')
+      : undefined,
+  }));
   const maxSnapshotItems = Number.isSafeInteger(data.maxSnapshotItems) && data.maxSnapshotItems > 0
     ? Math.min(data.maxSnapshotItems, MAX_SNAPSHOT_ITEMS)
     : LEGACY_MAX_SNAPSHOT_ITEMS;
@@ -165,7 +174,7 @@ export async function runSync(options, deps = {}) {
   }
   if (options.limit) targets = targets.slice(0, options.limit);
   if (!options.resume && options.apply) saveCheckpoint(options.checkpoint, state);
-  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, riskSkipped: 0, unprocessed: 0 };
+  const stats = { total: targets.length, resumed: 0, unchanged: 0, changed: 0, pushed: 0, deleted: 0, closedPending: 0, emptyCandidates: 0, alreadyAbsent: 0, failed: 0, riskSkipped: 0, unprocessed: 0 };
   let cursor = 0;
   console.log(`[local-sync] ${options.apply ? '执行推送' : '预览（不会写入）'}：${targets.length} 家，分片 ${shardIndex}/${shardCount}，并发 ${options.concurrency}，请求间隔 ${minInterval}～${maxInterval}ms，目标 ${base}`);
   async function worker() {
@@ -250,10 +259,23 @@ export async function runSync(options, deps = {}) {
         console.log(`[local-sync] ${shop.id}: ${unchanged ? '未变化' : options.apply ? '已推送' : '有变化'}`);
       } catch (error) {
         const unavailable = error?.shopUnavailable;
-        if (options.apply && (['not_found', 'empty', 'banned'].includes(unavailable) ||
-            (unavailable === 'closed' && (is16688(shop) || options.deleteUnavailable)))) {
+        const closed = unavailable === 'closed';
+        if (closed && (!options.apply || !data.shopClosureGraceSupport)) {
+          stats.closedPending++;
+          const note = options.apply ? '目标站尚未启用打烊观察，保留店铺' : '打烊，正式同步后记录观察';
+          console.log(`[local-sync] ${shop.id}: ${note}`);
+          continue;
+        }
+        if (options.apply && (closed || ['not_found', 'empty', 'banned'].includes(unavailable))) {
           try {
-            const result = await remove(shop);
+            const allowDelete = is16688(shop) || options.deleteUnavailable === true;
+            const result = closed ? await observeClosure(shop, 'closed', allowDelete) : await remove(shop);
+            if (closed && result?.shopId === shop.id && result.deleted === false && ['closed', 'retained'].includes(result.state)) {
+              stats.closedPending++;
+              const deadline = allowDelete && result.deleteNotBefore ? `，最早删除时间 ${result.deleteNotBefore}` : '';
+              console.log(`[local-sync] ${shop.id}: 打烊观察中，保留店铺${deadline}`);
+              continue;
+            }
             if (result?.deleted !== true || result.shopId !== shop.id) throw new Error('删除结果未确认');
             stats.deleted++; state.completed[shop.id] = shop.shopUrl; saveCheckpoint(options.checkpoint, state);
             console.log(`[local-sync] ${shop.id}: 源站店铺不可用，已删除`);
@@ -293,9 +315,9 @@ export function describeWorkflow() {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
       source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 和 LDXP 大店部分同步会逐条复核完整采集结果中缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品未上架、已下架或不存在才提交下架确认。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
-      delete: '使用 --apply 时，源站明确报告店铺不存在、商家封禁、16688 暂停营业，或完整校验后无可收录商品，会调用目标 API 的店铺删除接口；其他平台关闭交易需加 --delete-unavailable。',
+      delete: '使用 --apply 时，源站明确报告店铺不存在、商家封禁，或完整校验后无可收录商品时，会调用目标 API 的店铺删除接口。首次确认打烊后满 7 天且复查仍打烊才删除；其他平台关闭交易还需 --delete-unavailable。',
     },
-    deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；店铺状态依源站单次响应判断；源站商品总数与列表冲突时会核对分类列表。请求风控和普通网络失败不会触发删除。',
+    deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；店铺明确不存在或被封禁可按源站单次响应判断；商品总数与列表冲突时会核对分类列表。打烊观察由目标站保存，确认恢复营业后清除。请求风控和普通网络失败不会触发删除。',
     rate: '默认单并发、随机间隔 1～2 秒；单店触发风控立即跳过并继续下一家，目标站鉴权失败或限流则停止。多进程不共享限速。',
     defaults: '默认只预览，不写入；仅显式 --apply 才会写入或删除。脚本不会自行设置定时任务。',
     audit: '开源代码和凭据均需使用者自行确认；不要将密钥写入仓库、日志或提示词。',

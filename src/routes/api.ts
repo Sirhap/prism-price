@@ -676,6 +676,12 @@ function buildBaseShopProfile(
   };
 }
 
+const SHOP_CLOSURE_GRACE_MS = 7 * 86_400_000;
+
+async function hasShopClosureGrace(db: D1Database): Promise<boolean> {
+  return !!await db.prepare("SELECT 1 FROM pragma_table_info('shops') WHERE name = 'closed_since_at'").first();
+}
+
 /**
  * GET /api/shops - 返回店铺摘要列表（支持 fields=sync 极简清单、onlyInStock 过滤与分页搜索模式）
  */
@@ -686,15 +692,18 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
 
   const fieldsMode = (url.searchParams.get("fields") || "").trim();
   if (fieldsMode === "sync") {
+    const shopClosureGraceSupport = await hasShopClosureGrace(env.DB);
+    const closedSinceField = shopClosureGraceSupport ? "closed_since_at" : "NULL AS closed_since_at";
     const { results } = await env.DB.prepare(
-      `SELECT id, shop_name, shop_url, canonical_url, adapter_type, effective_system_type AS system_type, description, telegram, sync_supported, sync_state, content_hash, last_synced_at, stale_days, shop_sell_count, sales_visible, deposit_visible, deposit_money
+      `SELECT id, shop_name, shop_url, canonical_url, adapter_type, effective_system_type AS system_type, description, telegram, sync_supported, sync_state, content_hash, last_synced_at, stale_days, shop_sell_count, sales_visible, deposit_visible, deposit_money, ${closedSinceField}
        FROM ${shopSource}
        WHERE sync_supported = 1 OR effective_system_type = '16688'
        ORDER BY id ASC`,
-    ).all<ShopRecord>();
+    ).all<ShopRecord & { closed_since_at: string | null }>();
 
     return Response.json(
       {
+        shopClosureGraceSupport,
         systemTypePersistence: caps.systemType,
         descriptionPersistence: caps.description,
         partialSnapshotSupport: true,
@@ -719,6 +728,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
             syncState: s.sync_state,
             contentHashFull: s.content_hash || "",
             lastSyncedAt: s.last_synced_at,
+            ...(s.closed_since_at ? { closedSince: s.closed_since_at } : {}),
             staleDays: computeStaleDays(s.last_synced_at, s.stale_days),
             shopSellCount:s.shop_sell_count, salesVisible:s.sales_visible === 1, depositVisible:s.deposit_visible === 1, depositMoney:s.deposit_money,
           };
@@ -1167,6 +1177,49 @@ async function handleBrowserShopSync(request: Request, env: Env): Promise<Respon
   } finally { browserSyncInFlight.delete(id); }
 }
 
+/** Record a fresh source observation, or remove the shop when a new closure confirms the deadline. */
+async function handleShopClosure(shopId: string, request: Request, env: Env): Promise<Response> {
+  const auth = await verifyAdminSecret(request, env);
+  if (!auth.ok) return Response.json({ error: auth.message }, { status: auth.status });
+
+  const body = await request.json().catch(() => null) as { state?: unknown; shopUrl?: unknown; allowDelete?: unknown } | null;
+  if (!body || (body.state !== "open" && body.state !== "closed") ||
+      typeof body.shopUrl !== "string" || !isValidHttpUrl(body.shopUrl) ||
+      (body.allowDelete !== undefined && typeof body.allowDelete !== "boolean")) {
+    return Response.json({ error: "店铺营业状态或源站地址无效" }, { status: 400 });
+  }
+  if (!await hasShopClosureGrace(env.DB)) {
+    return Response.json({ error: "打烊观察尚未启用" }, { status: 503 });
+  }
+
+  const shop = await env.DB.prepare("SELECT shop_url FROM shops WHERE id = ?").bind(shopId).first<{ shop_url: string }>();
+  if (!shop) return Response.json({ error: "店铺不存在" }, { status: 404 });
+  if (shop.shop_url !== body.shopUrl) {
+    return Response.json({ error: "店铺源站地址已改变，请刷新同步清单" }, { status: 409 });
+  }
+
+  const now = Date.now();
+  if (body.state === "open") {
+    await env.DB.prepare("UPDATE shops SET closed_since_at = NULL, last_closed_at = NULL WHERE id = ? AND shop_url = ?")
+      .bind(shopId, body.shopUrl).run();
+    return Response.json({ shopId, state: "open", deleted: false });
+  }
+  const closedAt = new Date(now).toISOString();
+  const observation = await env.DB.prepare(`UPDATE shops SET closed_since_at = COALESCE(closed_since_at, ?1),
+    last_closed_at = MAX(COALESCE(last_closed_at, ''), ?1)
+    WHERE id = ?2 AND shop_url = ?3 RETURNING closed_since_at`)
+    .bind(closedAt, shopId, body.shopUrl).first<{ closed_since_at: string | null }>();
+  if (!observation?.closed_since_at) return Response.json({ shopId, state: "retained", deleted: false });
+
+  const closedSince = observation.closed_since_at;
+  const deadline = Date.parse(closedSince) + SHOP_CLOSURE_GRACE_MS;
+  if (body.allowDelete && now >= deadline) {
+    const result = await deleteShopById(env.DB, shopId, { closedSince, shopUrl: body.shopUrl });
+    return Response.json({ shopId, deleted: result.deleted, state: result.deleted ? "deleted" : "retained" });
+  }
+  return Response.json({ shopId, deleted: false, state: "closed", closedSince, deleteNotBefore: new Date(deadline).toISOString() });
+}
+
 /**
  * DELETE /api/admin/shops/:id - 管理员下架指定店铺并级联清理商品组
  */
@@ -1613,6 +1666,13 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
   if (request.method === "POST" && pathname === "/api/admin/shops/probe") {
     return handleAdminProbeShop(request, env);
+  }
+
+  const shopClosureMatch = pathname.match(/^\/api\/admin\/shops\/([^/]+)\/closure$/);
+  if (request.method === "POST" && shopClosureMatch) {
+    const shopId = safeDecodeRouteParam(shopClosureMatch[1]);
+    if (!shopId) return Response.json({ error: "非法的店铺路径参数" }, { status: 400 });
+    return handleShopClosure(shopId, request, env);
   }
 
   const adminDeleteMatch = pathname.match(/^\/api\/admin\/shops\/([^/]+)$/);
