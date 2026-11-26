@@ -12,11 +12,12 @@ import { handleApiRequest, isSyncCatalogRead, verifyAdminSecret } from "./routes
 import { handleAdminRoute } from "./routes/admin";
 import { checkCrawlerAccess } from "./routes/crawlerAccess";
 import { handleSponsorPublic } from "./routes/sponsors";
+import { handleAiRequest } from "./routes/ai";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 const HOME_ASSET_PRELOADS = [
-  '</styles.css?v=last-sync-stock>; rel=preload; as=style',
-  '</i18n.js?v=shop-closure>; rel=preload; as=script',
+  '</styles.css?v=ai-assistant-2>; rel=preload; as=style',
+  '</i18n.js?v=ai-assistant-1>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
   '</app.js?v=stock-label>; rel=preload; as=script',
 ].join(", ");
@@ -82,6 +83,9 @@ export default {
       }
       if (url.pathname === "/api/sponsors" || url.pathname.startsWith("/api/sponsors/")) {
         return (await handleSponsorPublic(request, env.DB)) ?? new Response(null, { status: 404 });
+      }
+      if (url.pathname === "/api/ai") {
+        return await handleAiRequest(request, env);
       }
       if (url.pathname.startsWith("/api/")) {
         return await withPublicResponseCache(request, async () => {

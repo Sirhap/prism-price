@@ -246,3 +246,49 @@ describe('后台和店铺排名', () => {
  });
 });
 
+describe('AI 助手模型配置', () => {
+ it('后台配置只写不回显，留空不覆盖，清空后停用', async () => {
+  // 前序用例改过密码并清空了会话，这里用新密码重新登录
+  const login = await post('/api/control/login', { password: 'new-isolated-password' });
+  expect(login.status).toBe(200);
+  cookie = login.headers.get('set-cookie')!.split(';')[0];
+  const initial = await (await SELF.fetch(origin + '/api/control/settings', { headers: { cookie } })).json() as {
+   aiApiBase: string; aiModel: string; aiApiKeyConfigured: boolean;
+  };
+  expect(initial.aiApiBase).toBe('');
+  expect(initial.aiModel).toBe('');
+  expect(initial.aiApiKeyConfigured).toBe(false);
+  expect((await post('/api/control/ai-settings', { aiApiBase: 'https://a.example/v3', aiModel: 'm' })).status).toBe(401);
+
+  const saved = await post('/api/control/ai-settings', {
+   aiApiBase: 'https://api.example.com/v3/', aiModel: 'test-model', aiApiKey: 'sk-secret-123',
+  }, true);
+  expect(saved.status).toBe(200);
+  const savedBody = await saved.json() as { aiApiBase: string; aiModel: string; aiApiKeyConfigured: boolean; aiReady: boolean };
+  expect(savedBody.aiApiBase).toBe('https://api.example.com/v3');
+  expect(savedBody.aiModel).toBe('test-model');
+  expect(savedBody.aiApiKeyConfigured).toBe(true);
+  expect(savedBody.aiReady).toBe(true);
+  expect(JSON.stringify(savedBody)).not.toContain('sk-secret');
+
+  const { readLlmConfig } = await import('../src/ai/llm');
+  expect(await readLlmConfig(env, env.DB)).toEqual({
+   baseUrl: 'https://api.example.com/v3', apiKey: 'sk-secret-123', model: 'test-model',
+  });
+
+  // 未传 aiApiKey 时保留原密钥
+  await post('/api/control/ai-settings', { aiApiBase: 'https://api.example.com/v3', aiModel: 'test-model' }, true);
+  expect(await env.DB.prepare('SELECT ai_api_key FROM admin_settings WHERE id=1').first('ai_api_key')).toBe('sk-secret-123');
+
+  // 非法地址被拒绝
+  expect((await post('/api/control/ai-settings', { aiApiBase: 'ftp://bad', aiModel: 'm' }, true)).status).toBe(400);
+
+  // 空 Key 显式清空，模型停用
+  const cleared = await post('/api/control/ai-settings', { aiApiBase: '', aiModel: '', aiApiKey: '' }, true);
+  const clearedBody = await cleared.json() as { aiApiKeyConfigured: boolean; aiReady: boolean };
+  expect(clearedBody.aiApiKeyConfigured).toBe(false);
+  expect(clearedBody.aiReady).toBe(false);
+  expect(await readLlmConfig(env, env.DB)).toBeNull();
+ });
+});
+

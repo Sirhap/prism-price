@@ -8,7 +8,7 @@
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/admin/admin.bd13f75c5bed.css">
-  <script type="module" src="/admin/admin.fc6ed1f4f462.js"></script>
+  <script type="module" src="/admin/admin.e694b32341e7.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -376,6 +376,20 @@
           <label>第三方自建站注册地址<input name="store_unknown" type="url" maxlength="2048" placeholder="未配置"></label>
           <div id="settingsSaveHint" class="save-hint" aria-live="polite"></div>
           <button class="btn btn-primary" type="submit">保存站点设置</button>
+        </form>
+      </section>
+      <section class="admin-card" aria-labelledby="aiSettingsTitle">
+        <p class="eyebrow">AI ASSISTANT</p>
+        <h2 id="aiSettingsTitle">AI 助手模型</h2>
+        <p class="muted">配置 OpenAI 兼容接口后，悬浮助手在知识库无法回答时会调用模型；留空则只使用内置规则回答，不产生任何费用。</p>
+        <form id="aiSettingsForm">
+          <label>接口地址（Base URL）<input name="aiApiBase" type="url" maxlength="2048" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
+          <label>模型名称<input name="aiModel" type="text" maxlength="128" autocomplete="off" placeholder="例如 doubao-seed-1-6-flash"></label>
+          <label>API Key<input name="aiApiKey" type="password" maxlength="512" autocomplete="new-password" placeholder="留空表示不修改"></label>
+          <p class="muted" id="aiKeyHint">尚未配置 API Key，助手只使用内置规则回答。</p>
+          <label class="toggle-row"><span><strong>清除已保存的 API Key</strong><small>勾选后保存会删除密钥并停用模型</small></span><input name="clearAiApiKey" type="checkbox"></label>
+          <div id="aiSettingsHint" class="save-hint" aria-live="polite"></div>
+          <button class="btn btn-primary" type="submit">保存模型配置</button>
         </form>
       </section>
     </div>

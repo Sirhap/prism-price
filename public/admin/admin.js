@@ -61,7 +61,10 @@ async function loadSettings() {
   const data=await api('/api/control/settings'), f=$('#settingsForm');
   for(const k of ['favoritesEnabled','manualRankEnabled','submissionsEnabled'])f.elements[k].checked=data[k];
   f.elements.openStoreUrl.value=data.openStoreUrl; for(const key of ['catfk','16688','acg-faka','dujiaoka','other','unknown'])f.elements[`store_${key}`].value=data.openStoreUrls?.[key] || '';setDirty(false);updateMetrics(data);
+  const af=$('#aiSettingsForm');
+  if(af){af.elements.aiApiBase.value=data.aiApiBase || '';af.elements.aiModel.value=data.aiModel || '';af.elements.aiApiKey.value='';af.elements.clearAiApiKey.checked=false;syncAiKeyHint(!!data.aiApiKeyConfigured,!!data.aiReady);}
 }
+function syncAiKeyHint(configured,ready){const hint=$('#aiKeyHint');if(!hint)return;if(ready)hint.textContent='已启用：助手会调用该模型回答开放式问题。';else if(configured)hint.textContent='已保存 API Key，但接口地址或模型为空，模型尚未启用。';else hint.textContent='尚未配置 API Key，助手只使用内置规则回答。';}
 function formatBjTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -1018,6 +1021,7 @@ $('#sponsorNextBtn')?.addEventListener('click', () => { sponsorPage += 1; refres
 
 submitForm('#loginForm',async f=>{await api('/api/control/login',{password:f.elements.password.value});f.reset();notice.hidden=true;await showDashboard();});
 submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await Promise.all([loadShops(),loadOverview()]);});
+submitForm('#aiSettingsForm',async f=>{const data={aiApiBase:f.elements.aiApiBase.value.trim(),aiModel:f.elements.aiModel.value.trim()};const key=f.elements.aiApiKey.value.trim();if(key)data.aiApiKey=key;if(f.elements.clearAiApiKey.checked)data.aiApiKey='';const saved=await api('/api/control/ai-settings',data);f.elements.aiApiKey.value='';f.elements.clearAiApiKey.checked=false;syncAiKeyHint(!!saved.aiApiKeyConfigured,!!saved.aiReady);$('#aiSettingsHint').textContent=saved.aiReady?'模型已启用':'模型未启用';message(saved.aiReady?'模型配置已保存并启用':'模型配置已保存，但接口地址、模型或 API Key 不完整，模型未启用',!saved.aiReady);});
 submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');await loadOverview();});
 submitForm('#passwordForm',async f=>{await api('/api/control/password',{oldPassword:f.elements.oldPassword.value,newPassword:f.elements.newPassword.value});f.reset();$('#dashboard').hidden=true;$('#loginPanel').hidden=false;$('#logout').hidden=true;message('密码已修改，请重新登录');});
 $('#logout').addEventListener('click',async()=>{try{await api('/api/control/logout',{});settingsDirty=false;Object.keys(panelLoaded).forEach(k=>panelLoaded[k]=false);location.reload();}catch(err){message(err.message,true);}});

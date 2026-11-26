@@ -28,6 +28,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({
       SYNC_BATCH_SIZE: process.env.SYNC_BATCH_SIZE || "3",
       AUTO_SYNC_ENABLED: process.env.AUTO_SYNC_ENABLED || "false",
       STALE_DAYS_THRESHOLD: "30",
+      // 可选：配置齐全后悬浮助手会自动启用外部 OpenAI 兼容模型
+      ...(process.env.AI_API_BASE ? { AI_API_BASE: process.env.AI_API_BASE } : {}),
+      ...(process.env.AI_API_KEY ? { AI_API_KEY: process.env.AI_API_KEY } : {}),
+      ...(process.env.AI_MODEL ? { AI_MODEL: process.env.AI_MODEL } : {}),
     },
     assets: {
       directory: resolve(root, "public"),

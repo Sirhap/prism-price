@@ -3850,3 +3850,61 @@ html[data-theme="dark"] .toast-item {
 .guide-floating button:focus-visible { outline:3px solid var(--accent-border);outline-offset:3px; }
 @media(max-width:600px){.guide-floating{left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));width:auto;padding:14px 16px}.guide-floating p{margin:6px 0 10px}.guide-floating-actions button{flex:1}.guide-spotlight{outline-offset:3px}}
 .layout.guide-spotlight-parent { z-index:46; }
+
+/* ===== 悬浮 AI 检索助手 ===== */
+.ai-assistant { position:fixed;z-index:45;right:18px;top:92px;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none; }
+.ai-assistant>* { pointer-events:auto; }
+.ai-fab { display:inline-flex;align-items:center;gap:8px;padding:11px;border:1px solid var(--border);border-radius:999px;background:var(--surface-glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:var(--text);font:700 13px var(--font-sans);box-shadow:var(--shadow-lg);cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,padding .18s ease; }
+.ai-fab-label { display:none; }
+.ai-fab:hover,.ai-fab:focus-visible { padding:10px 15px;transform:translateY(-2px);border-color:var(--accent-border); }
+.ai-fab:hover .ai-fab-label,.ai-fab:focus-visible .ai-fab-label { display:inline; }
+.ai-fab svg { color:var(--accent); }
+.ai-fab.is-open { border-color:transparent;background:var(--accent-gradient);color:#fff; }
+.ai-fab.is-open svg { color:#fff; }
+.ai-fab:focus-visible,.ai-panel button:focus-visible,.ai-panel a:focus-visible,.ai-panel input:focus-visible { outline:3px solid var(--accent-border);outline-offset:2px; }
+.ai-panel { display:flex;flex-direction:column;width:min(392px,calc(100vw - 28px));max-height:min(72vh,640px);overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--shadow-lg); }
+.ai-panel[hidden] { display:none; }
+.ai-panel-head { display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px 12px;border-bottom:1px solid var(--border); }
+.ai-panel-title strong { display:block;font-size:14px; }
+.ai-panel-title small { display:block;margin-top:3px;color:var(--text-muted);font-size:11px; }
+.ai-panel-close { flex:0 0 auto;width:28px;height:28px;border:0;border-radius:8px;background:var(--surface-subtle);color:var(--text-muted);font-size:20px;line-height:1;cursor:pointer; }
+.ai-panel-close:hover { color:var(--text); }
+.ai-messages { display:flex;flex:1;flex-direction:column;gap:10px;min-height:150px;overflow-y:auto;padding:14px 16px;scroll-behavior:smooth; }
+.ai-bubble { max-width:88%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.65; }
+.ai-bubble p { margin:0;overflow-wrap:anywhere;white-space:pre-line; }
+.ai-bubble-bot { align-self:flex-start;border:1px solid var(--border);background:var(--surface-elevated);color:var(--text-secondary);border-bottom-left-radius:5px; }
+.ai-bubble-user { align-self:flex-end;background:var(--accent-gradient);color:#fff;border-bottom-right-radius:5px; }
+.ai-loading { opacity:.62;animation:aiPulse 1.2s ease-in-out infinite; }
+@keyframes aiPulse { 0%,100%{opacity:.62} 50%{opacity:.32} }
+.ai-products { display:flex;flex-direction:column;gap:7px;margin-top:9px; }
+.ai-products-loading,.ai-products-empty { color:var(--text-muted);font-size:11px; }
+.ai-product-card { display:block;padding:9px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface-subtle);color:var(--text);text-decoration:none;transition:border-color .16s ease,transform .16s ease; }
+.ai-product-card:hover { border-color:var(--accent-border);transform:translateY(-1px); }
+.ai-product-head { display:flex;align-items:flex-start;justify-content:space-between;gap:8px; }
+.ai-product-name { flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;font-weight:700;line-height:1.45; }
+.ai-product-price { flex:0 0 auto;color:var(--accent);font-size:13px;font-weight:800; }
+.ai-product-meta { display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px; }
+.ai-badge { padding:1px 6px;border:1px solid var(--border);border-radius:999px;color:var(--text-muted);font-size:10px; }
+.ai-badge-brand { border-color:var(--accent-border);background:var(--accent-soft);color:var(--accent); }
+.ai-product-lead { color:var(--text-muted);font-size:10px; }
+.ai-sources { margin-top:7px;color:var(--text-muted);font-size:11px;line-height:1.6; }
+.ai-sources a { color:var(--accent);text-decoration:none; }
+.ai-sources a:hover { text-decoration:underline; }
+.ai-action { display:inline-flex;align-items:center;margin-top:9px;padding:6px 10px;border:1px solid var(--accent-border);border-radius:8px;background:var(--accent-soft);color:var(--accent);font:700 11px var(--font-sans);text-decoration:none;cursor:pointer; }
+.ai-action:hover { border-color:var(--accent); }
+.ai-retry { border:0;background:var(--surface-subtle);color:var(--text-secondary); }
+.ai-suggestions { display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 10px; }
+.ai-suggestions:empty { display:none; }
+.ai-chip { padding:5px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface-subtle);color:var(--text-secondary);font:600 11px var(--font-sans);cursor:pointer; }
+.ai-chip:hover { border-color:var(--accent-border);color:var(--accent); }
+.ai-form { display:flex;gap:8px;padding:10px 14px 8px;border-top:1px solid var(--border); }
+.ai-form input { flex:1;min-width:0;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-elevated);color:var(--text);font:500 13px var(--font-sans); }
+.ai-form input::placeholder { color:var(--text-muted); }
+.ai-send { display:grid;place-items:center;flex:0 0 38px;height:38px;border:0;border-radius:10px;background:var(--accent-gradient);color:#fff;cursor:pointer; }
+.ai-disclaimer { margin:0;padding:0 16px 11px;color:var(--text-muted);font-size:10px;text-align:center; }
+@media(max-width:640px){
+  .ai-assistant { right:12px;top:108px; }
+  .ai-fab { padding:11px; }
+  .ai-fab-label { display:none; }
+  .ai-panel { width:calc(100vw - 24px);max-height:68vh; }
+}

@@ -198,7 +198,7 @@ export async function verifyAdminSecret(request: Request, env: Env): Promise<{ o
 /**
  * GET /api/products - 从预聚合表直接检索商品并统计分面计数
  */
-async function handleGetProducts(url: URL, env: Env, enableRecommendation = true): Promise<Response> {
+export async function handleGetProducts(url: URL, env: Env, enableRecommendation = true): Promise<Response> {
   await ensureSeedShops(env.DB);
 
   const normalizedQuery = normalizeProductQuery(url.searchParams);
@@ -685,7 +685,7 @@ async function hasShopClosureGrace(db: D1Database): Promise<boolean> {
 /**
  * GET /api/shops - 返回店铺摘要列表（支持 fields=sync 极简清单、onlyInStock 过滤与分页搜索模式）
  */
-async function handleGetShops(url: URL, env: Env): Promise<Response> {
+export async function handleGetShops(url: URL, env: Env): Promise<Response> {
   const caps = await getShopColumnCapabilities(env.DB);
   await ensureSeedShops(env.DB, caps);
   const shopSource = shopReadSource(caps);

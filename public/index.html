@@ -33,8 +33,8 @@
         } catch {}
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=last-sync-stock" />
-    <script src="/i18n.js?v=shop-closure" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=ai-assistant-2" />
+    <script src="/i18n.js?v=ai-assistant-1" defer></script>
     <script src="/select-picker.js?v=20261119-dropdowns" defer></script>
     <script src="/app.js?v=stock-label" defer></script>
   </head>
@@ -602,7 +602,43 @@
         </footer>
       </section>
     </dialog>
+    <!-- 悬浮 AI 检索助手 -->
+    <div class="ai-assistant" id="aiAssistant">
+      <button class="ai-fab" id="aiAssistantToggle" type="button" aria-expanded="false" aria-controls="aiAssistantPanel" aria-label="打开 AI 检索助手" data-i18n-aria="aiAssistant.open">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"></path>
+          <path d="M18 15l.9 2.1 2.1.9-2.1.9L18 21l-.9-2.1-2.1-.9 2.1-.9L18 15z"></path>
+        </svg>
+        <span class="ai-fab-label" data-i18n="aiAssistant.fab">AI 检索</span>
+      </button>
+      <section class="ai-panel" id="aiAssistantPanel" role="dialog" aria-modal="false" aria-labelledby="aiPanelTitle" hidden>
+        <header class="ai-panel-head">
+          <div class="ai-panel-title">
+            <strong id="aiPanelTitle" data-i18n="aiAssistant.title">AI 检索助手</strong>
+            <small data-i18n="aiAssistant.subtitle">比价筛选 · 开店指南</small>
+          </div>
+          <button class="ai-panel-close" id="aiAssistantClose" type="button" aria-label="关闭助手" data-i18n-aria="aiAssistant.close">×</button>
+        </header>
+        <div class="ai-messages" id="aiMessages" role="log" aria-live="polite" aria-relevant="additions">
+          <div class="ai-bubble ai-bubble-bot">
+            <p data-i18n="aiAssistant.greeting">你好，我可以帮你按品牌、套餐和价格筛选商品，也能回答开店、对接码、收录和赞助等问题。</p>
+          </div>
+        </div>
+        <div class="ai-suggestions" id="aiSuggestions"></div>
+        <form class="ai-form" id="aiForm">
+          <input id="aiInput" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="例如：便宜的 Claude 月付" data-i18n-placeholder="aiAssistant.placeholder" aria-label="向 AI 助手提问" data-i18n-aria="aiAssistant.inputAria">
+          <button type="submit" class="ai-send" id="aiSend" aria-label="发送" data-i18n-aria="aiAssistant.send">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M22 2L11 13"></path>
+              <path d="M22 2l-7 20-4-9-9-4 20-7z"></path>
+            </svg>
+          </button>
+        </form>
+        <p class="ai-disclaimer" data-i18n="aiAssistant.disclaimer">实际价格与库存以店铺页面为准</p>
+      </section>
+    </div>
     <script src="/sponsor-crop.js?v=sponsor-4x3" defer></script>
     <script src="/sponsors.js?v=sponsor-auto-approve" defer></script>
+    <script src="/ai-assistant.js?v=ai-assistant-4" defer></script>
   </body>
 </html>

@@ -20,7 +20,7 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && crypto.subtle.timingSafeEqual(x, y);
 }
 function json(data: unknown, status = 200): Response { return Response.json(data, { status, headers }); }
-type Settings = { password_salt: string; password_hash: string; ingest_hash: string | null; favorites_enabled: number; manual_rank_enabled: number; submissions_enabled: number; open_store_url: string; revision: number };
+type Settings = { password_salt: string; password_hash: string; ingest_hash: string | null; favorites_enabled: number; manual_rank_enabled: number; submissions_enabled: number; open_store_url: string; revision: number; ai_api_base: string | null; ai_api_key: string | null; ai_model: string | null };
 export async function settings(db: D1Database): Promise<Settings> {
   const row = await db.prepare('SELECT * FROM admin_settings WHERE id = 1').first<Settings>();
   if (!row) throw new Error('后台配置尚未初始化，请先执行数据库迁移');
@@ -1037,7 +1037,28 @@ export async function handleAdminRoute(req: Request, env: Env): Promise<Response
     return Response.json({ok:true},{headers:{...headers,'Set-Cookie':cookie(req,'',0)}});
   }
   if (path === '/api/control/settings' && req.method === 'GET') {
-    const s = await settings(db); const {results}=await db.prepare('SELECT system_type,url FROM open_store_urls').all<{system_type:string;url:string}>(); return json({openStoreUrls:Object.fromEntries(results.map(r=>[r.system_type,r.url])),favoritesEnabled:!!s.favorites_enabled, manualRankEnabled:!!s.manual_rank_enabled, submissionsEnabled:!!s.submissions_enabled, openStoreUrl:s.open_store_url, ingestConfigured:!!(s.ingest_hash || env.INGEST_SECRET)});
+    const s = await settings(db); const {results}=await db.prepare('SELECT system_type,url FROM open_store_urls').all<{system_type:string;url:string}>(); return json({openStoreUrls:Object.fromEntries(results.map(r=>[r.system_type,r.url])),favoritesEnabled:!!s.favorites_enabled, manualRankEnabled:!!s.manual_rank_enabled, submissionsEnabled:!!s.submissions_enabled, openStoreUrl:s.open_store_url, ingestConfigured:!!(s.ingest_hash || env.INGEST_SECRET), aiApiBase:s.ai_api_base || '', aiModel:s.ai_model || '', aiApiKeyConfigured:!!s.ai_api_key, aiReady:!!(s.ai_api_base && s.ai_api_key && s.ai_model)});
+  }
+  if (path === '/api/control/ai-settings' && req.method === 'POST') {
+    let d: Record<string, unknown>; try { d = await body(req); } catch { return json({error:'请求格式错误'},400); }
+    if (typeof d.aiApiBase !== 'string' || typeof d.aiModel !== 'string') return json({error:'参数无效'},400);
+    const baseRaw = d.aiApiBase.trim(), modelRaw = d.aiModel.trim();
+    if (modelRaw.length > 128) return json({error:'模型名称过长'},400);
+    let base = '';
+    if (baseRaw) {
+      let parsed: URL; try { parsed = new URL(baseRaw); } catch { return json({error:'接口地址无效'},400); }
+      if (!['http:','https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.href.length > 2048) return json({error:'接口地址无效'},400);
+      base = parsed.href.replace(/\/+$/,'');
+    }
+    const changes: D1PreparedStatement[] = [];
+    if (typeof d.aiApiKey === 'string') {
+      const key = d.aiApiKey.trim();
+      if (key.length > 512) return json({error:'API Key 过长'},400);
+      changes.push(db.prepare('UPDATE admin_settings SET ai_api_key=? WHERE id=1').bind(key || null));
+    }
+    await db.batch([db.prepare('UPDATE admin_settings SET ai_api_base=?, ai_model=?, revision=revision+1 WHERE id=1').bind(base || null, modelRaw || null), ...changes]);
+    const s = await settings(db);
+    return json({ok:true, aiApiBase:s.ai_api_base || '', aiModel:s.ai_model || '', aiApiKeyConfigured:!!s.ai_api_key, aiReady:!!(s.ai_api_base && s.ai_api_key && s.ai_model)});
   }
   if (path === '/api/control/settings' && req.method === 'POST') {
     let d: Record<string, unknown>; try { d = await body(req); } catch { return json({error:'请求格式错误'},400); }

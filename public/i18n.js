@@ -389,6 +389,16 @@
     "osg.finBtn1": "Register on LDXP ↗",
     "osg.finBtn2": "Browse Shops →",
     "osg.footer": "PRISM Parity · Public directory & reference guide only. We do not participate in transactions.",
+    "aiAssistant.open": "Open AI assistant",
+    "aiAssistant.close": "Close assistant",
+    "aiAssistant.fab": "AI Search",
+    "aiAssistant.title": "AI Search Assistant",
+    "aiAssistant.subtitle": "Compare prices · Store guides",
+    "aiAssistant.greeting": "Hi! I can filter products by brand, plan and price, and answer questions about opening a store, integration codes, listing and sponsorship.",
+    "aiAssistant.placeholder": "e.g. cheap Claude monthly",
+    "aiAssistant.inputAria": "Ask the AI assistant",
+    "aiAssistant.send": "Send",
+    "aiAssistant.disclaimer": "Prices and stock are subject to the store page.",
   };
 
   /** 记录每个 DOM 节点的原始简体中文文本或属性，确保切回中文时 100% 还原 */
