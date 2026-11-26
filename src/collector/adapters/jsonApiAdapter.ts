@@ -42,6 +42,7 @@ interface UpstreamJsonPayload {
 }
 
 function normalizeStockStatus(raw: string | undefined, stockCount: number | null): StockStatus {
+  if (raw === "sufficient" && stockCount === null) return "reported_sufficient";
   if (raw === "low" || raw === "normal" || raw === "sufficient") {
     return raw;
   }

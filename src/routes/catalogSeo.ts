@@ -1,3 +1,4 @@
+import { observedStockBand } from "../../public/stock-observation.mjs";
 import { cachedQuery, catalogVersion } from "../cache/queryCache";
 import { isCurrentStockWarning, STOCK_WARNING_DAYS } from "../collector/etl/stockObservations";
 import { readOfferObservations } from "../collector/etl/offerSyncTimes";
@@ -687,8 +688,13 @@ interface PreviewOfferItem {
   shopName?: string;
   price?: number;
   stockCount?: number | null;
+  stockStatus?: string;
   itemUrl?: string;
 }
+
+const STOCK_BAND_LABELS = {
+  out: "0 件（缺货）", low: "库存少量", normal: "库存一般", sufficient: "库存充足", unknown: "未记录",
+};
 
 async function handleProductDetail(id: string, env: Env): Promise<Response> {
   const path = `/catalog/products/${encodeURIComponent(id)}/`;
@@ -755,8 +761,9 @@ async function handleProductDetail(id: string, env: Env): Promise<Response> {
       const offerPrice = Number(offer.price);
       const observation = offer.id ? observations.get(offer.id) : undefined;
       const stock = offer.stockCount;
-      const stockText = typeof stock !== "number" || !Number.isFinite(stock)
-        ? "未记录" : stock === 0 ? "0 件（缺货）" : `${stock} 件`;
+      const stockLabel = STOCK_BAND_LABELS[observedStockBand(stock, offer.stockStatus)];
+      const stockText = typeof stock === "number" && Number.isFinite(stock) && stock > 0
+        ? `${stockLabel} · ${stock} 件` : stockLabel;
       const stockWarning = isCurrentStockWarning(observation?.stockWarningDay)
         ? `<br><small>连续 ${STOCK_WARNING_DAYS} 天缺货，购买前请核实</small>` : "";
       const safeItemHref = safeHttpUrl(offer.itemUrl);

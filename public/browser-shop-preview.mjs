@@ -1,3 +1,5 @@
+import { readShopApiStock } from './stock-observation.mjs';
+
 /** 在访问者浏览器中读取源站的公开商品，仅供本次预览。 */
 export async function previewShopFromBrowser(rawUrl, { fetcher = fetch, wait = (ms) => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   const url = new URL(rawUrl);
@@ -58,10 +60,10 @@ export function buildBrowserShopPayload(shopId, snapshot) {
     if (!itemKey || !rawName || !Number.isFinite(price) || price <= 0) continue;
     if (keys.has(itemKey)) continue;
     keys.add(itemKey);
-    const rawStock = raw.extend?.stock_count;
-    const stockCount = typeof rawStock === 'number' && Number.isFinite(rawStock) ? Math.max(0, Math.floor(rawStock)) : null;
+    const stock = readShopApiStock(raw.extend);
+    const stockCount = stock.stockCount === null ? null : Math.floor(stock.stockCount);
     items.push({ itemKey, rawName, shopCategory: String(raw.category?.name || ''), price, stockCount,
-      stockStatus: stockCount !== null && stockCount <= 5 ? 'low' : stockCount !== null && stockCount <= 20 ? 'normal' : 'sufficient',
+      stockStatus: stock.stockStatus,
       itemUrl: raw.link ? new URL(String(raw.link), snapshot.origin || 'https://invalid.example').href : '' });
   }
   return { shopId: shopId.trim(), shopName: String(snapshot.name || '').slice(0, 120), items };

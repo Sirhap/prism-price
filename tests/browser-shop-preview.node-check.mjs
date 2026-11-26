@@ -33,3 +33,13 @@ test('源站返回验证页面时提示先到源站核实，不伪装为同步�
   const fetcher=async()=>new Response('<html><title>验证</title></html>',{status:200,headers:{'content-type':'text/html'}});
   await assert.rejects(previewShopFromBrowser('https://wzyp.cn/shop/340',{fetcher,wait:async()=>{}}),/打开源站店铺完成验证/);
 });
+
+test('浏览器回传保留库存档位，隐藏数量的商品不上传精确值', async () => {
+  const { buildBrowserShopPayload } = await import('../public/browser-shop-preview.mjs');
+  const items = [0, 3, 12, 40, null].map((stock_count, index) => ({
+    goods_key: String(index), name: 'Gemini Pro', price: 7, extend: { stock_count, show_stock_type: 0 },
+  }));
+  assert.deepEqual(buildBrowserShopPayload('shop1', { items }).items.map(({ stockCount, stockStatus }) => [stockCount, stockStatus]), [
+    [0, 'low'], [null, 'low'], [null, 'normal'], [null, 'reported_sufficient'], [null, 'sufficient'],
+  ]);
+});

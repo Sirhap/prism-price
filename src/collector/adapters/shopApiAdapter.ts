@@ -1,5 +1,6 @@
+import { readShopApiStock } from "../../../public/stock-observation.mjs";
 import { isNonSalePlaceholderItem } from "../etl/cleaner";
-import type { RawOfferItem, RawShopSnapshot, ShopRecord, StockStatus } from "../../types";
+import type { RawOfferItem, RawShopSnapshot, ShopRecord } from "../../types";
 import {
   assertSafePublicUrl,
   extractTelegramFromSources,
@@ -158,27 +159,6 @@ async function postShopApi<T>(url: string, body: Record<string, unknown>): Promi
   }
 }
 
-function resolveStock(extend: ShopApiGoodsItem["extend"]): {
-  inStock: boolean;
-  stockCount: number | null;
-  stockStatus: StockStatus;
-} {
-  const rawCount = extend?.stock_count;
-  const showType = extend?.show_stock_type;
-
-  if (typeof rawCount === "number" && Number.isFinite(rawCount)) {
-    if (rawCount <= 0) {
-      return { inStock: true, stockCount: 0, stockStatus: "low" };
-    }
-    // show_stock_type === 0 时源站向前台隐藏精确数值
-    const stockCount = showType === 0 ? null : rawCount;
-    const stockStatus: StockStatus = rawCount <= 5 ? "low" : rawCount <= 20 ? "normal" : "sufficient";
-    return { inStock: true, stockCount, stockStatus };
-  }
-
-  return { inStock: true, stockCount: null, stockStatus: "sufficient" };
-}
-
 function extractUniqueGoodsKey(item: ShopApiGoodsItem, fallbackIndex: number): string {
   return String(item.goods_key || item.link || `idx-${fallbackIndex}`).trim();
 }
@@ -334,7 +314,7 @@ export const shopApiAdapter: ShopAdapter = {
         continue;
       }
 
-      const stock = resolveStock(g.extend);
+      const stock = readShopApiStock(g.extend);
 
       const itemKey = String(g.goods_key || g.link || items.length + 1);
       if (seenItemKeys.has(itemKey)) {

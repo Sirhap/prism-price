@@ -85,11 +85,11 @@ export const ssrHtmlAdapter: ShopAdapter = {
       .on(".goods-card", {
         element(el) {
           const itemKey = el.getAttribute("data-item-id") || `item-${rawCards.length + 1}`;
-          const rawStatus = el.getAttribute("data-stock-status") || "sufficient";
+          const rawStatus = el.getAttribute("data-stock-status");
           const stockStatus: StockStatus =
-            rawStatus === "low" || rawStatus === "normal" || rawStatus === "sufficient"
+            rawStatus === "low" || rawStatus === "normal"
               ? rawStatus
-              : "sufficient";
+              : rawStatus === "sufficient" ? "reported_sufficient" : "sufficient";
 
           currentCard = {
             itemKey,

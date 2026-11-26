@@ -1,3 +1,4 @@
+import { normalizeStoredStockStatus, observedStockBand } from "../../public/stock-observation.mjs";
 import { normalizeSubmittedShopUrl } from "../collector/submittedShopUrl";
 import { authenticated as adminAuthenticated, getIngestHash, handleAdminRoute, matchesIngestSecret, settings as adminSettings } from "./admin";
 import { cachedQuery, cachedShopCount, catalogVersion, catalogIndexes } from "../cache/queryCache";
@@ -109,7 +110,13 @@ function jsonPublic(payload: unknown, maxAgeSeconds = 30): Response {
     if (Array.isArray(value)) return value.map(clean);
     if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
       .filter(([key]) => key !== "telegram")
-      .map(([key, item]) => [key, ["description", "shopName", "leadShopName", "name", "displayName", "rawName", "lastError"].includes(key) && typeof item === "string" ? hideTelegramContacts(item) : clean(item)]));
+      .map(([key, item]) => {
+        if (key === "stockStatus" && item === "reported_sufficient") return [key, "sufficient"];
+        if (["description", "shopName", "leadShopName", "name", "displayName", "rawName", "lastError"].includes(key) && typeof item === "string") {
+          return [key, hideTelegramContacts(item)];
+        }
+        return [key, clean(item)];
+      }));
     return value;
   };
   return Response.json(clean(payload), {
@@ -235,6 +242,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
             price: row.price,
             stockCount: row.stock_count,
             stockStatus: row.stock_status,
+            stockBand: observedStockBand(row.stock_count, row.stock_status),
             ...stockWarning({ stockWarningDay: stockWarningDay(row) }),
             itemUrl: row.item_url,
             updatedAt: row.updated_at,
@@ -444,7 +452,10 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
   for (const item of items) {
     item.offers = item.offers.map(offer => {
       const observation = observations.get(String(offer.id));
-      return { ...offer, ...stockWarning(observation ?? {}), lastSyncedAt: observation?.lastSyncedAt ?? null };
+      return {
+        ...offer, stockBand: observedStockBand(offer.stockCount, offer.stockStatus),
+        ...stockWarning(observation ?? {}), lastSyncedAt: observation?.lastSyncedAt ?? null,
+      };
     });
   }
   const { total, offerTotal } = stats;
@@ -950,6 +961,7 @@ async function handleGetShopDetail(shopId: string, env: Env): Promise<Response> 
         price: o.price,
         stockCount: o.stock_count,
         stockStatus: o.stock_status,
+        stockBand: observedStockBand(o.stock_count, o.stock_status),
         ...stockWarning({ stockWarningDay: stockWarningDay(o) }),
         itemUrl: o.item_url,
         updatedAt: o.updated_at,
@@ -1135,13 +1147,13 @@ async function handleBrowserShopSync(request: Request, env: Env): Promise<Respon
       if (typeof item.itemUrl === 'string' && item.itemUrl) {
         try { const u = new URL(item.itemUrl); if (u.protocol !== 'https:' || ![allowedHost, ...(allowedHost === 'catfk.com' ? ['www.catfk.com'] : ['pay.ldxp.cn'])].includes(u.hostname.toLowerCase()) || u.port || u.username || u.password) return Response.json({ error: '商品链接域名不匹配' }, { status: 400 }); itemUrl = u.href; } catch { return Response.json({ error: '商品链接无效' }, { status: 400 }); }
       }
-      items.push({ itemKey: key, rawName: name, shopCategory: typeof item.shopCategory === 'string' ? item.shopCategory.slice(0, 200) : '', price, stockCount: stock, stockStatus: stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient', itemUrl });
+      items.push({ itemKey: key, rawName: name, shopCategory: typeof item.shopCategory === 'string' ? item.shopCategory.slice(0, 200) : '', price, stockCount: stock, stockStatus: stock === null ? normalizeStoredStockStatus(item.stockStatus) : stock <= 5 ? 'low' : stock <= 20 ? 'normal' : 'sufficient', itemUrl });
     }
     const previous = await env.DB.prepare('SELECT id,raw_name,shop_category,price,stock_count,stock_status,item_url FROM offers WHERE shop_id = ?').bind(id).all<{id:string;raw_name:string;shop_category:string;price:number;stock_count:number|null;stock_status:string;item_url:string}>();
     for (const row of previous.results || []) {
       const key = row.id.startsWith(`${id}:`) ? row.id.slice(id.length + 1) : '';
       if (!key || keys.has(key)) continue;
-      items.push({ itemKey:key, rawName:row.raw_name, shopCategory:row.shop_category, price:Number(row.price), stockCount:row.stock_count, stockStatus:row.stock_status === 'low' || row.stock_status === 'normal' ? row.stock_status : 'sufficient', itemUrl:row.item_url });
+      items.push({ itemKey:key, rawName:row.raw_name, shopCategory:row.shop_category, price:Number(row.price), stockCount:row.stock_count, stockStatus:normalizeStoredStockStatus(row.stock_status), itemUrl:row.item_url });
     }
     if (items.length > 2000) return Response.json({ error: '合并后商品超过 2000 件，请使用管理员同步' }, { status: 400 });
     const incomingName = typeof body.shopName === 'string' ? hideTelegramContacts(body.shopName.trim()).slice(0, 120) : '';
@@ -1283,7 +1295,7 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
       itemKey: it.itemKey.trim(),
       shopCategory: typeof it.shopCategory === "string" ? it.shopCategory : "",
       stockCount: typeof it.stockCount === "number" && Number.isFinite(it.stockCount) ? it.stockCount : null,
-      stockStatus: it.stockStatus === "low" || it.stockStatus === "normal" || it.stockStatus === "sufficient" ? it.stockStatus : "sufficient",
+      stockStatus: normalizeStoredStockStatus(it.stockStatus),
       itemUrl: typeof it.itemUrl === "string" ? it.itemUrl : cleanEntry.shopUrl,
     }));
     batchItemsTotal += items.length;

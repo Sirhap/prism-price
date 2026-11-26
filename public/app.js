@@ -722,16 +722,27 @@ function formatAdapterBadge(adapterType) {
   return L("接口收录", "API Sync");
 }
 
-function renderOfferObservation(offer, lowest = false) {
+function formatStockObservation(offer) {
   const stock = offer?.stockCount;
-  const quantity = !Number.isFinite(stock)
-    ? L("未记录", "Not recorded")
-    : stock === 0
-      ? L("0 件（缺货）", "0 (out of stock)")
-      : L(`${stock} 件`, `${stock} units`);
+  if (offer?.stockBand === "out" || stock === 0) return L("0 件（缺货）", "0 (out of stock)");
+
+  const labels = {
+    low: L("库存少量", "Limited stock"),
+    normal: L("库存一般", "Moderate stock"),
+    sufficient: L("库存充足", "Plenty in stock"),
+  };
+  const label = labels[offer?.stockBand];
+  if (Number.isFinite(stock)) {
+    const quantity = L(`${stock} 件`, `${stock} units`);
+    return label ? `${label} · ${quantity}` : quantity;
+  }
+  return label || L("未记录", "Not recorded");
+}
+
+function renderOfferObservation(offer, lowest = false) {
   return `<div class="offer-observation">
     ${renderSyncTime(offer?.lastSyncedAt, lowest ? L("最低价报价上传同步", "Lowest offer synced") : L("上传同步时间", "Uploaded and synced"))}
-    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(quantity)}</strong></span>
+    <span class="offer-stock-reference">${escapeHtml(L("上次同步库存（供参考）", "Stock at last sync (reference)"))} <strong>${escapeHtml(formatStockObservation(offer))}</strong></span>
   </div>`;
 }
 
@@ -3717,7 +3728,7 @@ document.addEventListener("keydown", (event) => {
     preview.hidden = true; preview.disabled = true;
     result.textContent = L('正在通过你的网络读取源站商品…', 'Reading storefront listings via your browser...');
     try {
-      const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
+      const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs?v=stock-bands');
       const { snapshot, result: saved } = await syncShopFromBrowser(submittedShopId, confirmedUrl);
       result.textContent = L(
         `同步成功：${snapshot.name}，读取 ${snapshot.count} 件，已写入 ${saved.itemCount} 件收录商品。`,
@@ -3770,7 +3781,7 @@ document.addEventListener('click', async (event) => {
   const label = button.textContent;
   button.textContent = L('读取中…', 'Loading...');
   try {
-    const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs');
+    const { syncShopFromBrowser } = await import('/browser-shop-preview.mjs?v=stock-bands');
     const { snapshot, result } = await syncShopFromBrowser(button.dataset.shopId, button.dataset.shopUrl);
     const synced = result?.lastSyncedAt ? formatSyncTime(result.lastSyncedAt) : null;
     const syncNote = synced ? L(` · 最近同步 ${synced}`, ` · Last synced ${synced}`) : "";
@@ -3785,9 +3796,13 @@ document.addEventListener('click', async (event) => {
       const item = snapshot.items.find(x => String(x.link || '') === target || (key && String(x.goods_key || '') === key));
       if (!item) status.textContent = L('本次未在源站找到该商品，请进入店铺核实。', 'Item not found on source store; visit the store to verify.');
       else {
-        const price = Number(item.price); const stock = item.extend?.stock_count;
+        const { readShopApiStock, observedStockBand } = await import('/stock-observation.mjs');
+        const { stockCount, stockStatus } = readShopApiStock(item.extend);
+        const stockBand = observedStockBand(stockCount, stockStatus);
+        const price = Number(item.price);
         const pricePart = Number.isFinite(price) ? `¥${price.toFixed(2)}` : L('价格未提供', 'Price N/A');
-        const stockPart = typeof stock === 'number' && stock <= 0 ? L('当前缺货', 'Out of stock') : L('库存以店铺为准', 'Verify stock in store');
+        const stockPart = stockBand === 'unknown' ? L('库存以店铺为准', 'Verify stock in store')
+          : formatStockObservation({ stockCount, stockBand });
         status.textContent = L(
           `源站参考：${pricePart} · ${stockPart}（已同步）`,
           `Source ref: ${pricePart} · ${stockPart} (synced)`,

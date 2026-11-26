@@ -1,3 +1,4 @@
+import { normalizeStoredStockStatus } from "../../public/stock-observation.mjs";
 import {
   getShopColumnCapabilities,
   inferShopSystem,
@@ -101,7 +102,7 @@ async function readStoredOffers(db: D1Database, shopId: string): Promise<StoredO
     if (!id.startsWith(prefix) || id.length === prefix.length) continue;
     previous.push({
       ...offer, itemKey: id.slice(prefix.length),
-      stockStatus: stockStatus === "low" || stockStatus === "normal" ? stockStatus : "sufficient",
+      stockStatus: normalizeStoredStockStatus(stockStatus),
     });
   }
   return previous;

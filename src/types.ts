@@ -51,7 +51,8 @@ export type AdapterType =
   | "push_ingest"
   | "manual";
 
-export type StockStatus = "sufficient" | "normal" | "low";
+/** Distinguishes a reported high band from the legacy fallback when the count is private. */
+export type StockStatus = "sufficient" | "normal" | "low" | "reported_sufficient";
 
 /**
  * 适配器从源站抓取并初步映射后的商品明细
