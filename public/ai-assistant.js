@@ -1,6 +1,6 @@
 /**
- * 悬浮 AI 检索助手：负责面板交互、请求 /api/ai、渲染比价入口与指南回答。
- * 独立 IIFE，不依赖 app.js 内部状态。
+ * 悬浮 AI 检索助手：面板交互、请求 /api/ai、渲染报价卡片与指南回答。
+ * 对话仅保留在当前面板会话中，关闭面板或刷新页面后清空。
  */
 (() => {
   const toggle = document.getElementById("aiAssistantToggle");
@@ -11,6 +11,9 @@
   const messages = document.getElementById("aiMessages");
   const suggestions = document.getElementById("aiSuggestions");
   if (!toggle || !panel || !form || !input || !messages || !suggestions) return;
+
+  const GREETING_ZH = "你好，我可以帮你按品牌、套餐和价格筛选商品，也能回答开店、对接码、收录和赞助等问题。";
+  const GREETING_EN = "Hi! I can filter products by brand, plan and price, and answer questions about opening a store, integration codes, listing and sponsorship.";
 
   const t = (zh, en) => {
     try {
@@ -30,18 +33,38 @@
 
   let lastQuestion = "";
   let busy = false;
+  // 每次关闭/重置递增，用于丢弃关闭后才返回的旧请求
+  let sessionId = 0;
+
+  // 清理早期版本可能写入的持久化记录，本版本只保留会话内记录
+  try {
+    localStorage.removeItem("prism_ai_history_v1");
+  } catch {
+    // ignore
+  }
 
   function openPanel() {
     panel.hidden = false;
     toggle.setAttribute("aria-expanded", "true");
     toggle.classList.add("is-open");
     input.focus();
+    scrollToBottom();
   }
 
   function closePanel() {
     panel.hidden = true;
     toggle.setAttribute("aria-expanded", "false");
     toggle.classList.remove("is-open");
+    // 关闭即结束本次会话，重新打开不保留旧记录
+    resetConversation();
+  }
+
+  function resetConversation() {
+    sessionId += 1;
+    busy = false;
+    messages.replaceChildren();
+    addBubble("bot", t(GREETING_ZH, GREETING_EN));
+    renderSuggestions(INITIAL_SUGGESTIONS);
   }
 
   function scrollToBottom() {
@@ -132,6 +155,18 @@
     }
   }
 
+  function addActionLink(bubble, apiUrl, total) {
+    const url = safeInternalUrl(apiUrl);
+    if (!url) return;
+    const link = document.createElement("a");
+    link.className = "ai-action";
+    link.href = toPageUrl(url);
+    link.textContent = total
+      ? t(`查看全部 ${total} 个结果 →`, `View all ${total} results →`)
+      : t("查看全部结果 →", "View all results →");
+    bubble.appendChild(link);
+  }
+
   /** 在气泡内直接渲染真实报价卡片，数据来自现有 /api/products。 */
   async function renderProducts(bubble, apiUrl) {
     const wrap = document.createElement("div");
@@ -156,13 +191,7 @@
       }
       items.forEach((item) => wrap.appendChild(buildProductCard(item)));
       const total = Number(data.total || 0);
-      if (total > items.length) {
-        const more = document.createElement("a");
-        more.className = "ai-action";
-        more.href = toPageUrl(apiUrl);
-        more.textContent = t(`查看全部 ${total} 个结果 →`, `View all ${total} results →`);
-        bubble.appendChild(more);
-      }
+      if (total > items.length) addActionLink(bubble, apiUrl, total);
       scrollToBottom();
     } catch {
       wrap.replaceChildren();
@@ -222,14 +251,7 @@
     wrap.className = "ai-products";
     items.slice(0, 4).forEach((item) => wrap.appendChild(buildProductCard(item)));
     bubble.appendChild(wrap);
-    const url = safeInternalUrl(apiUrl);
-    if (url) {
-      const more = document.createElement("a");
-      more.className = "ai-action";
-      more.href = toPageUrl(url);
-      more.textContent = t("查看全部结果 →", "View all results →");
-      bubble.appendChild(more);
-    }
+    if (apiUrl) addActionLink(bubble, apiUrl);
     scrollToBottom();
   }
 
@@ -239,6 +261,8 @@
       renderItemCards(bubble, payload.items, payload.apiUrl);
     } else if ((payload.type === "compare" || payload.type === "mixed") && safeInternalUrl(payload.apiUrl)) {
       void renderProducts(bubble, payload.apiUrl);
+    } else if (payload.apiUrl) {
+      addActionLink(bubble, payload.apiUrl);
     }
     addSources(bubble, payload.sources);
     if (Array.isArray(payload.suggestions) && payload.suggestions.length > 0) {
@@ -249,6 +273,7 @@
   async function sendQuestion(raw) {
     const question = String(raw || "").trim();
     if (!question || busy) return;
+    const currentSession = sessionId;
     lastQuestion = question;
     busy = true;
     renderSuggestions([]);
@@ -262,6 +287,8 @@
         body: JSON.stringify({ question }),
       });
       const payload = await response.json().catch(() => null);
+      // 面板已关闭或已开始新会话时，丢弃迟到响应
+      if (currentSession !== sessionId) return;
       loading.remove();
       if (!response.ok || !payload) {
         addRetry(addBubble("bot", payload?.error || t("请求失败，请稍后再试。", "Request failed. Please try again.")));
@@ -269,10 +296,11 @@
       }
       renderPayload(payload);
     } catch {
+      if (currentSession !== sessionId) return;
       loading.remove();
       addRetry(addBubble("bot", t("网络异常，请稍后再试。", "Network error. Please try again.")));
     } finally {
-      busy = false;
+      if (currentSession === sessionId) busy = false;
     }
   }
 

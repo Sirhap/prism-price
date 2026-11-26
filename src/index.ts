@@ -16,8 +16,8 @@ import { handleAiRequest } from "./routes/ai";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 const HOME_ASSET_PRELOADS = [
-  '</styles.css?v=ai-assistant-2>; rel=preload; as=style',
-  '</i18n.js?v=ai-assistant-1>; rel=preload; as=script',
+  '</styles.css?v=ai-assistant-3>; rel=preload; as=style',
+  '</i18n.js?v=ai-assistant-2>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
   '</app.js?v=stock-label>; rel=preload; as=script',
 ].join(", ");
