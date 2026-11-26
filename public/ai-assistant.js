@@ -12,9 +12,6 @@
   const suggestions = document.getElementById("aiSuggestions");
   if (!toggle || !panel || !form || !input || !messages || !suggestions) return;
 
-  const GREETING_ZH = "你好，我可以帮你按品牌、套餐和价格筛选商品，也能回答开店、对接码、收录和赞助等问题。";
-  const GREETING_EN = "Hi! I can filter products by brand, plan and price, and answer questions about opening a store, integration codes, listing and sponsorship.";
-
   const t = (zh, en) => {
     try {
       return window.PrismI18n?.isEn?.() ? en : zh;
@@ -33,10 +30,8 @@
 
   let lastQuestion = "";
   let busy = false;
-  // 每次关闭/重置递增，用于丢弃关闭后才返回的旧请求
-  let sessionId = 0;
 
-  // 清理早期版本可能写入的持久化记录，本版本只保留会话内记录
+  // 清理早期版本可能写入的持久化记录，本版本只保留当前页面内的记录
   try {
     localStorage.removeItem("prism_ai_history_v1");
   } catch {
@@ -55,16 +50,6 @@
     panel.hidden = true;
     toggle.setAttribute("aria-expanded", "false");
     toggle.classList.remove("is-open");
-    // 关闭即结束本次会话，重新打开不保留旧记录
-    resetConversation();
-  }
-
-  function resetConversation() {
-    sessionId += 1;
-    busy = false;
-    messages.replaceChildren();
-    addBubble("bot", t(GREETING_ZH, GREETING_EN));
-    renderSuggestions(INITIAL_SUGGESTIONS);
   }
 
   function scrollToBottom() {
@@ -273,7 +258,6 @@
   async function sendQuestion(raw) {
     const question = String(raw || "").trim();
     if (!question || busy) return;
-    const currentSession = sessionId;
     lastQuestion = question;
     busy = true;
     renderSuggestions([]);
@@ -287,8 +271,6 @@
         body: JSON.stringify({ question }),
       });
       const payload = await response.json().catch(() => null);
-      // 面板已关闭或已开始新会话时，丢弃迟到响应
-      if (currentSession !== sessionId) return;
       loading.remove();
       if (!response.ok || !payload) {
         addRetry(addBubble("bot", payload?.error || t("请求失败，请稍后再试。", "Request failed. Please try again.")));
@@ -296,11 +278,10 @@
       }
       renderPayload(payload);
     } catch {
-      if (currentSession !== sessionId) return;
       loading.remove();
       addRetry(addBubble("bot", t("网络异常，请稍后再试。", "Network error. Please try again.")));
     } finally {
-      if (currentSession === sessionId) busy = false;
+      busy = false;
     }
   }
 
