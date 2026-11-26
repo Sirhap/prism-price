@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeSnapshotHash } from '../scripts/lib/snapshotHash.mjs';
 import { MARKET16688_MISSING_LIMIT, confirmMissingMarket16688Offers, market16688ShopKey } from '../scripts/lib/market16688.mjs';
+import { confirmMissingLdxpOffers, ldxpShopKey } from '../scripts/lib/missingOffers.mjs';
 import { normalizeSyncApiBase, readSyncConfigFile, resolveSyncTarget } from '../scripts/lib/syncTarget.mjs';
 import { fetchShopApiSnapshot, fetch16688Snapshot, fetchKa123Snapshot, shouldSkipLocalPush } from '../scripts/push-sync.mjs';
 
@@ -169,30 +170,38 @@ export async function runSync(options, deps = {}) {
       if (options.resume && state.completed[shop.id] === shop.shopUrl) { stats.resumed++; continue; }
       try {
         const snapshot = await collect(shop);
+        const partial = isPartialAdapter(shop) || snapshot.items.length > 2000;
+        const verify16688 = is16688(shop) && data.market16688RemovalSupport;
+        const verifyLdxp = partial && !isPartialAdapter(shop) && ldxpShopKey(shop.shopUrl) && data.ldxpRemovalSupport;
         let confirmedMissingOffers = [];
         let detailCheckInterrupted = false;
-        if (is16688(shop) && data.market16688RemovalSupport && data.partialSnapshotSupport) {
+        const sourceLabel = verifyLdxp ? 'LDXP' : '16688';
+        if ((verify16688 || verifyLdxp) && data.partialSnapshotSupport) {
           const { shop: stored } = await load(`${base}/api/shops/${encodeURIComponent(shop.id)}/products`, { cache: 'no-store', headers: readHeaders });
           if (stored?.id !== shop.id || !Array.isArray(stored.productItems)) throw new Error('目标站已有报价清单无效');
           const prefix = `${shop.id}:`;
           const previous = stored.productItems
-            .filter(item => typeof item?.id === 'string' && item.id.startsWith(prefix) && typeof item.updatedAt === 'string')
-            .map(item => ({ itemKey: item.id.slice(prefix.length), updatedAt: item.updatedAt }));
+            .filter(item => typeof item?.id === 'string' && item.id.startsWith(prefix) && typeof item.updatedAt === 'string' &&
+              (!verifyLdxp || item.lastSyncedAt === null || typeof item.lastSyncedAt === 'string'))
+            .map(item => ({
+              itemKey: item.id.slice(prefix.length), updatedAt: item.updatedAt,
+              ...(verifyLdxp ? { lastSyncedAt: item.lastSyncedAt } : {}),
+            }));
           const observed = new Set(snapshot.items.map(item => item.itemKey));
-          const { confirmed, interrupted } = await confirmMissingMarket16688Offers(previous, observed, {
+          const confirm = verifyLdxp ? confirmMissingLdxpOffers : confirmMissingMarket16688Offers;
+          const { confirmed, interrupted } = await confirm(previous, observed, {
             beforeRequest: () => gate.before(),
           });
           detailCheckInterrupted = interrupted;
           confirmedMissingOffers = confirmed;
-          if (interrupted) console.warn(`[local-sync] ${shop.id}: 16688 详情复核中断，未确认的旧报价保留`);
-          if (confirmed.length) console.log(`[local-sync] ${shop.id}: 16688 确认 ${confirmed.length} 条商品不存在`);
+          if (interrupted) console.warn(`[local-sync] ${shop.id}: ${sourceLabel} 详情复核中断，未确认的旧报价保留`);
+          if (confirmed.length) console.log(`[local-sync] ${shop.id}: ${sourceLabel} 确认 ${confirmed.length} 条商品已下架或不存在`);
         }
         if (snapshot.items.length === 0 && confirmedMissingOffers.length === 0) {
           if (isPartialAdapter(shop)) throw new Error('部分采集店铺空列表不能删除店铺');
           if (!options.apply) { stats.emptyCandidates++; console.log(`[local-sync] ${shop.id}: 无可收录商品，正式同步将删除`); continue; }
           const error = new Error('源站完整采集后无可收录商品'); error.shopUnavailable = 'empty'; throw error;
         }
-        const partial = isPartialAdapter(shop) || snapshot.items.length > 2000;
         if (partial) {
           if (!data.partialSnapshotSupport) throw new Error('目标站尚不支持部分同步，已停止该店推送以保护原有商品');
           console.warn(`[local-sync] ${shop.id}: ${isPartialAdapter(shop) ? '源站列表完整性未确认，按部分同步保留其余商品' : `商品共 ${snapshot.items.length} 件，仅同步前 2000 件，其余保留原数据`}`);
@@ -207,21 +216,26 @@ export async function runSync(options, deps = {}) {
         else {
           stats.changed++;
           if (options.apply) {
-            for (let offset = 0; offset < Math.max(1, confirmedMissingOffers.length); offset += MARKET16688_MISSING_LIMIT) {
-              const confirmed = confirmedMissingOffers.slice(offset, offset + MARKET16688_MISSING_LIMIT);
+            const send = async (items, confirmed = []) => {
               const result = await push({
-                shopId: shop.id, shopUrl: shop.shopUrl, snapshot: offset === 0 ? snapshot : { ...snapshot, items: [] },
+                shopId: shop.id, shopUrl: shop.shopUrl, snapshot: { ...snapshot, items },
                 ...(partial ? { partial: true } : {}),
                 ...(confirmed.length ? { confirmedMissingOffers: confirmed } : {}),
               });
               if (result.failedCount || !Array.isArray(result.outcomes) || result.outcomes.length !== 1 || result.outcomes[0].shopId !== shop.id || !['updated', 'unchanged'].includes(result.outcomes[0].status)) throw new Error('推送结果未确认成功');
+            };
+            // LDXP sends standalone confirmations so removals can commit atomically.
+            const firstBatchSize = verifyLdxp ? 0 : MARKET16688_MISSING_LIMIT;
+            await send(snapshot.items, confirmedMissingOffers.slice(0, firstBatchSize));
+            for (let offset = firstBatchSize; offset < confirmedMissingOffers.length; offset += MARKET16688_MISSING_LIMIT) {
+              await send([], confirmedMissingOffers.slice(offset, offset + MARKET16688_MISSING_LIMIT));
             }
             stats.pushed++;
           }
         }
         if (detailCheckInterrupted) {
           stats.failed++;
-          console.warn(`[local-sync] ${shop.id}: 16688 全量复核尚未完成，未记录完成断点`);
+          console.warn(`[local-sync] ${shop.id}: ${sourceLabel} 下架复核尚未完成，未记录完成断点`);
           continue;
         }
         if (options.apply) { state.completed[shop.id] = shop.shopUrl; saveCheckpoint(options.checkpoint, state); }
@@ -267,7 +281,7 @@ export function describeWorkflow() {
     credentials: 'INGEST_SECRET 只用于配置的目标 API 地址的 Bearer 鉴权；不向店铺源站发送。',
     destinations: {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
-      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 默认逐条复核所有列表缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品不存在才提交下架确认。',
+      source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 和 LDXP 大店部分同步会逐条复核完整采集结果中缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品未上架、已下架或不存在才提交下架确认。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
       delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
     },

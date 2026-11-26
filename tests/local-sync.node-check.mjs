@@ -435,3 +435,40 @@ test('服务端记录同步时间时，相同哈希的正常库存也会继续�
   assert.equal(stats.unchanged, 0);
   assert.deepEqual(entries, [{ shopId: same.id, shopUrl: same.shopUrl, snapshot }]);
 });
+
+test('LDXP 大店只复核完整采集结果里缺失的旧报价，并保留限流后未确认的报价', async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-ldxp-missing-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const checkpoint = path.join(temp, 'state.json');
+  const shop = { ...shops[0], shopUrl: 'https://pay.ldxp.cn/shop/XIAOMO' };
+  const updatedAt = '2026-11-21T02:29:40.000Z';
+  const lastSyncedAt = '2026-11-24T03:00:00.000Z';
+  const items = Array.from({ length: 2001 }, (_, i) => ({ ...snapshot.items[0], itemKey: `listing-${i}` }));
+  const keys = ['listing-0', 'listing-2000', 'delisted', 'available', 'limited', 'unchecked'];
+  const requested = [];
+  t.mock.method(globalThis, 'fetch', async (url, request) => {
+    assert.equal(url, 'https://wzyp.cn/shopApi/Shop/goodsInfo');
+    const key = JSON.parse(request.body).goods_key;
+    requested.push(key);
+    assert.equal(request.headers.Authorization, undefined);
+    if (key === 'available') return Response.json({ code: 1, data: { stock_count: 0 } });
+    assert.ok(['delisted', 'limited'].includes(key));
+    return Response.json({ code: 0, msg: '商品未上架，如有疑问请联系商家', data: null }, { status: key === 'limited' ? 429 : 200 });
+  });
+  const entries = [];
+  const stats = await runSync(options(checkpoint, { apply: true }), {
+    gate: { before: async () => {}, isBlocked: () => false },
+    load: async url => url.endsWith('?fields=sync')
+      ? { shops: [shop], partialSnapshotSupport: true, ldxpRemovalSupport: true }
+      : { shop: { id: shop.id, productItems: keys.map(key => ({ id: `${shop.id}:${key}`, updatedAt, lastSyncedAt })) } },
+    collect: async () => ({ ...snapshot, items }),
+    push: async entry => { entries.push(entry); return result(shop.id); },
+  });
+  assert.deepEqual(requested, ['delisted', 'available', 'limited']);
+  assert.equal(entries[0].snapshot.items.length, 2000);
+  assert.equal(entries[0].confirmedMissingOffers, undefined);
+  assert.equal(entries[1].snapshot.items.length, 0);
+  assert.deepEqual(entries[1].confirmedMissingOffers, [{ itemKey: 'delisted', updatedAt, lastSyncedAt }]);
+  assert.equal(stats.failed, 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(checkpoint, 'utf8')).completed, {});
+});

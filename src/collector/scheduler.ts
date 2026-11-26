@@ -9,8 +9,9 @@ import type { AdapterType, RawOfferItem, RawShopSnapshot, ShopRecord, SyncRunSum
 import { resolveAdapter } from "./adapters";
 import { market16688Adapter } from "./adapters/market16688Adapter";
 import { confirmMissingMarket16688Offers, isMarket16688OfferKey, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
+import { ldxpShopKey, type LdxpOfferVersion } from "../../scripts/lib/missingOffers.mjs";
 import { normalizeDescription } from "./adapters/fetcher";
-import { clearShopOffers, persistShopSnapshot, rebuildProductGroups } from "./etl/hashAndDiff";
+import { clearShopOffers, persistShopSnapshot, rebuildProductGroups, removeConfirmedLdxpOffers } from "./etl/hashAndDiff";
 import { createProductDetailBudget } from "./etl/productDetails";
 import { INITIAL_SHOPS } from "./seedShops";
 
@@ -314,7 +315,7 @@ export interface PushedShopEntry {
   shopUrl: string;
   snapshot?: RawShopSnapshot;
   partial?: boolean;
-  confirmedMissingOffers?: Market16688OfferVersion[];
+  confirmedMissingOffers?: Array<Market16688OfferVersion & Partial<Pick<LdxpOfferVersion, "lastSyncedAt">>>;
   error?: string;
 }
 
@@ -349,12 +350,17 @@ export async function ingestPushedSnapshots(
       .bind(shopId)
       .first<ShopRecord>();
 
-    if (entry.confirmedMissingOffers?.length && (!shop || market16688ShopKey(shop.shop_url) !== market16688ShopKey(shopUrl))) {
+    const missingOffers = entry.confirmedMissingOffers;
+    const ldxpIdentity = missingOffers?.length ? ldxpShopKey(shopUrl) : "";
+    const marketIdentity = missingOffers?.length ? market16688ShopKey(shopUrl) : "";
+    if (missingOffers?.length && (!shop || (ldxpIdentity
+      ? ldxpShopKey(shop.shop_url) !== ldxpIdentity
+      : !marketIdentity || market16688ShopKey(shop.shop_url) !== marketIdentity))) {
       failedCount += 1;
       outcomes.push({
         shopId, shopName: shop?.shop_name || shopId, adapterType: shop?.adapter_type || "push_ingest",
         status: "failed", itemCount: shop?.product_count || 0, estimatedWrites: 0, durationMs: Date.now() - shopStart,
-        error: "16688 店铺编号与已有记录不匹配，未应用商品下架确认",
+        error: "店铺编号与已有记录不匹配，未应用商品下架确认",
       });
       continue;
     }
@@ -443,19 +449,23 @@ export async function ingestPushedSnapshots(
     }
 
     const observedItemKeys = entry.partial ? new Set(entry.snapshot.items.map((item) => item.itemKey)) : undefined;
-    if (observedItemKeys) {
+    if (observedItemKeys && !ldxpIdentity) {
       const previous = await readStoredOffers(env.DB, shop.id);
-      mergePartialOffers(entry.snapshot, previous, observedItemKeys, entry.confirmedMissingOffers);
+      mergePartialOffers(entry.snapshot, previous, observedItemKeys, missingOffers);
     }
-    const res = await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
-      hasDescriptionColumn: cols.description,
-      observedItemKeys,
-      productDetailBudget: detailBudget,
-    });
+    const res = ldxpIdentity && missingOffers
+      ? await removeConfirmedLdxpOffers(env.DB, shop, missingOffers.filter(
+        (offer): offer is LdxpOfferVersion => offer.lastSyncedAt !== undefined,
+      ), nowIso)
+      : await persistShopSnapshot(env.DB, shop, entry.snapshot, nowIso, {
+        hasDescriptionColumn: cols.description,
+        observedItemKeys,
+        productDetailBudget: detailBudget,
+      });
     const activeAdapter = shop.adapter_type === "manual" || shop.adapter_type === "ka123_api"
       ? shop.adapter_type
       : "push_ingest";
-    if (shop.adapter_type !== activeAdapter) {
+    if (!ldxpIdentity && shop.adapter_type !== activeAdapter) {
       await env.DB.prepare("UPDATE shops SET adapter_type = ? WHERE id = ?")
         .bind(activeAdapter, shop.id)
         .run();

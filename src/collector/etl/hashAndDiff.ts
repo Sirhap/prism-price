@@ -10,6 +10,8 @@ import { normalizeDescription } from "../adapters/fetcher";
 import { hasShopDescriptionColumn } from "../shopSystems";
 import { calculateMedian, isNonSalePlaceholderItem, normalizeOffer } from "./cleaner";
 import { prepareProductDetails, type ProductDetailBudget } from "./productDetails";
+import type { LdxpOfferVersion } from "../../../scripts/lib/missingOffers.mjs";
+import { offerLastSyncedAt } from "./offerSyncTimes";
 import { observeZeroStock, stockWarningDay } from "./stockObservations";
 
 const snapshotBrandRules: readonly BrandRule[] = brandRules;
@@ -54,7 +56,7 @@ export async function computeSnapshotHash(snapshot: RawShopSnapshot): Promise<st
     .join("");
 }
 
-function buildProductSummaryJson(offers: NormalizedOffer[]): string {
+function buildProductSummaryJson(offers: Array<Pick<NormalizedOffer, "brandGroup" | "cleanName" | "price" | "itemUrl">>): string {
   const grouped = new Map<
     string,
     { group: string; count: number; items: Array<{ name: string; price: number; itemUrl: string }> }
@@ -130,9 +132,17 @@ export async function rebuildProductGroups(
   groupKeys: string[],
   nowIso: string,
 ): Promise<number> {
-  if (groupKeys.length === 0) {
-    return 0;
-  }
+  return executeStatementChunks(db, await prepareProductGroupWrites(db, groupKeys, nowIso));
+}
+
+async function prepareProductGroupWrites(
+  db: D1Database,
+  groupKeys: string[],
+  nowIso: string,
+  removal?: { ids: string[]; shopId: string; itemCount: number },
+): Promise<D1PreparedStatement[]> {
+  if (!groupKeys.length) return [];
+  const excludedIds = removal ? JSON.stringify(removal.ids) : null;
 
   // D1 限制单条 SQL 最多 100 个绑定参数，按每片 80 个 key 分批拉取
   const groupedRows = new Map<string, OfferWithShopRow[]>();
@@ -150,9 +160,10 @@ export async function rebuildProductGroups(
         FROM offers o
         INNER JOIN shops s ON s.id = o.shop_id
         WHERE o.group_key IN (${placeholders})
+        ${excludedIds ? "AND o.id NOT IN (SELECT value FROM json_each(?))" : ""}
         ORDER BY o.price ASC`,
       )
-      .bind(...chunk));
+      .bind(...chunk, ...(excludedIds ? [excludedIds] : [])));
   }
 
   // D1 的 invocation query 配额按 batch 调用计数，而不是其中的语句数。
@@ -199,7 +210,7 @@ export async function rebuildProductGroups(
       itemUrl: row.item_url,
       updatedAt: row.updated_at,
       staleDays: row.stale_days,
-      shopProductCount: row.shop_product_count,
+      shopProductCount: removal?.shopId === row.shop_id ? removal.itemCount : row.shop_product_count,
     }));
 
     statements.push(
@@ -262,7 +273,66 @@ export async function rebuildProductGroups(
     );
   }
 
-  return executeStatementChunks(db, statements);
+  return statements;
+}
+
+/** Remove only the confirmed row versions and rebuild their catalog entries in the same transaction. */
+export async function removeConfirmedLdxpOffers(
+  db: D1Database, shop: ShopRecord, proofs: LdxpOfferVersion[], nowIso: string,
+) {
+  const byId = new Map(proofs.map(proof => [`${shop.id}:${proof.itemKey}`, proof]));
+  const supportsSyncTime = shop.last_full_sync_at !== undefined;
+  const observation = supportsSyncTime ? "last_observed_at" : "NULL";
+  const { results: offers } = await db.prepare(`SELECT id, group_key, brand_group AS brandGroup, clean_name AS cleanName,
+    price, item_url AS itemUrl, updated_at AS updatedAt, ${observation} AS observedAt
+    FROM offers WHERE shop_id = ? ORDER BY price, id`).bind(shop.id).all<
+      Pick<NormalizedOffer, "id" | "brandGroup" | "cleanName" | "price" | "itemUrl"> &
+      { group_key: string; updatedAt: string; observedAt: string | null }
+    >();
+  const removed = offers.filter(offer => {
+    const proof = byId.get(offer.id);
+    return proof?.updatedAt === offer.updatedAt &&
+      proof.lastSyncedAt === offerLastSyncedAt(offer.observedAt, shop.last_full_sync_at);
+  });
+  if (!removed.length) {
+    return { status: "unchanged" as const, itemCount: offers.length, estimatedWrites: 0, contentHash: shop.content_hash, descriptionUpdated: false };
+  }
+
+  const ids = removed.map(offer => offer.id);
+  const idSet = new Set(ids);
+  const remaining = offers.filter(offer => !idSet.has(offer.id));
+  const groups = [...new Set(removed.map(offer => offer.group_key))];
+  const groupWrites = await prepareProductGroupWrites(db, groups, nowIso, { ids, shopId: shop.id, itemCount: remaining.length });
+  // Abort the transaction if a concurrent sync changed the shop or a confirmed quote after the read.
+  const rowVersions = removed.map(({ id, updatedAt, observedAt }) => ({ id, updatedAt, observedAt }));
+  const checkVersion = db.prepare(`SELECT json(CASE WHEN EXISTS (
+    SELECT 1 FROM shops WHERE id = ? AND last_synced_at IS ? AND updated_at IS ? AND product_count IS ?
+  ) AND NOT EXISTS (
+    SELECT 1 FROM json_each(?) proof LEFT JOIN offers o ON o.id = json_extract(proof.value, '$.id')
+    WHERE o.updated_at IS NOT json_extract(proof.value, '$.updatedAt')
+      OR ${supportsSyncTime ? "o.last_observed_at" : "NULL"} IS NOT json_extract(proof.value, '$.observedAt')
+  ) THEN 'null' ELSE 'stale offer confirmation' END)`)
+    .bind(shop.id, shop.last_synced_at, shop.updated_at, shop.product_count, JSON.stringify(rowVersions));
+  const statements = [
+    checkVersion,
+    db.prepare("DELETE FROM offers WHERE shop_id = ? AND id IN (SELECT value FROM json_each(?))")
+      .bind(shop.id, JSON.stringify(ids)),
+    db.prepare("UPDATE shops SET product_count = ?, product_summary_json = ?, content_hash = '', updated_at = ? WHERE id = ?")
+      .bind(remaining.length, buildProductSummaryJson(remaining), nowIso, shop.id),
+    ...groupWrites,
+  ];
+  try {
+    const writes = await db.batch(statements);
+    return {
+      status: "updated" as const, itemCount: remaining.length, contentHash: "", descriptionUpdated: false,
+      estimatedWrites: writes.reduce((sum, result) => sum + result.meta.rows_written, 0),
+    };
+  } catch (error) {
+    if (/malformed JSON/i.test(String(error))) {
+      throw new Error("复核期间店铺或报价已更新，请重新同步后再确认下架", { cause: error });
+    }
+    throw error;
+  }
 }
 
 /**

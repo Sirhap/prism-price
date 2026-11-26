@@ -45,6 +45,7 @@ import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
 import { createProductDetailBudget } from "../collector/etl/productDetails";
 import { offerLastSyncedAt, readOfferObservations } from "../collector/etl/offerSyncTimes";
 import { recentStockCutoff, recentZeroStockSql, stockFilteredGroupsSql } from "./productStockFilter";
+import { ldxpShopKey } from "../../scripts/lib/missingOffers.mjs";
 import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
@@ -686,6 +687,7 @@ async function handleGetShops(url: URL, env: Env): Promise<Response> {
         descriptionPersistence: caps.description,
         partialSnapshotSupport: true,
         market16688RemovalSupport: true,
+        ldxpRemovalSupport: true,
         stockObservationSupport: await hasStockObservations(env.DB),
         syncTimestampSupport: true,
         shops: (results || []).map((s) => {
@@ -1236,14 +1238,18 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
     if (entry.partial && !entry.snapshot) return Response.json({ error: "partial 需要商品快照" }, { status: 400 });
     if (entry.confirmedMissingOffers !== undefined) {
       const confirmed = entry.confirmedMissingOffers;
-      if (!entry.partial || !entry.snapshot || !market16688ShopKey(entry.shopUrl) ||
+      const ldxp = Boolean(ldxpShopKey(entry.shopUrl));
+      if (!entry.partial || !entry.snapshot || (!ldxp && !market16688ShopKey(entry.shopUrl)) ||
+          (ldxp && entry.snapshot.items.length > 0) || entry.error !== undefined ||
           !Array.isArray(confirmed) || confirmed.length === 0 || confirmed.length > MARKET16688_MISSING_LIMIT) {
-        return Response.json({ error: "仅支持随 16688 部分快照提交有限数量的已确认下架商品" }, { status: 400 });
+        return Response.json({ error: "下架确认仅支持 16688 部分快照或 LDXP 独立复核批次" }, { status: 400 });
       }
       const keys = new Set(entry.snapshot.items.map(item => item.itemKey.trim()));
       for (const offer of confirmed) {
         if (!offer || !isMarket16688OfferKey(offer.itemKey) || keys.has(offer.itemKey) ||
-            typeof offer.updatedAt !== "string" || offer.updatedAt.length > 32 || !Number.isFinite(Date.parse(offer.updatedAt))) {
+            typeof offer.updatedAt !== "string" || offer.updatedAt.length > 32 || !Number.isFinite(Date.parse(offer.updatedAt)) ||
+            (ldxp && (!("lastSyncedAt" in offer) || (offer.lastSyncedAt !== null &&
+              (typeof offer.lastSyncedAt !== "string" || offer.lastSyncedAt.length > 32 || !Number.isFinite(Date.parse(offer.lastSyncedAt))))))) {
           return Response.json({ error: "已确认下架商品必须唯一、缺席于当前快照且包含有效的报价版本" }, { status: 400 });
         }
         keys.add(offer.itemKey);
