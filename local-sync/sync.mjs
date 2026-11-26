@@ -249,7 +249,9 @@ export async function runSync(options, deps = {}) {
         if (options.apply) { state.completed[shop.id] = shop.shopUrl; saveCheckpoint(options.checkpoint, state); }
         console.log(`[local-sync] ${shop.id}: ${unchanged ? '未变化' : options.apply ? '已推送' : '有变化'}`);
       } catch (error) {
-        if (options.apply && (error?.shopUnavailable === 'not_found' || error?.shopUnavailable === 'empty' || (error?.shopUnavailable === 'closed' && options.deleteUnavailable))) {
+        const unavailable = error?.shopUnavailable;
+        if (options.apply && (['not_found', 'empty', 'banned'].includes(unavailable) ||
+            (unavailable === 'closed' && (is16688(shop) || options.deleteUnavailable)))) {
           try {
             const result = await remove(shop);
             if (result?.deleted !== true || result.shopId !== shop.id) throw new Error('删除结果未确认');
@@ -291,9 +293,9 @@ export function describeWorkflow() {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
       source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 和 LDXP 大店部分同步会逐条复核完整采集结果中缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品未上架、已下架或不存在才提交下架确认。',
       push: '使用 --apply 时向目标 API 的 /api/ingest 推送变化快照。',
-      delete: '使用 --apply 时，源站明确报告店铺不存在或完整采集后无可收录商品，会调用目标 API 的店铺删除接口；加 --delete-unavailable 时关闭交易的店铺也会删除。',
+      delete: '使用 --apply 时，源站明确报告店铺不存在、商家封禁、16688 暂停营业，或完整校验后无可收录商品，会调用目标 API 的店铺删除接口；其他平台关闭交易需加 --delete-unavailable。',
     },
-    deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；判断来自源站单次响应，可能误判。封禁和普通网络失败不删除。',
+    deletion: '删除会同时删除目标站的店铺、商品报价和历史快照；店铺状态依源站单次响应判断；源站商品总数与列表冲突时会核对分类列表。请求风控和普通网络失败不会触发删除。',
     rate: '默认单并发、随机间隔 1～2 秒；单店触发风控立即跳过并继续下一家，目标站鉴权失败或限流则停止。多进程不共享限速。',
     defaults: '默认只预览，不写入；仅显式 --apply 才会写入或删除。脚本不会自行设置定时任务。',
     audit: '开源代码和凭据均需使用者自行确认；不要将密钥写入仓库、日志或提示词。',

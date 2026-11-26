@@ -171,12 +171,12 @@ test('限制响应记录具体提示并隐藏敏感内容，重试耗尽后停�
   } finally { globalThis.fetch = original; }
 });
 
-test('商家封禁不是访问风控，已关闭或不存在店铺仅明确启用时删除', async () => {
+test('商家封禁可判定整店不可用，与访问风控区分', async () => {
   const { fetchShopApiSnapshot } = await import('../scripts/push-sync.mjs');
   const original = globalThis.fetch; let blocked = false;
   try {
     globalThis.fetch = async () => Response.json({code: 0, msg:'该商家已被封禁，有疑问请联系平台客服'});
-    await assert.rejects(fetchShopApiSnapshot({shopUrl:'https://example.test/shop/a'}, {requestGate:{before:async()=>{},block:()=>{blocked=true;}}}), e => !e.isRateLimited && !e.shopUnavailable && /商家已被封禁/.test(e.message));
+    await assert.rejects(fetchShopApiSnapshot({shopUrl:'https://example.test/shop/a'}, {requestGate:{before:async()=>{},block:()=>{blocked=true;}}}), e => !e.isRateLimited && e.shopUnavailable === "banned" && /商家已被封禁/.test(e.message));
     assert.equal(blocked,false);
     globalThis.fetch = async () => Response.json({code:0,msg:'商家已被关闭交易，有疑问请联系平台客服'});
     await assert.rejects(fetchShopApiSnapshot({shopUrl:'https://example.test/shop/a'}, {requestGate:{before:async()=>{},block:()=>{blocked=true;}}}), e => e.shopUnavailable === "closed");
@@ -491,4 +491,54 @@ test('LDXP 大店只复核完整采集结果里缺失的旧报价，并保留限
   assert.deepEqual(entries[1].confirmedMissingOffers, [{ itemKey: 'delisted', updatedAt, lastSyncedAt }]);
   assert.equal(stats.failed, 1);
   assert.deepEqual(JSON.parse(fs.readFileSync(checkpoint, 'utf8')).completed, {});
+});
+
+test('正式同步删除已确认的空店、商家封禁和 16688 非营业店铺，保留异常响应', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-confirmed-unavailable-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const cases = [
+    ['missing', 'https://www.16688.com.cn/shop/S1000'],
+    ['closed', 'https://www.16688.com.cn/shop/S1001'],
+    ['invalid', 'https://www.16688.com.cn/shop/S1002'],
+    ['ban', 'https://catfk.com/shop/BAN'],
+    ['empty', 'https://catfk.com/shop/EMPTY'],
+    ['partial', 'https://catfk.com/shop/PARTIAL'],
+    ['bad-category', 'https://catfk.com/shop/BAD'],
+  ].map(([id, shopUrl]) => ({ id, shopUrl, adapterType: 'push_ingest', syncSupported: true }));
+  const closedResponses = new Map([
+    ['S1000', { code: 0, msg: '店铺不存在', data: null }],
+    ['S1001', { code: 0, msg: '暂时不营业了', data: null }],
+    ['S1002', { code: 0, msg: '接口繁忙', data: null }],
+  ]);
+  const categoryChecks = [];
+  t.mock.method(globalThis, 'fetch', async (url, request) => {
+    const data = JSON.parse(request.body);
+    if (url.endsWith('/shop/detail')) return Response.json(closedResponses.get(data.shop_no));
+    if (url.endsWith('/Shop/info')) {
+      return Response.json(data.token === 'BAN'
+        ? { code: 0, msg: '该商家已被封禁，有疑问请联系平台客服' }
+        : { code: 1, data: { nickname: data.token, card_count: 3 } });
+    }
+    if (url.endsWith('/Shop/categoryList')) {
+      return Response.json({ code: 1, data: [{ id: data.token === 'BAD' ? null : '123' }] });
+    }
+    assert.ok(url.endsWith('/Shop/goodsList'));
+    if (data.category_id) categoryChecks.push(data.token);
+    return Response.json({ code: 1, data: {
+      total: data.category_id && data.token === 'PARTIAL' ? 3 : 0,
+      list: [],
+    } });
+  });
+  const removed = [];
+  const stats = await runSync(options(path.join(dir, 'checkpoint.json'), { apply: true }), {
+    gate: { before: async () => {}, isBlocked: () => false },
+    load: async () => ({ shops: cases, partialSnapshotSupport: true }),
+    remove: async shop => { removed.push(shop.id); return { deleted: true, shopId: shop.id }; },
+    push: async () => assert.fail('遭遇不可用店铺或无效快照时不推送'),
+  });
+  assert.deepEqual(removed.sort(), ['ban', 'closed', 'empty', 'missing']);
+  assert.deepEqual(categoryChecks.sort(), ['EMPTY', 'PARTIAL']);
+  assert.equal(stats.deleted, 4);
+  assert.equal(stats.failed, 3);
+  assert.equal(stats.riskSkipped, 0);
 });

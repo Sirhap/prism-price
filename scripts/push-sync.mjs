@@ -469,7 +469,16 @@ export async function fetch16688Snapshot(shop, options = {}) {
   const slowSourceOptions = { ...options, timeoutMs: 30000 };
   const detail = await postJson('https://www.16688.com.cn/shopApi/shop/detail', {shop_no:token}, 1, slowSourceOptions);
   const number = detail?.data?.shop_no;
-  if (detail.code !== 1 || typeof number !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(number)) throw new Error('16688 店铺信息无效，保留原数据');
+  if (detail?.code !== 1 || typeof number !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(number)) {
+    const message = typeof detail?.msg === 'string' ? detail.msg.trim() : '';
+    const error = new Error('16688 店铺信息无效，保留原数据');
+    if (detail?.code === 0 && detail.data === null) {
+      if (/^(?:店铺不存在|店铺链接不存在)[。！!]?$/.test(message)) error.shopUnavailable = 'not_found';
+      else if (/^(?:暂时不营业了|店铺已打烊|商家已打烊)[。！!]?$/.test(message)) error.shopUnavailable = 'closed';
+      if (error.shopUnavailable) error.message = message;
+    }
+    throw error;
+  }
   const categories = await postJson('https://www.16688.com.cn/shopApi/goodsCategory/list', {shop_no:number}, 1, slowSourceOptions);
   if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效，保留原数据');
   const categoryNames = new Map(categories.data.filter(c => c && typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name.trim()]));
@@ -522,6 +531,10 @@ export async function fetchShopApiSnapshot(shop, options = {}) {
     const error = new Error(message);
     if (/^(?:店铺链接不存在|店铺不存在)(?:[，,。！？：:\s]|$)/.test(message)) error.shopUnavailable = "not_found";
     else if (/^商家已被关闭交易(?:[，,。！？：:\s]|$)/.test(message)) error.shopUnavailable = "closed";
+    else if (infoRes.code === 0 && /^(?:该)?商家已被封禁(?:[，,。！？：:\s]|$)/.test(message)) {
+      error.shopUnavailable = "banned";
+      error.message = "源站确认商家已被封禁";
+    }
     throw error;
   }
   const defaultCardPage1 = await postJson(`${apiOrigin}/shopApi/Shop/goodsList`, {
@@ -546,12 +559,16 @@ export async function fetchShopApiSnapshot(shop, options = {}) {
         goods_type: goodsType,
         category_key: "",
       }, 1, options);
-      const categories = catRes.code === 1 && Array.isArray(catRes.data) ? catRes.data : [];
+      if (catRes.code !== 1 || !Array.isArray(catRes.data)) {
+        throw new Error(`商品分类响应无效，无法确认空店 (type=${goodsType})`);
+      }
+      const categories = catRes.data;
       if (categories.length > 40) throw new Error(`商品分类过多，无法安全采集完整快照 (type=${goodsType})`);
-      const beforeCategoryFallback = allGoods.length;
-      for (const cat of categories.slice(0, 40)) {
-        const cid = cat.id !== undefined && cat.id !== null ? String(cat.id).trim() : "";
-        if (!cid) continue;
+      // The shop summary can lag behind the listing. Only a complete category scan
+      // can confirm an empty listing when the shop still reports a positive count.
+      for (const cat of categories) {
+        const cid = typeof cat?.id === "number" || typeof cat?.id === "string" ? String(cat.id).trim() : "";
+        if (!cid) throw new Error(`商品分类编号无效，无法确认空店 (type=${goodsType})`);
         await sleep(100);
         const catGoods = await fetchPagedGoodsBatchLocal(apiOrigin, token, goodsType, cid, null, options);
         for (const g of catGoods) {
@@ -560,9 +577,6 @@ export async function fetchShopApiSnapshot(shop, options = {}) {
             _fallbackCategoryName: String(cat.name || "").trim(),
           });
         }
-      }
-      if (allGoods.length === beforeCategoryFallback) {
-        throw new Error(`源站声明有商品但未能取得商品列表 (type=${goodsType})`);
       }
     }
   }
