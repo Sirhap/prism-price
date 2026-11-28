@@ -11,15 +11,16 @@ import { runSyncBatch } from "./collector/scheduler";
 import { handleApiRequest, isSyncCatalogRead, rejectProductListRequest, verifyAdminSecret } from "./routes/api";
 import { handleAdminRoute } from "./routes/admin";
 import { checkCrawlerAccess } from "./routes/crawlerAccess";
+import { checkProductVerification, type ProductVerificationEnv } from "./routes/productVerification";
 import { handleSponsorPublic } from "./routes/sponsors";
 import { handleAiRequest } from "./routes/ai";
 import { applyHtmlLocale, handleLocaleApi, isLocalizedHtmlPath, resolveRequestLocale } from "./i18n/locale";
 
 const HOME_ASSET_PRELOADS = [
-  '</styles.css?v=ai-assistant-3>; rel=preload; as=style',
+  '</styles.css?v=product-verification>; rel=preload; as=style',
   '</i18n.js?v=ai-assistant-2>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
-  '</app.js?v=product-query-limit-v1>; rel=preload; as=script',
+  '</app.js?v=product-verification>; rel=preload; as=script',
 ].join(", ");
 
 /** Only preload list requests that match the exact default URL built by app.js. */
@@ -37,12 +38,15 @@ export default {
   /**
    * HTTP 请求入口：接管 /api/*、/catalog/*、动态 Sitemap 与 llms.txt，其余静态资源由 Workers Static Assets 分发
    */
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env & ProductVerificationEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     try {
-      const rejection = rejectProductListRequest(request, url);
-      if (rejection) return rejection;
+      const productListRejection = rejectProductListRequest(request, url);
+      if (productListRejection) return productListRejection;
+      // The full catalog route below independently enforces Bearer authentication.
+      const verification = await checkProductVerification(request, url, env, true);
+      if (verification) return verification;
       const syncReadWithCredentials = isSyncCatalogRead(request, url) && /^Bearer\s+\S/i.test(request.headers.get("Authorization") || "");
       const crawlerResponse = await checkCrawlerAccess(request, url.pathname, env.DB, ctx,
         syncReadWithCredentials ? async () => (await verifyAdminSecret(request, env)).ok : undefined);

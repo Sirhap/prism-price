@@ -10,6 +10,8 @@ Miniflare 是 Cloudflare 的开发/测试工具，本部署是自托管兼容方
 - 密钥与服务器配置：`/etc/ldxp-cf-demo.env`，仅 root 可读，由 systemd 注入；不要把密钥放到网站静态目录。
 - 正式域名：`https://parity.sirhao.top`，由 Cloudflare 代理到服务器 OpenResty，再转发至本机 8787。
 - OpenResty 配置：`/opt/1panel/www/conf.d/parity.conf`；Origin CA 证书位于 `/opt/1panel/www/sites/parity/ssl`，私钥权限 0600，证书有效至 2041-11-08。
+- OpenResty 对本站 `/api/products` 合计允许 4 个并发请求，超过返回 429。配置文件由 OpenResty 在 `http` 块内加载。发布时先保留旧配置并用运行中的 OpenResty 执行 `nginx -t`，再重载并检查首页、商品和店铺接口。需要回滚时恢复旧配置，检查语法后重载。
+- 可选的商品查询人机验证使用托管 Turnstile。为正式域名配置组件，并通过服务环境提供 `TURNSTILE_SITE_KEY` 和 `TURNSTILE_SECRET_KEY` 后启用。单一访客 IP 在 10 秒内第 13 次公开商品查询开始收到验证要求；通过后浏览器获发 10 分钟通行 Cookie。现有 Cloudflare 限速和 OpenResty 并发限制继续执行。该功能依赖可信的 `CF-Connecting-IP`，启用前确认站点源站保留 Cloudflare 回源校验。同步 API 和鉴权的完整目录保持原有访问方式。
 - `wrangler.jsonc` 已移除该域名路由，避免以后部署旧 Worker 时重新抢占正式域名。
 - `ldxp-cf-demo.service`：开机启动，异常自动重启，以独立 `ldxp` 用户运行。
 - `ldxp-sync.timer`：默认停用，不自动采集商品和店铺。运行层 `AUTO_SYNC_ENABLED=false` 再作一层保护。

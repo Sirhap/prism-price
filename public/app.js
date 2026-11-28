@@ -1583,11 +1583,18 @@ async function readPublicJson(response) {
 
 async function fetchProductSnapshot(signal, reuseFacets = false) {
   const params = buildProductApiParams(reuseFacets);
-  const res = await fetch(`/api/products?${params.toString()}`, {
+  const res = await fetchPublicProducts(`/api/products?${params.toString()}`, {
     signal,
     cache: "default",
   });
   return readPublicJson(res);
+}
+
+async function fetchPublicProducts(url, options) {
+  const response = await fetch(url, options);
+  if (response.headers.get("X-Prism-Verification") !== "required") return response;
+  const { resumeProductFetch } = await import("/product-verification.mjs");
+  return resumeProductFetch(response, () => fetch(url, options), options?.signal);
 }
 
 /**
@@ -2043,7 +2050,7 @@ async function fetchFullOffersForGroup(groupKey) {
   try {
     const params = new URLSearchParams({ offerKey: groupKey });
     appendProductStockFilters(params);
-    const res = await fetch(`/api/products?${params}`);
+    const res = await fetchPublicProducts(`/api/products?${params}`);
     const data = await readPublicJson(res);
     if (data._stale) {
       showRequestError(

@@ -163,7 +163,13 @@
     bubble.appendChild(wrap);
     scrollToBottom();
     try {
-      const response = await fetch(apiUrl, { headers: { Accept: "application/json" } });
+      const load = () => fetch(apiUrl, { headers: { Accept: "application/json" } });
+      let response = await load();
+      if (response.headers.get("X-Prism-Verification") === "required") {
+        const { resumeProductFetch } = await import("/product-verification.mjs");
+        response = await resumeProductFetch(response, load);
+      }
+      if (!response.ok) throw new Error("Product query unavailable");
       const data = await response.json();
       const items = Array.isArray(data?.items) ? data.items.slice(0, 4) : [];
       wrap.replaceChildren();
