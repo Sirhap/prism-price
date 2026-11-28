@@ -279,6 +279,7 @@ export function positiveInteger(raw: string | null, fallback: number, max: numbe
 }
 
 export const PUBLIC_PRODUCT_RESULT_LIMIT = 300;
+export const SHOP_PRODUCTS_PATH = /^\/api\/shops\/([^/]+)\/products$/;
 
 export function productListPagination(params: URLSearchParams) {
   const page = positiveInteger(params.get("page"), 1, 1_000_000);

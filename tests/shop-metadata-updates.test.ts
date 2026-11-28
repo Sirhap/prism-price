@@ -50,7 +50,7 @@ function adminUpsert(shops: unknown[]) {
 }
 
 async function shop(id: string) {
-  const response = await SELF.fetch(`http://localhost/api/shops/${id}/products`);
+  const response = await SELF.fetch(`http://localhost/api/shops/${id}/products`, { headers });
   expect(response.status).toBe(200);
   return (await response.json() as { shop: { shopName: string; adapterType: string; syncSupported: boolean; systemType: string; staleDays: number; productItems: unknown[] } }).shop;
 }

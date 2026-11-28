@@ -116,7 +116,7 @@ npm run typecheck    # TypeScript strict check (tsc --noEmit)
 | `/api/products` | `GET` | Search and compare product groups. Public pagination exposes up to 300 matching groups, reported as `visibleTotal`. Full pagination requires `full=1` and the sync key as a Bearer token. |
 | `/api/shops` | `GET` | Public store directory filterable by system type (`ldxp`, `catfk`, etc.), stock status, and integration codes |
 | `/api/shops/:id` | `GET` | Public store profile (sanitized description, metadata) |
-| `/api/shops/:id/products` | `GET` | Public product list for a single indexed store |
+| `/api/shops/:id/products` | `GET` | Full store quotes for synchronization; requires the Bearer sync key. |
 | `/api/locale` | `GET` | Resolves active locale (`zh` / `en`) from query, cookie, `CF-IPCountry`, and `Accept-Language` |
 | `/llms.txt` & `/llms-full.txt` | `GET` | Machine-readable Markdown summaries for AI search engines and agents |
 | `/sitemap.xml` | `GET` | Dynamic XML sitemap index referencing sharded product and store sitemaps |

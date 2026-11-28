@@ -131,6 +131,49 @@ it("公开商品只能翻到展示上限，完整分页需要已有同步密钥"
   expect(await detail.response.json()).toMatchObject({ items: [{ id: "g-500" }] });
 });
 
+it("整店报价必须通过密钥鉴权，历史共享缓存也不能绕过", async () => {
+  const { default: worker } = await import("../src/index");
+  const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
+  const { publicCacheKey } = await import("../src/cache/publicResponseCache");
+  const url = "https://budget-shop-quotes.example/api/shops/s-2/products";
+  const legacyKey = publicCacheKey(new Request(url));
+  await caches.default.put(legacyKey, Response.json({ legacy: true }, {
+    headers: { "Cache-Control": "public, max-age=3600", "X-Prism-Stored-At": String(Date.now()) },
+  }));
+  const read = async (authorization?: string, suffix = "") => {
+    const measured = observeD1(env.DB);
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(new Request(url + suffix, {
+      headers: authorization ? { Authorization: authorization } : {},
+    }), { ...env, DB: measured.db }, ctx);
+    await waitOnExecutionContext(ctx);
+    return { response, cost: measured.cost };
+  };
+  const anonymous = await read();
+  expect(anonymous.response.status).toBe(401);
+  expect(anonymous.response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(anonymous.cost.queries).toBe(0);
+  expect((await read(undefined, "?page=1&pageSize=1")).response.status).toBe(401);
+  expect((await read("Bearer incorrect")).response.status).toBe(401);
+
+  const sync = await read(`Bearer ${env.INGEST_SECRET}`, "?page=1&pageSize=1");
+  expect(sync.response.status).toBe(200);
+  expect(sync.response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(sync.response.headers.has("X-Prism-Cache")).toBe(false);
+  const body = await sync.response.json<{ shop: { id: string; productItems: unknown[] } }>();
+  expect(body.shop.id).toBe("s-2");
+  expect(body.shop.productItems).toHaveLength(18);
+  expect((await read()).response.status).toBe(401);
+
+  const ctx = createExecutionContext();
+  const profile = await worker.fetch(new Request(url.replace(/\/products$/, "")), env, ctx);
+  await waitOnExecutionContext(ctx);
+  expect(profile.status).toBe(200);
+  const publicInfo = await profile.json<{ shop: { id: string; productItems?: unknown[] } }>();
+  expect(publicInfo.shop.id).toBe("s-2");
+  expect(publicInfo.shop.productItems).toBeUndefined();
+});
+
 it("数据版本改变后统计重新加载，不继续复用旧计数", async () => {
   const { default: worker } = await import('../src/index');
   const { createExecutionContext, waitOnExecutionContext } = await import('cloudflare:test');

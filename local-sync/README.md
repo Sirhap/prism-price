@@ -13,6 +13,8 @@ SYNC_INTERVAL_MAX_MS=2000
 
 仅通过环境变量把 `API_BASE` 切换到另一域名、协议或端口时，预览会匿名读取，正式同步需显式提供新目标的 `INGEST_SECRET`。目标地址须使用 HTTPS，本机回环地址可用 HTTP 测试。
 
+目标站的整店报价接口 `GET /api/shops/:id/products` 需要有效的 Bearer 同步密钥。16688 或 LDXP 的下架复核需要读取旧报价，因此即使是只读预览也应配置对应目标的 `INGEST_SECRET`。目标站拒绝鉴权时，本轮会停止，未复核数据保留。
+
 ```bash
 npm run sync:local -- --shop=King                 # 仅预览
 npm run sync:local -- --shop=King --apply         # 同步一店

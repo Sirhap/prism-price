@@ -73,6 +73,37 @@ test('16688 域名切换后旧网址筛选和同步断点仍匹配同一店铺',
   assert.equal(resumed.failed, 0);
 });
 
+test('整店报价拒绝鉴权时停止本轮并保留已有数据', async () => {
+  const target = {
+    id: 'auth-required-market', shopUrl: 'https://www.16688.store/shop/S123', adapterType: 'manual',
+  };
+  const secret = 'test-auth-required';
+  const requested = [];
+  const stats = await runSync(options('/tmp/unused', { secret }), {
+    load: async (url, init) => {
+      requested.push(url);
+      assert.equal(init.headers.Authorization, `Bearer ${secret}`);
+      if (url.endsWith('/api/shops?fields=sync')) {
+        return { shops: [target, shops[0]], partialSnapshotSupport: true, market16688RemovalSupport: true };
+      }
+      throw Object.assign(new Error('HTTP 401'), { status: 401 });
+    },
+    chooseStart: () => 0,
+    collect: async shop => {
+      assert.equal(shop.id, target.id);
+      return snapshot;
+    },
+    push: async () => assert.fail('鉴权失败后不得推送'),
+    remove: async () => assert.fail('鉴权失败后不得删除'),
+  });
+  assert.equal(stats.failed, 1);
+  assert.equal(stats.unprocessed, 1);
+  assert.equal(stats.pushed, 0);
+  assert.equal(stats.deleted, 0);
+  assert.equal(requested.length, 2);
+  assert(requested[1].endsWith(`/api/shops/${target.id}/products`));
+});
+
 test('严格限制参数、店铺范围和远程明文地址', async () => {
   assert.throws(() => parseArgs(['--concurrency=0']), /并发数/);
   assert.throws(() => parseArgs(['--resume']), /apply/);

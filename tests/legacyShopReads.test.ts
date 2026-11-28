@@ -32,8 +32,8 @@ beforeAll(async () => {
   ]);
 });
 
-async function get(path: string) {
-  const response = await handleApiRequest(new Request(`https://local.test${path}`), legacyEnv);
+async function get(path: string, init?: RequestInit) {
+  const response = await handleApiRequest(new Request(`https://local.test${path}`, init), legacyEnv);
   expect(response.status).toBe(200);
   return await response.json() as {
     total: number;
@@ -159,7 +159,7 @@ describe("未迁移 system_type 与 description/created_at 的旧库只读路径
     expect("medianPrice" in intro.shop.shopSignals).toBe(false);
 
     // 兼容接口 GET /api/shops/:id/products 在旧库上同样安全返回派生系统与空简介/空收录时间
-    const detail = await get("/api/shops/legacy-ldxp/products");
+    const detail = await get("/api/shops/legacy-ldxp/products", { headers: { Authorization: `Bearer ${legacyEnv.INGEST_SECRET}` } });
     expect(detail.shop).toMatchObject({
       systemType: "ldxp",
       systemTypeLabel: "联动小铺",
@@ -233,7 +233,7 @@ describe("0004 已迁移但 0005 尚未迁移时的中间态只读路径", () =>
     });
     expect(intro.shop.productItems).toBeUndefined();
 
-    const detail = await get("/api/shops/legacy-ldxp/products");
+    const detail = await get("/api/shops/legacy-ldxp/products", { headers: { Authorization: `Bearer ${legacyEnv.INGEST_SECRET}` } });
     expect(detail.capabilities).toEqual({
       systemTypePersistence: true,
       descriptionPersistence: false,

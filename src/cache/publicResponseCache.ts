@@ -1,4 +1,4 @@
-import { normalizeProductQuery, normalizeShopSort, positiveInteger, productListPagination, PUBLIC_PRODUCT_RESULT_LIMIT } from "../routes/search";
+import { normalizeProductQuery, normalizeShopSort, positiveInteger, productListPagination, PUBLIC_PRODUCT_RESULT_LIMIT, SHOP_PRODUCTS_PATH } from "../routes/search";
 import { stockCatalogWindowStart, STOCK_CATALOG_WINDOW_SECONDS } from "../routes/productStockFilter";
 import { normalizeShopSystem } from "../collector/shopSystems";
 import { responseStore, type ResponseStore } from "./responseStore";
@@ -13,13 +13,14 @@ const LLMS_PATHS = new Set(["/llms.txt", "/llms-full.txt"]);
 
 export function isPublicCacheRequest(request: Request): boolean {
   const url = new URL(request.url);
-  if (request.method !== "GET" || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return false;
+  if (request.method !== "GET" || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+      SHOP_PRODUCTS_PATH.test(url.pathname)) return false;
   // Product reads only consume credentials in full mode. Public product data is identical for every caller.
   if (url.pathname === "/api/products") return url.searchParams.get("full") !== "1";
   return !request.headers.has("Authorization") && url.searchParams.get("fields")?.trim() !== "sync" &&
     (url.pathname === "/catalog" || url.pathname.startsWith("/catalog/") || SITEMAP_PATHS.has(url.pathname) || LLMS_PATHS.has(url.pathname) ||
       (url.pathname === "/api/shops" && url.searchParams.has("page")) ||
-      /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
+      /^\/api\/shops\/[^/]+$/.test(url.pathname));
 }
 
 function isCatalogCursorListPath(pathname: string): boolean {

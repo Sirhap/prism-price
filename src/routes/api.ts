@@ -27,6 +27,7 @@ import { assertSafePublicUrl, normalizeDescription } from "../collector/adapters
 import {
   PRODUCT_PLAN_SET,
   PUBLIC_PRODUCT_RESULT_LIMIT,
+  SHOP_PRODUCTS_PATH,
   productListPagination,
   buildProductRelevanceOrder,
   containsMatch,
@@ -957,7 +958,7 @@ async function handleGetShopIntro(shopId: string, env: Env): Promise<Response> {
 }
 
 /**
- * GET /api/shops/:id/products - 向后兼容的店铺明细接口（保留全店商品清单与价格统计供已有测试/监控使用）
+ * GET /api/shops/:id/products - 同步鉴权后读取整店报价及统计
  */
 async function handleGetShopDetail(shopId: string, env: Env): Promise<Response> {
   const caps = await getShopColumnCapabilities(env.DB);
@@ -1617,14 +1618,19 @@ async function handleGetSyncLogs(env: Env): Promise<Response> {
   );
 }
 
-const SHOP_PRODUCTS_PATH = /^\/api\/shops\/([^/]+)\/products$/;
-
 /** Fail cheap before crawler-policy reads or cached public results are consulted. */
 export function rejectProductListRequest(request: Request, url: URL): Response | null {
-  if (request.method !== "GET" || url.pathname !== "/api/products") return null;
+  if (request.method !== "GET") return null;
+  const hasBearer = /^Bearer\s+\S/i.test(request.headers.get("Authorization") || "");
+  if (SHOP_PRODUCTS_PATH.test(url.pathname)) {
+    return hasBearer ? null : Response.json({ error: "整店报价需要同步密钥" }, {
+      status: 401, headers: { "Cache-Control": "private, no-store" },
+    });
+  }
+  if (url.pathname !== "/api/products") return null;
   const params = url.searchParams;
   if (params.get("full") === "1") {
-    if (/^Bearer\s+\S/i.test(request.headers.get("Authorization") || "")) return null;
+    if (hasBearer) return null;
     return Response.json({ error: "完整目录需要同步密钥" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   if (params.get("offerKey")?.trim() || productListPagination(params).offset < PUBLIC_PRODUCT_RESULT_LIMIT) return null;
@@ -1698,11 +1704,16 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   const shopDetailMatch = pathname.match(SHOP_PRODUCTS_PATH);
   if (request.method === "GET" && shopDetailMatch) {
+    const headers = { "Cache-Control": "private, no-store" };
+    const auth = await verifyAdminSecret(request, env);
+    if (!auth.ok) return Response.json({ error: auth.message }, { status: auth.status, headers });
     const shopId = safeDecodeRouteParam(shopDetailMatch[1]);
     if (!shopId) {
-      return Response.json({ error: "非法的店铺路径参数" }, { status: 400 });
+      return Response.json({ error: "非法的店铺路径参数" }, { status: 400, headers });
     }
-    return handleGetShopDetail(shopId, env);
+    const response = await handleGetShopDetail(shopId, env);
+    response.headers.set("Cache-Control", headers["Cache-Control"]);
+    return response;
   }
 
   const shopIntroMatch = pathname.match(/^\/api\/shops\/([^/]+)$/);
