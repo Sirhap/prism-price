@@ -48,5 +48,10 @@ it('16688 店铺可以收录，但不会误标记成联动采集器', async () =
   const res=await submit('https://www.16688.com.cn/shop/S447917');
   expect(res.status).toBe(201);
   const data=await res.json() as {shopId:string};
-  expect(await env.DB.prepare('SELECT adapter_type,sync_supported FROM shops WHERE id=?').bind(data.shopId).first()).toMatchObject({adapter_type:'manual',sync_supported:0});
+  expect(await env.DB.prepare('SELECT canonical_url,adapter_type,sync_supported FROM shops WHERE id=?').bind(data.shopId).first())
+    .toMatchObject({canonical_url:'https://www.16688.store/shop/S447917',adapter_type:'manual',sync_supported:0});
+  await env.DB.prepare('UPDATE shops SET canonical_url=?, shop_url=? WHERE id=?')
+    .bind('https://www.16688.com.cn/shop/S447917', 'http://16688.com.cn/shop/S447917', data.shopId).run();
+  const duplicate = await submit('https://16688.store/shop/S447917');
+  expect(await duplicate.json()).toMatchObject({ existing: true, shopId: data.shopId });
 });

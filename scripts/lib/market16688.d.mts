@@ -4,6 +4,10 @@ export interface Market16688OfferVersion {
 }
 
 export const MARKET16688_MISSING_LIMIT: number;
+export const MARKET16688_HOST: string;
+export const MARKET16688_HOSTS: readonly string[];
+export const MARKET16688_ORIGIN: string;
+export function normalizeMarket16688Url(value: string): string;
 export function market16688ShopKey(value: string): string;
 export function isMarket16688OfferKey(value: unknown): value is string;
 export function confirmMissingMarket16688Offers(

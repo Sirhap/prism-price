@@ -1,3 +1,5 @@
+import { MARKET16688_HOSTS } from "../../scripts/lib/market16688.mjs";
+
 /** 店铺使用的发卡系统，与采集适配器相互独立。unknown 表示没有识别依据。 */
 export const SHOP_SYSTEMS = {
   ldxp: "联动小铺",
@@ -64,7 +66,7 @@ export function shopReadSource(source: boolean | ShopColumnCapabilities): string
       : source;
 
   // 保留数据库原有 CHECK 枚举；新增平台只在读取时根据精确域名派生。
-  const matchesHosts = (hosts: string[]) => ["shop_url", "canonical_url"].flatMap((column) =>
+  const matchesHosts = (hosts: readonly string[]) => ["shop_url", "canonical_url"].flatMap((column) =>
     hosts.flatMap((host) => ["http", "https"].flatMap((scheme) => {
       const base = `${scheme}://${host}`;
       return ["", "/%", "?%", "#%", ":80/%", ":443/%"].map((suffix) =>
@@ -75,7 +77,7 @@ export function shopReadSource(source: boolean | ShopColumnCapabilities): string
   const effective = `CASE
     WHEN ${matchesHosts(["pay.ldxp.cn", "wzyp.cn"])} THEN 'ldxp'
     WHEN ${matchesHosts(["catfk.com", "www.catfk.com"])} THEN 'catfk'
-    WHEN ${matchesHosts(["16688.com.cn", "www.16688.com.cn"])} THEN '16688'
+    WHEN ${matchesHosts(MARKET16688_HOSTS)} THEN '16688'
     ELSE ${stored} END`;
   const extraColumns: string[] = [`${effective} AS effective_system_type`];
   if (!caps.systemType) extraColumns.push("'unknown' AS system_type");
@@ -118,7 +120,7 @@ export function inferShopSystem(...urls: string[]): ShopSystemType {
   }
   if (["pay.ldxp.cn", "wzyp.cn"].some((host) => hosts.has(host))) return "ldxp";
   if (["catfk.com", "www.catfk.com"].some((host) => hosts.has(host))) return "catfk";
-  if (["16688.com.cn", "www.16688.com.cn"].some((host) => hosts.has(host))) return "16688";
+  if (MARKET16688_HOSTS.some((host) => hosts.has(host))) return "16688";
   return "unknown";
 }
 

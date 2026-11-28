@@ -5,6 +5,43 @@ import { market16688Adapter } from '../src/collector/adapters/market16688Adapter
 import type { ShopRecord, SyncRunSummary } from '../src/types';
 
 beforeAll(async()=>{await applyD1Migrations(env.DB,env.TEST_MIGRATIONS);});
+
+it("迁移保留店铺和报价标识，并重写预览里的真实链接", async () => {
+  const oldShop = "http://16688.com.cn/shop/S-domain?ref=a";
+  const oldItem = "https://www.16688.com.cn/goods/G-domain#info";
+  const unrelated = "https://www.16688.com.cn.example/goods/not-market";
+  const shopSummary = JSON.stringify([{ items: [{ itemUrl: oldItem }, { itemUrl: unrelated }] }]);
+  const offersPreview = JSON.stringify([{ shopUrl: oldShop, itemUrl: oldItem, note: oldShop }]);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO shops
+      (id, shop_name, shop_url, canonical_url, product_summary_json, next_sync_at, updated_at)
+      VALUES ('domain-shop', 'domain shop', ?, ?, ?, '2026-11-01', '2026-11-01')`).bind(oldShop, oldShop, shopSummary),
+    env.DB.prepare(`INSERT INTO offers
+      (id, shop_id, group_key, raw_name, clean_name, brand_group, price, item_url, updated_at)
+      VALUES ('domain-offer', 'domain-shop', 'domain-group', 'domain', 'domain', 'Codex', 1, ?, '2026-11-01')`).bind(oldItem),
+    env.DB.prepare(`INSERT INTO product_groups
+      (group_key, display_name, brand_group, min_price, median_price, max_price, shop_count, offer_count,
+       lead_shop_id, lead_shop_name, lead_shop_url, lead_item_url, stock_status, offers_preview_json, updated_at)
+      VALUES ('domain-group', 'domain', 'Codex', 1, 1, 1, 1, 1, 'domain-shop', 'domain shop', ?, ?, 'normal', ?, '2026-11-01')`)
+      .bind(oldShop, oldItem, offersPreview),
+  ]);
+  const migration = env.TEST_MIGRATIONS.find(entry => entry.name === "0029_market16688_store_domain.sql")!;
+  await env.DB.batch(migration.queries.map(sql => env.DB.prepare(sql)));
+  const shop = await env.DB.prepare("SELECT shop_url, canonical_url, product_summary_json FROM shops WHERE id='domain-shop'")
+    .first<{ shop_url: string; canonical_url: string; product_summary_json: string }>();
+  expect(shop?.shop_url).toBe("https://www.16688.store/shop/S-domain?ref=a");
+  expect(shop?.canonical_url).toBe(shop?.shop_url);
+  expect(JSON.parse(shop!.product_summary_json)).toEqual([{ items: [{ itemUrl: "https://www.16688.store/goods/G-domain#info" }, { itemUrl: unrelated }] }]);
+  expect(await env.DB.prepare("SELECT item_url FROM offers WHERE id='domain-offer'").first("item_url"))
+    .toBe("https://www.16688.store/goods/G-domain#info");
+  const group = await env.DB.prepare("SELECT lead_shop_url, lead_item_url, offers_preview_json FROM product_groups WHERE group_key='domain-group'")
+    .first<{ lead_shop_url: string; lead_item_url: string; offers_preview_json: string }>();
+  expect(group?.lead_shop_url).toBe(shop?.shop_url);
+  expect(group?.lead_item_url).toBe("https://www.16688.store/goods/G-domain#info");
+  expect(JSON.parse(group!.offers_preview_json)).toEqual([{ shopUrl: group?.lead_shop_url, itemUrl: group?.lead_item_url, note: oldShop }]);
+  const again = await env.DB.batch(migration.queries.map(sql => env.DB.prepare(sql)));
+  expect(again.every(result => !result.meta.changes)).toBe(true);
+});
 it('识别 16688 详情和商品，保留缺货并区分空列表与异常响应',async()=>{
  const fetchMock=vi.spyOn(globalThis,'fetch').mockImplementation(async(input)=>{
   const u=String(input); if(u.includes('goodsCategory/list'))return Response.json({code:1,data:[]}); if(u.endsWith('/shop/detail'))return Response.json({code:1,data:{shop_no:'S447917',name:'测试店'}});
@@ -12,7 +49,11 @@ it('识别 16688 详情和商品，保留缺货并区分空列表与异常响应
  });
  try {
   const shop={shop_url:'https://www.16688.com.cn/shop/S447917',canonical_url:'https://www.16688.com.cn/shop/S447917',shop_name:'测试',telegram:'',shop_sell_count:null} as ShopRecord;
-  const snapshot=await market16688Adapter.fetchSnapshot(shop,env);expect(snapshot.items).toHaveLength(1);expect(snapshot.items[0]).toMatchObject({itemKey:'G001',stockCount:0,itemUrl:'https://www.16688.com.cn/goods/G001'});
+  const snapshot = await market16688Adapter.fetchSnapshot(shop, env);
+  expect(snapshot.canonicalUrl).toBe("https://www.16688.store/shop/S447917");
+  expect(snapshot.items).toHaveLength(1);
+  expect(snapshot.items[0]).toMatchObject({ itemKey: "G001", stockCount: 0, itemUrl: "https://www.16688.store/goods/G001" });
+  expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).hostname)).toEqual(Array(3).fill("www.16688.store"));
   fetchMock.mockImplementation(async input=>String(input).includes('goodsCategory/list')?Response.json({code:1,data:[]}):String(input).endsWith('/shop/detail')?Response.json({code:1,data:{shop_no:'S447917'}}):Response.json({code:1,data:{list:[]}}));
   expect((await market16688Adapter.fetchSnapshot(shop,env)).items).toEqual([]);
   fetchMock.mockImplementation(async input=>String(input).includes('goodsCategory/list')?Response.json({code:1,data:[]}):String(input).endsWith('/shop/detail')?Response.json({code:1,data:{shop_no:'S447917'}}):Response.json({code:1,data:{}}));

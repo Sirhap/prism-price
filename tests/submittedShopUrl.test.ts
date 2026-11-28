@@ -4,7 +4,8 @@ import { normalizeSubmittedShopUrl } from '../src/collector/submittedShopUrl';
 describe('提交的店铺网址', () => {
   it('规范化平台别名、大小写和查询参数', () => {
     expect(normalizeSubmittedShopUrl('https://pay.ldxp.cn/shop/AiMan/?ref=abc')).toBe('https://wzyp.cn/shop/AiMan');
-    expect(normalizeSubmittedShopUrl('http://16688.com.cn/shop/ABC')).toBe('https://www.16688.com.cn/shop/ABC');
+    expect(normalizeSubmittedShopUrl('http://16688.com.cn/shop/ABC')).toBe('https://www.16688.store/shop/ABC');
+    expect(normalizeSubmittedShopUrl('https://16688.store/shop/ABC?from=campaign')).toBe('https://www.16688.store/shop/ABC');
     expect(normalizeSubmittedShopUrl('https://www.catfk.com/shop/One')).toBe('https://catfk.com/shop/One');
   });
   it('拒绝近似域名、内网、凭据和非店铺路径', () => {

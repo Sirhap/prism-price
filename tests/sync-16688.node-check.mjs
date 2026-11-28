@@ -7,7 +7,8 @@ test('16688 采集使用店铺编号，保留缺货且不将空结果当成删�
  globalThis.fetch=async (url,opts)=>{ calls.push([url,JSON.parse(opts.body)]); return Response.json(url.endsWith('/detail') ? {code:1,data:{shop_no:'S447917',name:'测试'}} : url.includes('goodsCategory/list') ? {code:1,data:[{goods_category_no:'cat1',name:'Muse AI'}]} : {code:1,data:{list:[{goods_no:'a',name:'商品',price:3,goods_category_no:'cat1',stock_available_status:'out'}]}}); };
  try { const snapshot=await fetch16688Snapshot({shopUrl:'https://www.16688.com.cn/shop/S447917',shopName:'测试'},{});assert.equal(snapshot.items[0].stockCount,0);assert.equal(snapshot.items[0].shopCategory,'Muse AI');assert.equal(calls.length,3);assert.deepEqual(calls[2][1],{shop_no:'S447917',goods_category_no:'',keywords:'',sort:'default'});assert.deepEqual(timeouts,[30000,30000,30000]);
  globalThis.fetch=async url=>Response.json(url.endsWith('/detail')?{code:1,data:{shop_no:'S447917'}}:url.includes('goodsCategory/list')?{code:1,data:[]}:{code:1,data:{list:[]}});
- await assert.rejects(fetch16688Snapshot({shopUrl:'https://www.16688.com.cn/shop/S447917'},{}),/保留原数据/);
+ assert.ok(calls.slice(0,3).every(([url]) => new URL(url).hostname === 'www.16688.store'));
+ await assert.rejects(fetch16688Snapshot({shopUrl:'https://www.16688.store/shop/S447917'},{}),/保留原数据/);
  } finally {globalThis.fetch=old;AbortSignal.timeout=oldTimeout;}
 });
 

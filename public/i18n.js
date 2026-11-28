@@ -335,7 +335,7 @@
     "openGuide.r2c2Html": "<code>catfk.com</code> hosted",
     "openGuide.r2c3": "Basic bio text extraction",
     "openGuide.r2c4": "Homepage \"Submit Shop\" queue",
-    "openGuide.r3c2Html": "<code>www.16688.com.cn</code>",
+    "openGuide.r3c2Html": "<code>www.16688.store</code>",
     "openGuide.r3c3": "Displayed from public bio",
     "openGuide.r3c4": "Submit public URL for adapter indexing",
     "openGuide.r4c2": "Custom domain open-source / self-hosted",

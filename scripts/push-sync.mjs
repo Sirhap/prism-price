@@ -1,6 +1,7 @@
 import { readShopApiStock } from "../public/stock-observation.mjs";
 import { computeSnapshotHash } from "./lib/snapshotHash.mjs";
 import { readSyncConfigFile, resolveSyncTarget } from "./lib/syncTarget.mjs";
+import { MARKET16688_ORIGIN, market16688ShopKey, normalizeMarket16688Url } from "./lib/market16688.mjs";
 import {
   isIncompleteGoodsBatch,
   isNonSalePlaceholderItem,
@@ -462,12 +463,10 @@ async function fetchPagedGoodsBatchLocal(apiOrigin, token, goodsType, categoryId
 
 /** 16688 列表未提供可信总数，调用方必须以部分快照写入。 */
 export async function fetch16688Snapshot(shop, options = {}) {
-  const url = new URL(shop.shopUrl);
-  if (!['16688.com.cn','www.16688.com.cn'].includes(url.hostname.toLowerCase())) throw new Error('不支持的 16688 域名');
-  const token = url.pathname.match(/^\/shop\/([a-zA-Z0-9_-]{1,100})\/?$/)?.[1];
+  const token = market16688ShopKey(shop.shopUrl);
   if (!token) throw new Error('16688 店铺地址无效');
   const slowSourceOptions = { ...options, timeoutMs: 30000 };
-  const detail = await postJson('https://www.16688.com.cn/shopApi/shop/detail', {shop_no:token}, 1, slowSourceOptions);
+  const detail = await postJson(`${MARKET16688_ORIGIN}/shopApi/shop/detail`, {shop_no:token}, 1, slowSourceOptions);
   const number = detail?.data?.shop_no;
   if (detail?.code !== 1 || typeof number !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(number)) {
     const message = typeof detail?.msg === 'string' ? detail.msg.trim() : '';
@@ -480,10 +479,10 @@ export async function fetch16688Snapshot(shop, options = {}) {
     throw error;
   }
   await options.onShopOpen?.();
-  const categories = await postJson('https://www.16688.com.cn/shopApi/goodsCategory/list', {shop_no:number}, 1, slowSourceOptions);
+  const categories = await postJson(`${MARKET16688_ORIGIN}/shopApi/goodsCategory/list`, {shop_no:number}, 1, slowSourceOptions);
   if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效，保留原数据');
   const categoryNames = new Map(categories.data.filter(c => c && typeof c.goods_category_no === 'string' && typeof c.name === 'string').map(c => [c.goods_category_no, c.name.trim()]));
-  const goods = await postJson('https://www.16688.com.cn/shopApi/goods/list', {shop_no:number,goods_category_no:'',keywords:'',sort:'default'}, 1, slowSourceOptions);
+  const goods = await postJson(`${MARKET16688_ORIGIN}/shopApi/goods/list`, {shop_no:number,goods_category_no:'',keywords:'',sort:'default'}, 1, slowSourceOptions);
   if (goods.code !== 1 || !Array.isArray(goods.data?.list) || (!goods.data.list.length && !options.allowEmptyMarket16688)) throw new Error('16688 商品列表为空或无效，保留原数据');
   const seen = new Set();
   const items = goods.data.list.map(item => {
@@ -492,9 +491,9 @@ export async function fetch16688Snapshot(shop, options = {}) {
     seen.add(key);
     const raw=item.stock_available_quantity;
     const stock=item.stock_available_status==='out' ? 0 : typeof raw==='number' && Number.isFinite(raw) && raw>=0 ? raw : null;
-    return {itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock!==null && stock<=5?'low':stock!==null && stock<=20?'normal':'sufficient',itemUrl:`https://www.16688.com.cn/goods/${encodeURIComponent(key)}`};
+    return {itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock!==null && stock<=5?'low':stock!==null && stock<=20?'normal':'sufficient',itemUrl:`${MARKET16688_ORIGIN}/goods/${encodeURIComponent(key)}`};
   });
-  return {shopName:String(detail.data.name || shop.shopName || '').trim(),canonicalUrl:shop.canonicalUrl || shop.shopUrl,telegram:shop.telegram || '',shopSellCount:shop.shopSellCount ?? null,salesVisible:!!shop.salesVisible,depositVisible:!!shop.depositVisible,depositMoney:shop.depositMoney ?? null,items};
+  return {shopName:String(detail.data.name || shop.shopName || '').trim(),canonicalUrl:normalizeMarket16688Url(shop.canonicalUrl || shop.shopUrl),telegram:shop.telegram || '',shopSellCount:shop.shopSellCount ?? null,salesVisible:!!shop.salesVisible,depositVisible:!!shop.depositVisible,depositMoney:shop.depositMoney ?? null,items};
 }
 
 /** KA123 公开目录的返回量不保证完整；结果始终作为部分更新。 */

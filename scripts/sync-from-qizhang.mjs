@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { readSyncConfigFile, resolveSyncTarget } from "./lib/syncTarget.mjs";
+import { MARKET16688_HOST, MARKET16688_ORIGIN, market16688ShopKey, normalizeMarket16688Url } from "./lib/market16688.mjs";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,6 +48,12 @@ function resolveCanonicalShopTarget(rawUrl) {
       adapterType: "ka123_api",
       forcedId: "real-ka123-plus",
     };
+  }
+
+  const marketKey = market16688ShopKey(parsed.href);
+  if (marketKey) {
+    const url = `${MARKET16688_ORIGIN}/shop/${marketKey}`;
+    return { host: MARKET16688_HOST, shopUrl: url, canonicalUrl: url, adapterType: "manual", forcedId: "" };
   }
 
   return {
@@ -270,7 +277,7 @@ async function syncProductsViaCatalog({
       const of = rawOffers[i];
       const rawName = String(of.name || "").trim();
       const price = Number(of.price);
-      const itemUrl = String(of.itemUrl || canonicalUrl).trim();
+      const itemUrl = normalizeMarket16688Url(String(of.itemUrl || canonicalUrl).trim());
       if (!rawName || !Number.isFinite(price) || price <= 0) continue;
 
       const sig = `${itemUrl}::${rawName}`;
@@ -421,7 +428,8 @@ async function main() {
     for (const s of existingJson.shops) {
       usedIds.add(s.id);
       if (s.canonicalUrl) {
-        existingByCanonical.set(s.canonicalUrl, s);
+        const marketKey = market16688ShopKey(s.canonicalUrl);
+        existingByCanonical.set(marketKey ? `${MARKET16688_ORIGIN}/shop/${marketKey}` : s.canonicalUrl, s);
       }
     }
     if (page >= existingJson.totalPages) break;

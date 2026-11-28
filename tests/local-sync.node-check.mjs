@@ -51,6 +51,28 @@ test('推送只记录已确认完成的店铺，续跑失败店铺且拒绝不�
   await assert.rejects(runSync(options(checkpoint, { apiBase: 'https://other.test', apply: true, resume: true }), { load, push }), /目标地址不匹配/);
 });
 
+test('16688 域名切换后旧网址筛选和同步断点仍匹配同一店铺', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-sync-16688-domain-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const oldUrl = 'https://www.16688.com.cn/shop/S447917';
+  const newUrl = 'https://www.16688.store/shop/S447917';
+  const checkpoint = path.join(dir, 'state.json');
+  const scoped = options(checkpoint, { apply: true, shops: [oldUrl] });
+  const shop = { id: 'market-store', adapterType: 'manual', shopUrl: oldUrl };
+  const deps = {
+    load: async () => ({ shops: [shop], partialSnapshotSupport: true }),
+    collect: async () => snapshot,
+    push: async (entry) => result(entry.shopId),
+  };
+  assert.equal((await runSync(scoped, deps)).pushed, 1);
+  shop.shopUrl = newUrl;
+  const resumed = await runSync({ ...scoped, resume: true }, {
+    ...deps, collect: async () => { throw new Error('已完成店铺被重复采集'); },
+  });
+  assert.equal(resumed.resumed, 1);
+  assert.equal(resumed.failed, 0);
+});
+
 test('严格限制参数、店铺范围和远程明文地址', async () => {
   assert.throws(() => parseArgs(['--concurrency=0']), /并发数/);
   assert.throws(() => parseArgs(['--resume']), /apply/);
@@ -381,7 +403,7 @@ test('16688 只推送详情确认不存在的旧报价，限流时停止复核',
   const unchecked = 'G30774515';
   const detailCalls = [];
   t.mock.method(globalThis, 'fetch', async (url, request) => {
-    assert.equal(url, 'https://www.16688.com.cn/shopApi/goods/detail');
+    assert.equal(url, 'https://www.16688.store/shopApi/goods/detail');
     const key = JSON.parse(request.body).goods_no;
     detailCalls.push(key);
     if (key === absent) return Response.json({ code: 0, msg: '商品不存在', data: null });

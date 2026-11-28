@@ -9,7 +9,7 @@ import {
 import type { AdapterType, RawOfferItem, RawShopSnapshot, ShopRecord, SyncRunSummary, SyncShopOutcome } from "../types";
 import { resolveAdapter } from "./adapters";
 import { market16688Adapter } from "./adapters/market16688Adapter";
-import { confirmMissingMarket16688Offers, isMarket16688OfferKey, market16688ShopKey, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
+import { confirmMissingMarket16688Offers, isMarket16688OfferKey, market16688ShopKey, normalizeMarket16688Url, type Market16688OfferVersion } from "../../scripts/lib/market16688.mjs";
 import { ldxpShopKey, type LdxpOfferVersion } from "../../scripts/lib/missingOffers.mjs";
 import { normalizeDescription } from "./adapters/fetcher";
 import { clearShopOffers, persistShopSnapshot, rebuildProductGroups, removeConfirmedLdxpOffers } from "./etl/hashAndDiff";
@@ -559,12 +559,12 @@ export async function upsertAdminShops(
   const stmts: D1PreparedStatement[] = [];
 
   for (const item of entries) {
-    const rawUrl = String(item.shopUrl || "").trim();
+    const rawUrl = normalizeMarket16688Url(String(item.shopUrl || "").trim());
     if (!rawUrl) continue;
     const parsed = new URL(rawUrl);
     const id = String(item.id || `shop-${crypto.randomUUID().slice(0, 8)}`).trim();
     const shopName = String(item.shopName || parsed.hostname).trim();
-    const canonicalUrl = String(item.canonicalUrl || rawUrl).trim();
+    const canonicalUrl = normalizeMarket16688Url(String(item.canonicalUrl || rawUrl).trim());
     const adapterType: AdapterType = item.adapterType || "push_ingest";
     const syncSupported = adapterType !== "manual" ? 1 : 0;
     const syncState = adapterType === "manual" ? "manual" : "pending";

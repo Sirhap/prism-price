@@ -48,7 +48,7 @@ import { offerLastSyncedAt, readOfferObservations } from "../collector/etl/offer
 import { resolveProductStockFilter } from "./productStockFilter";
 import { MAX_SNAPSHOT_ITEMS } from "../../scripts/lib/syncLimits.mjs";
 import { ldxpShopKey } from "../../scripts/lib/missingOffers.mjs";
-import { MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey } from "../../scripts/lib/market16688.mjs";
+import { MARKET16688_HOST, MARKET16688_HOSTS, MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey, normalizeMarket16688Url } from "../../scripts/lib/market16688.mjs";
 import { hasStockObservations, stockWarning, stockWarningDay } from "../collector/etl/stockObservations";
 import {
   calculateMedian,
@@ -1094,11 +1094,13 @@ async function handlePublicShopSubmission(request: Request, env: Env): Promise<R
   if (data.integrationCode !== undefined && typeof data.integrationCode !== 'string') return Response.json({error:'对接码格式无效'}, {status:400});
   if (integrationCode && (integrationCode.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9_-]*(?:[ \t]+[A-Za-z0-9][A-Za-z0-9_-]*)*$/.test(integrationCode))) return Response.json({error:'对接码只能包含字母、数字、空格、下划线和连字符'}, {status:400});
   const url = new URL(canonical);
-  const known = ['wzyp.cn', 'catfk.com', 'www.16688.com.cn'].includes(url.hostname);
+  const known = ['wzyp.cn', 'catfk.com', MARKET16688_HOST].includes(url.hostname);
   const token = known ? url.pathname.split('/')[2] : '';
   const browserSupported = ['wzyp.cn', 'catfk.com'].includes(url.hostname);
   const aliases = new Set([canonical.toLowerCase()]);
-  const hostAliases: Record<string,string[]> = {'wzyp.cn':['pay.ldxp.cn'],'catfk.com':['www.catfk.com'],'www.16688.com.cn':['16688.com.cn']};
+  const hostAliases: Record<string,readonly string[]> = {
+    'wzyp.cn': ['pay.ldxp.cn'], 'catfk.com': ['www.catfk.com'], [MARKET16688_HOST]: MARKET16688_HOSTS,
+  };
   for (const host of hostAliases[url.hostname] || []) aliases.add(canonical.toLowerCase().replace(`://${url.hostname}`, `://${host}`));
   for (const item of [...aliases]) if (item.startsWith('https://')) aliases.add(`http://${item.slice(8)}`);
   const aliasJson = JSON.stringify([...aliases]);
@@ -1194,27 +1196,28 @@ async function handleShopClosure(shopId: string, request: Request, env: Env): Pr
 
   const shop = await env.DB.prepare("SELECT shop_url FROM shops WHERE id = ?").bind(shopId).first<{ shop_url: string }>();
   if (!shop) return Response.json({ error: "店铺不存在" }, { status: 404 });
-  if (shop.shop_url !== body.shopUrl) {
+  if (shop.shop_url !== body.shopUrl &&
+      (!market16688ShopKey(shop.shop_url) || market16688ShopKey(shop.shop_url) !== market16688ShopKey(body.shopUrl))) {
     return Response.json({ error: "店铺源站地址已改变，请刷新同步清单" }, { status: 409 });
   }
 
   const now = Date.now();
   if (body.state === "open") {
     await env.DB.prepare("UPDATE shops SET closed_since_at = NULL, last_closed_at = NULL WHERE id = ? AND shop_url = ?")
-      .bind(shopId, body.shopUrl).run();
+      .bind(shopId, shop.shop_url).run();
     return Response.json({ shopId, state: "open", deleted: false });
   }
   const closedAt = new Date(now).toISOString();
   const observation = await env.DB.prepare(`UPDATE shops SET closed_since_at = COALESCE(closed_since_at, ?1),
     last_closed_at = MAX(COALESCE(last_closed_at, ''), ?1)
     WHERE id = ?2 AND shop_url = ?3 RETURNING closed_since_at`)
-    .bind(closedAt, shopId, body.shopUrl).first<{ closed_since_at: string | null }>();
+    .bind(closedAt, shopId, shop.shop_url).first<{ closed_since_at: string | null }>();
   if (!observation?.closed_since_at) return Response.json({ shopId, state: "retained", deleted: false });
 
   const closedSince = observation.closed_since_at;
   const deadline = Date.parse(closedSince) + SHOP_CLOSURE_GRACE_MS;
   if (body.allowDelete && now >= deadline) {
-    const result = await deleteShopById(env.DB, shopId, { closedSince, shopUrl: body.shopUrl });
+    const result = await deleteShopById(env.DB, shopId, { closedSince, shopUrl: shop.shop_url });
     return Response.json({ shopId, deleted: result.deleted, state: result.deleted ? "deleted" : "retained" });
   }
   return Response.json({ shopId, deleted: false, state: "closed", closedSince, deleteNotBefore: new Date(deadline).toISOString() });
@@ -1337,7 +1340,7 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
     const cleanEntry: PushedShopEntry = {
       ...entry,
       shopId: entry.shopId.trim(),
-      shopUrl: entry.shopUrl.trim(),
+      shopUrl: normalizeMarket16688Url(entry.shopUrl.trim()),
     };
     if (!cleanEntry.snapshot) {
       return cleanEntry;
@@ -1349,7 +1352,7 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
       shopCategory: typeof it.shopCategory === "string" ? it.shopCategory : "",
       stockCount: typeof it.stockCount === "number" && Number.isFinite(it.stockCount) ? it.stockCount : null,
       stockStatus: normalizeStoredStockStatus(it.stockStatus),
-      itemUrl: typeof it.itemUrl === "string" ? it.itemUrl : cleanEntry.shopUrl,
+      itemUrl: typeof it.itemUrl === "string" ? normalizeMarket16688Url(it.itemUrl) : cleanEntry.shopUrl,
     }));
     batchItemsTotal += items.length;
     const description =
@@ -1363,7 +1366,7 @@ async function handlePostIngest(request: Request, env: Env): Promise<Response> {
       snapshot: {
         ...snap,
         shopName: typeof snap.shopName === "string" && snap.shopName ? snap.shopName : new URL(cleanEntry.shopUrl).hostname,
-        canonicalUrl: typeof snap.canonicalUrl === "string" && snap.canonicalUrl ? snap.canonicalUrl : cleanEntry.shopUrl,
+        canonicalUrl: typeof snap.canonicalUrl === "string" && snap.canonicalUrl ? normalizeMarket16688Url(snap.canonicalUrl) : cleanEntry.shopUrl,
         telegram: typeof snap.telegram === "string" ? snap.telegram : "",
         shopSellCount: typeof snap.shopSellCount === "number" && Number.isFinite(snap.shopSellCount) ? snap.shopSellCount : null,
         salesVisible: Boolean(snap.salesVisible),
