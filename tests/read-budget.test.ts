@@ -1,9 +1,10 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { applyD1Migrations, env } from "cloudflare:test";
 import { beforeAll, expect, it, vi } from "vitest";
-import { handleApiRequest } from "../src/routes/api";
+import { handleApiRequest, handleGetProducts } from "../src/routes/api";
 import references from "./fixtures/read-budget-reference.json";
 import { observeD1 } from "../src/observability/d1Metrics";
+import { PUBLIC_PRODUCT_RESULT_LIMIT } from "../src/routes/search";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -41,6 +42,9 @@ it("6000商品组冷查询扫描预算与原实现对照", async () => {
     const oldFacets = oldBody.facets as { groups: Record<string, number> };
     for (const group of ["Muse", "智谱", "Augment", "Perplexity", "千问", "MiniMax", "AI视频", "AI绘图", "AI音乐", "手机卡", "游戏商品", "影音会员", "社交会员", "网盘服务", "生活优惠", "接码服务", "云手机", "软件工具", "数字素材"]) oldFacets.groups[group] = 0;
     const newBody = await response.json() as Record<string, unknown>;
+    const visibleTotal = Math.min(Number(oldBody.total), PUBLIC_PRODUCT_RESULT_LIMIT);
+    expect(newBody.visibleTotal).toBe(visibleTotal);
+    oldBody.totalPages = Math.max(1, Math.ceil(visibleTotal / Number(oldBody.pageSize)));
     for (const key of ["items","total","offerTotal","shopCount","page","pageSize","totalPages","appliedFilters","appliedPriceRange","facets"]) {
       expect(newBody[key], key).toEqual(oldBody[key]);
     }
@@ -56,12 +60,12 @@ it("缓存命中零读取，商品与店铺翻页只取当前页，Cookie和随�
   const { default: worker } = await import('../src/index');
   const { createExecutionContext, waitOnExecutionContext } = await import('cloudflare:test');
   const measurements: Array<{ name:string; rows:number; queries:number }> = [];
-  const load = async (name: string, path: string, cookie = false) => {
+  const load = async (name: string, path: string, cookie = false, status = 200) => {
     const observed = observeD1(env.DB);
     const ctx = createExecutionContext();
     const response = await worker.fetch(new Request(`https://budget-warm.example${path}`, { headers: cookie ? { Cookie:'theme=dark' } : {} }), {...env,DB:observed.db}, ctx);
     await waitOnExecutionContext(ctx);
-    expect(response.status,name).toBe(200);
+    expect(response.status,name).toBe(status);
     measurements.push({name,rows:observed.cost.rowsRead,queries:observed.cost.queries});
     expect(observed.cost.rowsWritten,name).toBe(0);
     return {response,cost:observed.cost};
@@ -80,9 +84,51 @@ it("缓存命中零读取，商品与店铺翻页只取当前页，Cookie和随�
   await load('cold-shops','/api/shops?page=1&pageSize=12');
   const shopsNext = await load('shops-page-two','/api/shops?page=2&pageSize=12');
   expect(shopsNext.cost.rowsRead).toBeLessThan(200);
-  const empty = await load('out-of-range','/api/products?page=1000000&pageSize=12');
-  expect(empty.cost.rowsRead).toBeLessThan(20);
+  const empty = await load('out-of-range','/api/products?page=1000000&pageSize=12',false,400);
+  expect(empty.cost.queries).toBe(0);
   console.log(JSON.stringify({kind:'warm-read-budget',measurements}));
+});
+
+it("公开商品只能翻到展示上限，完整分页需要已有同步密钥", async () => {
+  const { default: worker } = await import("../src/index");
+  const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
+  const load = async (query: string, headers?: HeadersInit) => {
+    const observed = observeD1(env.DB);
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(new Request(`https://budget-product-list.example/api/products?${query}`, { headers }),
+      { ...env, DB: observed.db }, ctx);
+    await waitOnExecutionContext(ctx);
+    return { response, queries: observed.cost.queries };
+  };
+
+  const options = "page=7&pageSize=47&sort=price-asc&facets=0";
+  const page = await load(options);
+  expect(page.response.status).toBe(200);
+  const body = await page.response.json<{ items: unknown[]; total: number; totalPages: number; visibleTotal: number }>();
+  expect(body).toMatchObject({ total: 6000, totalPages: 7, visibleTotal: PUBLIC_PRODUCT_RESULT_LIMIT });
+  expect(body.items).toHaveLength(PUBLIC_PRODUCT_RESULT_LIMIT - 6 * 47);
+
+  const tooFar = await load("page=7&pageSize=50&q=基准&hideRecentOutOfStock=1", { "CF-Connecting-IP": "192.0.2.7" });
+  expect(tooFar.response.status).toBe(400);
+  expect(tooFar.response.headers.get("Cache-Control")).toBe("no-store");
+  expect(await tooFar.response.json()).toMatchObject({ code: "PRODUCT_RESULT_LIMIT", limit: PUBLIC_PRODUCT_RESULT_LIMIT });
+  expect(tooFar.queries).toBe(0);
+
+  expect((await load(`${options}&full=1`, { Authorization: "Bearer invalid" })).response.status).toBe(401);
+  const authorized = await load(`${options}&full=1`, { Authorization: `Bearer ${env.INGEST_SECRET}`, "User-Agent": "curl/8.1" });
+  expect(authorized.response.status).toBe(200);
+  expect(authorized.response.headers.get("Cache-Control")).toBe("private, no-store");
+  const full = await authorized.response.json<typeof body>();
+  expect(full).toMatchObject({ total: 6000, totalPages: 128, visibleTotal: 6000 });
+  expect(full.items).toHaveLength(47);
+  expect(full.items.slice(0, body.items.length)).toEqual(body.items);
+  const missingKey = await load(`${options}&full=1`);
+  expect(missingKey.response.status).toBe(401);
+  expect(missingKey.queries).toBe(0);
+
+  const detail = await load("offerKey=g-500&page=10000");
+  expect(detail.response.status).toBe(200);
+  expect(await detail.response.json()).toMatchObject({ items: [{ id: "g-500" }] });
 });
 
 it("数据版本改变后统计重新加载，不继续复用旧计数", async () => {
@@ -100,6 +146,61 @@ it("数据版本改变后统计重新加载，不继续复用旧计数", async (
   const after=await load(13); // 新分页键不复用10分钟完整响应，验证统计版本探测。
   expect(after.total).toBe(before.total-1);
   expect(after.items.every(item=>item.minPrice<10)).toBe(true);
+});
+
+it("库存筛选的首屏与翻页有独立读取预算", async () => {
+  const { default: worker } = await import("../src/index");
+  const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
+  const time = Date.parse("2026-11-27T04:20:05Z");
+  await env.DB.prepare("UPDATE offers SET stock_count = 0, last_observed_at = ? WHERE id IN (SELECT id FROM offers ORDER BY id LIMIT 180)")
+    .bind(new Date(time - 1000).toISOString()).run();
+  await env.DB.prepare("UPDATE shops SET last_closed_at = ? WHERE id IN ('s-420', 's-421')")
+    .bind(new Date(time - 1000).toISOString()).run();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(time);
+  const load = async (page: number, flags: string, host = "budget-stock.example") => {
+    const measured = observeD1(env.DB, true);
+    const ctx = createExecutionContext();
+    const url = new URL("/api/products", "https://" + host);
+    url.search = "page=" + page + "&pageSize=6&" + flags;
+    const response = await worker.fetch(new Request(url), { ...env, DB: measured.db }, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(200);
+    expect(measured.cost.rowsWritten).toBe(0);
+    const body = await response.json<{ items: Array<{ id: string }>; total: number; catalogGroups?: Record<string, number> }>();
+    expect(body.items).toHaveLength(6);
+    return { body, rows: measured.cost.rowsRead, bytes: measured.cost.statements.reduce((sum, row) => sum + row.resultBytes, 0) };
+  };
+  try {
+    const baseline = observeD1(env.DB, true);
+    const old = await handleGetProducts(new URL("https://budget-stock-baseline.example/api/products?hideRecentOutOfStock=1&pageSize=6"),
+      { ...env, DB: baseline.db }, { fullCatalog: true });
+    const prior = await old.json<{ total: number; visibleTotal: number; totalPages: number }>();
+    const baselineBytes = baseline.cost.statements.reduce((sum, row) => sum + row.resultBytes, 0);
+    const cold = await load(1, "hideRecentOutOfStock=1");
+    const visibleTotal = Math.min(prior.total, PUBLIC_PRODUCT_RESULT_LIMIT);
+    expect(cold.body).toEqual({ ...prior, visibleTotal, totalPages: Math.ceil(visibleTotal / 6) });
+    expect(cold.rows).toBeLessThan(baseline.cost.rowsRead);
+    expect(cold.bytes).toBeLessThan(baselineBytes * 0.2);
+    console.log(JSON.stringify({ kind: "stock-home-budget", beforeRows: baseline.cost.rowsRead, afterRows: cold.rows,
+      beforeBytes: baselineBytes, afterBytes: cold.bytes }));
+    expect(cold.body.catalogGroups).toMatchObject({ Codex: 2000, Claude: 2000, Gemini: 2000, ChatGPT: 0 });
+    const pageTwo = await load(2, "hideRecentOutOfStock=1&facets=0");
+    const freshPageTwo = await load(2, "hideRecentOutOfStock=1&facets=0", "localhost");
+    expect(pageTwo.body).toEqual(freshPageTwo.body);
+    expect(pageTwo.body.items.map((item) => item.id)).not.toEqual(cold.body.items.map((item) => item.id));
+    expect(cold.rows).toBeLessThan(45_000);
+    expect(pageTwo.rows).toBeLessThan(300);
+
+    const narrowedFlags = "hideRecentOutOfStock=1&group=Codex&maxPrice=250";
+    const narrowed = await load(1, narrowedFlags);
+    const freshNarrowed = await load(1, narrowedFlags, "localhost");
+    expect(narrowed.body).toEqual(freshNarrowed.body);
+    expect(narrowed.rows).toBeLessThan(freshNarrowed.rows);
+    const narrowedNext = await load(2, narrowedFlags + "&facets=0");
+    expect(narrowedNext.rows).toBeLessThan(500);
+  } finally {
+    clock.mockRestore();
+  }
 });
 
 it("缺少排序及时间索引的服务器快照仍能低读取翻页", async () => {

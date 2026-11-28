@@ -118,8 +118,8 @@ it("按报价最近一次实际同步筛选，重算商品组、价格、分面�
 
   const root = "http://localhost/api/products";
   const filter = "hideRecentOutOfStock=1";
-  async function products(query: string) {
-    const response = await handleApiRequest(new Request(`${root}?${query}`), env);
+  async function products(query: string, endpoint = root) {
+    const response = await handleApiRequest(new Request(`${endpoint}?${query}`), env);
     expect(response.status).toBe(200);
     return response.json<{
       items: Array<{ id: string; minPrice: number; medianPrice: number; maxPrice: number; offerCount: number;
@@ -147,6 +147,9 @@ it("按报价最近一次实际同步筛选，重算商品组、价格、分面�
     shopId: "stockfilter-partial", offersTruncated: false,
   });
   expect(second.items[0].offers.map(offer => offer.id)).toEqual(retained);
+  const cachedEndpoint = "https://stock-observations.example/api/products";
+  expect(await products(`${query}&${filter}`, cachedEndpoint)).toEqual(first);
+  expect(await products(`${query}&${filter}&page=2`, cachedEndpoint)).toEqual(second);
   expect((await products(`q=stockfilter&maxPrice=17&${filter}`)).items.map(group => group.id)).toEqual([alternativeKey]);
   expect((await products(`q=stockfilter-boundary&${filter}`)).total).toBe(0);
 
@@ -163,6 +166,7 @@ it("按报价最近一次实际同步筛选，重算商品组、价格、分面�
     total: 2, offerTotal: 3, appliedFilters: { hideLastSyncOutOfStock: true },
     items: [{ id: key, minPrice: 28, medianPrice: 31.5, offerCount: 2 }],
   });
+  expect(await products(`${query}&${lastSyncFilter}&page=2`, cachedEndpoint)).toEqual(filteredLastSync);
   const onlyNotZero = ["stockfilter-partial:unknown", "stockfilter-available:in-stock"];
   expect(filteredLastSync.items[0].offers.map(offer => offer.id)).toEqual(onlyNotZero);
   for (const flags of [lastSyncFilter, `${filter}&${lastSyncFilter}`]) {
@@ -174,6 +178,19 @@ it("按报价最近一次实际同步筛选，重算商品组、价格、分面�
     expect(cacheUrl(`${scope}&${filter}`)).not.toBe(cacheUrl(scope));
     expect(cacheUrl(`${scope}&${lastSyncFilter}`)).not.toBe(cacheUrl(`${scope}&${filter}`));
   }
+
+  await env.DB.prepare("INSERT INTO shop_rank_settings(shop_id, favorite_count) VALUES (?, 5)").bind("stockfilter-available").run();
+  const homepageQuery = `${filter}&pageSize=6`;
+  const homepage = await products(homepageQuery, cachedEndpoint);
+  expect(homepage).toEqual(await products(homepageQuery));
+  expect(homepage.items.find(item => item.id === key)?.minPrice).toBe(18);
+
+  vi.setSystemTime(now + 30_000);
+  const nextWindow = await products(homepageQuery, cachedEndpoint);
+  expect(nextWindow).toEqual(await products(homepageQuery));
+  const returned = nextWindow.items.find(item => item.id === key);
+  expect(returned?.minPrice).toBe(2);
+  expect(returned?.offers[0].id).toBe("stockfilter-boundary:boundary");
 });
 
 it("同步展示保留隐藏数量的明确库存档位，未知库存不再被误认为充足", async () => {

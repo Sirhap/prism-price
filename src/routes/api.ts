@@ -1,8 +1,11 @@
 import { normalizeStoredStockStatus, observedStockBand } from "../../public/stock-observation.mjs";
 import { normalizeSubmittedShopUrl } from "../collector/submittedShopUrl";
 import { authenticated as adminAuthenticated, getIngestHash, handleAdminRoute, matchesIngestSecret, settings as adminSettings } from "./admin";
-import { cachedQuery, cachedShopCount, catalogVersion, catalogIndexes } from "../cache/queryCache";
-import { TYPE_SQL_EXPR, PLAN_SQL_EXPR, loadProductBuckets, summarizeProducts, catalogGroups } from "./productStats";
+import { cachedQuery, cachedShopCount, canCacheQuery, catalogVersion, catalogIndexes } from "../cache/queryCache";
+import {
+  TYPE_SQL_EXPR, PLAN_SQL_EXPR, loadProductBuckets, loadStockProductCatalog,
+  loadHomepageStockCatalog, summarizeProducts, catalogGroups, loadCatalogGroupCounts,
+} from "./productStats";
 import {
   extractMainCategories,
   hideTelegramContacts,
@@ -23,6 +26,8 @@ import { resolveAdapter } from "../collector/adapters";
 import { assertSafePublicUrl, normalizeDescription } from "../collector/adapters/fetcher";
 import {
   PRODUCT_PLAN_SET,
+  PUBLIC_PRODUCT_RESULT_LIMIT,
+  productListPagination,
   buildProductRelevanceOrder,
   containsMatch,
   normalizeProductQuery,
@@ -45,7 +50,7 @@ import {
 import { persistShopSnapshot } from "../collector/etl/hashAndDiff";
 import { createProductDetailBudget } from "../collector/etl/productDetails";
 import { offerLastSyncedAt, readOfferObservations } from "../collector/etl/offerSyncTimes";
-import { resolveProductStockFilter } from "./productStockFilter";
+import { resolveProductStockFilter, stockCatalogWindowStart, STOCK_CATALOG_WINDOW_SECONDS } from "./productStockFilter";
 import { MAX_SNAPSHOT_ITEMS } from "../../scripts/lib/syncLimits.mjs";
 import { ldxpShopKey } from "../../scripts/lib/missingOffers.mjs";
 import { MARKET16688_HOST, MARKET16688_HOSTS, MARKET16688_MISSING_LIMIT, isMarket16688OfferKey, market16688ShopKey, normalizeMarket16688Url } from "../../scripts/lib/market16688.mjs";
@@ -198,16 +203,21 @@ export async function verifyAdminSecret(request: Request, env: Env): Promise<{ o
 /**
  * GET /api/products - 从预聚合表直接检索商品并统计分面计数
  */
-async function handleGetProducts(url: URL, env: Env, enableRecommendation = true): Promise<Response> {
+export async function handleGetProducts(
+  url: URL, env: Env, { enableRecommendation = true, fullCatalog = false } = {},
+): Promise<Response> {
   await ensureSeedShops(env.DB);
 
   const normalizedQuery = normalizeProductQuery(url.searchParams);
   const { appliedFilters, appliedPriceRange } = normalizedQuery;
   const { q, group, type, plan, duration, price, sort, hideRecentOutOfStock, hideLastSyncOutOfStock } = appliedFilters;
-  const stockFilter = await resolveProductStockFilter(env.DB, hideRecentOutOfStock, hideLastSyncOutOfStock);
-
   // 同款商品展开剩余报价的按需查询分支
   const offerKey = (url.searchParams.get("offerKey") || "").trim();
+  const cacheStockCatalog = !offerKey && canCacheQuery(url);
+  const requestedAt = Date.now();
+  // Use the same cutoff in the cached ordering and the separate page query.
+  const stockAsOf = cacheStockCatalog ? stockCatalogWindowStart(requestedAt) : requestedAt;
+  const stockFilter = await resolveProductStockFilter(env.DB, hideRecentOutOfStock, hideLastSyncOutOfStock, stockAsOf);
   if (offerKey) {
     const groupRow = await env.DB.prepare("SELECT * FROM product_groups WHERE group_key = ?")
       .bind(offerKey)
@@ -258,8 +268,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     });
   }
 
-  const page = positiveInteger(url.searchParams.get("page"), 1, 1_000_000);
-  const pageSize = positiveInteger(url.searchParams.get("pageSize"), 30, 50);
+  const { page, pageSize, offset } = productListPagination(url.searchParams);
 
   const searchParts: string[] = [];
   const searchParams: Array<string | number> = [];
@@ -319,18 +328,17 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     orderParams = relevanceOrder.params;
   }
 
-  const offset = (page - 1) * pageSize;
-
   const includeFacets = url.searchParams.get("facets") !== "0";
   const indexes = await catalogIndexes(env.DB, url);
   const version = await catalogVersion(env.DB, url, indexes);
   // 文本相关度仍先排序；同相关度内对店铺数做饱和处理，叠加有上限的店铺排名分。
   let recommendationKey = '';
+  let topShops: string[] = [];
   if (sort === 'relevance' && enableRecommendation) {
     try {
       const config = await adminSettings(env.DB);
       const slot = Math.floor(Date.now() / 60000);
-      const topShops = await cachedQuery(url, `product-recommended-shops:${version}:${config.revision}:${slot}`, async () => {
+      topShops = await cachedQuery(url, `product-recommended-shops:${version}:${config.revision}:${slot}`, async () => {
         const signal = await env.DB.prepare('SELECT 1 FROM shop_rank_settings WHERE favorite_count > 0 OR (? = 1 AND manual_rank IS NOT NULL) LIMIT 1').bind(config.manual_rank_enabled).first();
         if (!signal) return [];
         const {results} = await env.DB.prepare(`SELECT s.id FROM shops s JOIN shop_rank_settings r ON r.shop_id=s.id
@@ -354,14 +362,25 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     } catch (error) { if (!/no such table/i.test(String(error))) throw error; }
   }
   const scopeKey = searchTerms(q).join(" ");
-  const buckets = stockFilter
+  const homepageCatalog = stockFilter && cacheStockCatalog && !fullCatalog &&
+    hideRecentOutOfStock && !hideLastSyncOutOfStock && !q && filters.length === 0 && sort === "relevance"
+    ? await cachedQuery(url, `stock-home-catalog:${JSON.stringify([version, stockAsOf, recommendationKey])}`,
+      () => loadHomepageStockCatalog(env.DB, stockFilter, topShops), STOCK_CATALOG_WINDOW_SECONDS)
+    : undefined;
+  const stockCatalog = !homepageCatalog && stockFilter && cacheStockCatalog
+    ? await cachedQuery(url, `stock-catalog:${JSON.stringify([version, stockAsOf, Boolean(hideLastSyncOutOfStock), q, sort, recommendationKey])}`, () =>
+      loadStockProductCatalog(env.DB, stockFilter.groupsSql, searchWhereSql, orderSql,
+        [...stockFilter.params, ...searchParams, ...orderParams]), STOCK_CATALOG_WINDOW_SECONDS)
+    : undefined;
+  const buckets = homepageCatalog ? [] : stockCatalog?.buckets ?? (stockFilter
     ? await loadProductBuckets(env.DB, searchWhereSql, searchParams, stockFilter)
     : await cachedQuery(url, `product-stats:${version}:${scopeKey}`, () =>
-      loadProductBuckets(env.DB, searchWhereSql, searchParams));
-  const stats = summarizeProducts(buckets, normalizedQuery);
-  const siteGroups = includeFacets ? catalogGroups(q || stockFilter
-    ? await cachedQuery(url, `product-stats:${version}:`, () => loadProductBuckets(env.DB, "", []))
-    : buckets) : undefined;
+      loadProductBuckets(env.DB, searchWhereSql, searchParams)));
+  const stats = homepageCatalog ?? summarizeProducts(buckets, normalizedQuery);
+  const visibleTotal = fullCatalog ? stats.total : Math.min(stats.total, PUBLIC_PRODUCT_RESULT_LIMIT);
+  const pageLength = Math.min(pageSize, visibleTotal - offset);
+  const siteGroups = includeFacets ? await cachedQuery(url, `catalog-groups:${version}`, async () =>
+    q || stockFilter ? loadCatalogGroupCounts(env.DB) : catalogGroups(buckets)) : undefined;
   // 搜索已在统计扫描中确定匹配键，列表不再重新执行文本扫描和店名关联子查询。
   const useMatchedKeys = Boolean(q) || (filters.length > 0 && stats.groupKeys.length <= 500);
   const listFrom = useMatchedKeys ? "json_each(?) AS matched CROSS JOIN product_groups AS p" : "product_groups";
@@ -370,11 +389,24 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     : whereSql;
   const listParams = useMatchedKeys ? [JSON.stringify(stats.groupKeys), ...selectedScope.params] : params;
   const readPage = async (): Promise<{ results: ProductGroupRow[] }> => {
-    if (offset >= stats.total) return { results: [] };
+    if (pageLength <= 0) return { results: [] };
     if (stockFilter) {
+      const catalogOrder = homepageCatalog?.groupKeys ?? stockCatalog?.orderedKeys;
+      if (catalogOrder) {
+        let orderedKeys = catalogOrder;
+        if (!homepageCatalog && stats.total !== orderedKeys.length) {
+          const matchedKeys = new Set(stats.groupKeys);
+          orderedKeys = orderedKeys.filter(key => matchedKeys.has(key));
+        }
+        const keys = orderedKeys.slice(offset, offset + pageLength);
+        const { results } = await env.DB.prepare(`${stockFilter.pageGroupsSql} SELECT * FROM stock_filtered_groups`)
+          .bind(JSON.stringify(keys), ...stockFilter.params).all<ProductGroupRow>();
+        const rows = new Map(results.map(row => [row.group_key, row]));
+        return { results: keys.flatMap(key => { const row = rows.get(key); return row ? [row] : []; }) };
+      }
       return env.DB.prepare(`${stockFilter.groupsSql}
         SELECT * FROM stock_filtered_groups ${whereSql} ${orderSql} LIMIT ? OFFSET ?`)
-        .bind(...stockFilter.params, ...params, ...orderParams, pageSize, offset).all<ProductGroupRow>();
+        .bind(...stockFilter.params, ...params, ...orderParams, pageLength, offset).all<ProductGroupRow>();
     }
     if (useMatchedKeys || !indexes.popular || recommendationKey) {
       // 排名只算一次，后续页按12/30个主键取行；不每翻一页就重排整个搜索结果。
@@ -383,7 +415,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
           .bind(...listParams, ...orderParams).all<{ group_key: string }>();
         return results.map((row) => row.group_key);
       });
-      const pageKeys = ordered.slice(offset, offset + pageSize);
+      const pageKeys = ordered.slice(offset, offset + pageLength);
       if (!pageKeys.length) return { results: [] };
       const { results } = await env.DB.prepare(`SELECT p.* FROM json_each(?) AS matched CROSS JOIN product_groups AS p
         WHERE p.group_key = matched.value${selectedScope.sql ? ` AND ${selectedScope.sql.slice(6)}` : ""}`)
@@ -392,7 +424,7 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
       return { results: pageKeys.flatMap((key) => { const row = rows.get(key); return row ? [row] : []; }) };
     }
     return env.DB.prepare(`SELECT * FROM product_groups ${listWhere} ${orderSql} LIMIT ? OFFSET ?`)
-      .bind(...listParams, ...orderParams, pageSize, offset).all<ProductGroupRow>();
+      .bind(...listParams, ...orderParams, pageLength, offset).all<ProductGroupRow>();
   };
   const [listRes, offerStatsRes] = await Promise.all([readPage(), cachedShopCount(url, env.DB, version)]);
 
@@ -459,11 +491,12 @@ async function handleGetProducts(url: URL, env: Env, enableRecommendation = true
     });
   }
   const { total, offerTotal } = stats;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(visibleTotal / pageSize));
 
   return jsonPublic({
     items,
     total,
+    visibleTotal,
     offerTotal,
     shopCount: offerStatsRes,
     page,
@@ -1586,9 +1619,26 @@ async function handleGetSyncLogs(env: Env): Promise<Response> {
 
 const SHOP_PRODUCTS_PATH = /^\/api\/shops\/([^/]+)\/products$/;
 
-/** 同步工具用这两个 GET 入口读取目标店铺及已有报价。 */
-export function isSyncCatalogRead(request: Request, pathname: string): boolean {
-  return request.method === "GET" && (pathname === "/api/shops" || SHOP_PRODUCTS_PATH.test(pathname));
+/** Fail cheap before crawler-policy reads or cached public results are consulted. */
+export function rejectProductListRequest(request: Request, url: URL): Response | null {
+  if (request.method !== "GET" || url.pathname !== "/api/products") return null;
+  const params = url.searchParams;
+  if (params.get("full") === "1") {
+    if (/^Bearer\s+\S/i.test(request.headers.get("Authorization") || "")) return null;
+    return Response.json({ error: "完整目录需要同步密钥" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  if (params.get("offerKey")?.trim() || productListPagination(params).offset < PUBLIC_PRODUCT_RESULT_LIMIT) return null;
+  return Response.json({
+    error: "已超过公开目录的浏览上限，请使用关键词或筛选缩小范围",
+    code: "PRODUCT_RESULT_LIMIT",
+    limit: PUBLIC_PRODUCT_RESULT_LIMIT,
+  }, { status: 400, headers: { "Cache-Control": "no-store" } });
+}
+
+/** Authorized reads can pass the crawler policy for store sync and full product pagination. */
+export function isSyncCatalogRead(request: Request, url: URL): boolean {
+  return request.method === "GET" && (url.pathname === "/api/shops" || SHOP_PRODUCTS_PATH.test(url.pathname) ||
+    (url.pathname === "/api/products" && url.searchParams.get("full") === "1"));
 }
 
 /**
@@ -1597,13 +1647,15 @@ export function isSyncCatalogRead(request: Request, pathname: string): boolean {
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const { pathname } = url;
+  const productListRejection = rejectProductListRequest(request, url);
+  if (productListRejection) return productListRejection;
 
   if (request.method === 'GET' && pathname === '/api/control/product-ranking-preview') {
     if (!await adminAuthenticated(request,env.DB)) return Response.json({error:'请先登录'},{status:401,headers:{'Cache-Control':'no-store'}});
     const query=(url.searchParams.get('q') || '').trim();
     if (!query || query.length>120) return Response.json({error:'请输入不超过 120 个字符的搜索词'},{status:400,headers:{'Cache-Control':'no-store'}});
     const previewUrl=new URL('/api/products',url); previewUrl.searchParams.set('q',query); previewUrl.searchParams.set('sort','relevance'); previewUrl.searchParams.set('pageSize','30');
-    const [original,updated] = await Promise.all([handleGetProducts(previewUrl,env,false),handleGetProducts(previewUrl,env,true)]);
+    const [original,updated] = await Promise.all([handleGetProducts(previewUrl,env,{ enableRecommendation: false }),handleGetProducts(previewUrl,env)]);
     if (!original.ok || !updated.ok) return Response.json({error:'排序预览暂不可用'},{status:503,headers:{'Cache-Control':'no-store'}});
     const baseline=await original.json() as {items:Array<{id:string;name:string;shopCount:number;minPrice:number}>};
     const adjusted=await updated.json() as {items:Array<{id:string;name:string;shopCount:number;minPrice:number;offers:Array<{shopId?:string}>}>};
@@ -1632,7 +1684,13 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   if (control) return control;
 
   if (request.method === "GET" && pathname === "/api/products") {
-    return handleGetProducts(url, env);
+    if (url.searchParams.get("full") !== "1") return handleGetProducts(url, env);
+    const auth = await verifyAdminSecret(request, env);
+    const headers = { "Cache-Control": "private, no-store" };
+    if (!auth.ok) return Response.json({ error: auth.message }, { status: auth.status, headers });
+    const response = await handleGetProducts(url, env, { fullCatalog: true });
+    response.headers.set("Cache-Control", headers["Cache-Control"]);
+    return response;
   }
   if (request.method === "GET" && pathname === "/api/shops") {
     return handleGetShops(url, env);

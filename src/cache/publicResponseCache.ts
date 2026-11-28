@@ -1,4 +1,5 @@
-import { normalizeProductQuery, normalizeShopSort, positiveInteger } from "../routes/search";
+import { normalizeProductQuery, normalizeShopSort, positiveInteger, productListPagination, PUBLIC_PRODUCT_RESULT_LIMIT } from "../routes/search";
+import { stockCatalogWindowStart, STOCK_CATALOG_WINDOW_SECONDS } from "../routes/productStockFilter";
 import { normalizeShopSystem } from "../collector/shopSystems";
 import { responseStore, type ResponseStore } from "./responseStore";
 
@@ -12,11 +13,12 @@ const LLMS_PATHS = new Set(["/llms.txt", "/llms-full.txt"]);
 
 export function isPublicCacheRequest(request: Request): boolean {
   const url = new URL(request.url);
-  return request.method === "GET" && !request.headers.has("Authorization") &&
-    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
-    url.searchParams.get("fields")?.trim() !== "sync" &&
+  if (request.method !== "GET" || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return false;
+  // Product reads only consume credentials in full mode. Public product data is identical for every caller.
+  if (url.pathname === "/api/products") return url.searchParams.get("full") !== "1";
+  return !request.headers.has("Authorization") && url.searchParams.get("fields")?.trim() !== "sync" &&
     (url.pathname === "/catalog" || url.pathname.startsWith("/catalog/") || SITEMAP_PATHS.has(url.pathname) || LLMS_PATHS.has(url.pathname) ||
-      url.pathname === "/api/products" || (url.pathname === "/api/shops" && url.searchParams.has("page")) ||
+      (url.pathname === "/api/shops" && url.searchParams.has("page")) ||
       /^\/api\/shops\/[^/]+(?:\/products)?$/.test(url.pathname));
 }
 
@@ -49,10 +51,12 @@ export function publicCacheKey(request: Request): Request {
       }
     } else {
       const normalized = normalizeProductQuery(source);
+      const { page, pageSize } = productListPagination(source);
       for (const [name, value] of Object.entries(normalized.appliedFilters)) key.searchParams.set(name, String(value));
       for (const [name, value] of Object.entries(normalized.appliedPriceRange)) if (value !== null) key.searchParams.set(name, String(value));
-      key.searchParams.set("page", String(positiveInteger(source.get("page"), 1, 1_000_000)));
-      key.searchParams.set("pageSize", String(positiveInteger(source.get("pageSize"), 30, 50)));
+      key.searchParams.set("page", String(page));
+      key.searchParams.set("pageSize", String(pageSize));
+      key.searchParams.set("resultLimit", String(PUBLIC_PRODUCT_RESULT_LIMIT));
       key.searchParams.set("facets", source.get("facets") === "0" ? "0" : "1");
     }
   } else if (url.pathname === "/api/shops") {
@@ -112,13 +116,15 @@ export async function withPublicResponseCache(
   if (!isPublicCacheRequest(request)) return load();
   const key = publicCacheKey(request);
   const url = new URL(request.url);
-  const useShortCache = url.pathname === "/api/shops" ||
-    (url.pathname === "/api/products" && ["hideRecentOutOfStock", "hideLastSyncOutOfStock"].some(
-      filter => url.searchParams.get(filter) === "1",
-    ));
-  const freshSeconds = useShortCache ? FILTERED_RESULTS_FRESH_SECONDS : PUBLIC_FRESH_SECONDS;
-  const browserMaxAge = Math.min(60, freshSeconds);
   const time = now();
+  const stockFiltered = url.pathname === "/api/products" &&
+    ["hideRecentOutOfStock", "hideLastSyncOutOfStock"].some(filter => url.searchParams.get(filter) === "1");
+  const useShortCache = url.pathname === "/api/shops" || stockFiltered;
+  const freshSeconds = useShortCache ? FILTERED_RESULTS_FRESH_SECONDS : PUBLIC_FRESH_SECONDS;
+  // List statistics and their responses must expire within the same stock window.
+  const stockWindow = stockFiltered && !url.searchParams.get("offerKey")?.trim() ? stockCatalogWindowStart(time) : undefined;
+  const browserMaxAge = stockWindow === undefined ? Math.min(60, freshSeconds)
+    : Math.floor((stockWindow + STOCK_CATALOG_WINDOW_SECONDS * 1000 - time) / 1000);
   const blockUrl = new URL(PREFIX + "/quota/" + new Date(time).toISOString().slice(0, 10), request.url);
   const blockKey = new Request(blockUrl);
   const match = async (target: Request) => {
@@ -133,7 +139,7 @@ export async function withPublicResponseCache(
   const storedAt = saved ? Number(saved.headers.get("X-Prism-Stored-At")) : NaN;
   const age = time - storedAt;
   if (!Number.isFinite(age) || age < 0 || age > PUBLIC_RETAIN_SECONDS * 1000) saved = undefined;
-  if (saved && age <= freshSeconds * 1000) {
+  if (saved && age <= freshSeconds * 1000 && (stockWindow === undefined || storedAt >= stockWindow)) {
     return cachedResponse(saved, Math.min(browserMaxAge, freshSeconds - Math.floor(age / 1000)));
   }
   if (await match(blockKey)) return saved ? cachedResponse(saved, 0, true) : quotaUnavailable(time, true);

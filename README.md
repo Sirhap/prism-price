@@ -113,7 +113,7 @@ npm run typecheck    # TypeScript strict check (tsc --noEmit)
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/products` | `GET` | Paginated, normalized product groups with multi-store price range, brand, form factor, and stock filters |
+| `/api/products` | `GET` | Search and compare product groups. Public pagination exposes up to 300 matching groups, reported as `visibleTotal`. Full pagination requires `full=1` and the sync key as a Bearer token. |
 | `/api/shops` | `GET` | Public store directory filterable by system type (`ldxp`, `catfk`, etc.), stock status, and integration codes |
 | `/api/shops/:id` | `GET` | Public store profile (sanitized description, metadata) |
 | `/api/shops/:id/products` | `GET` | Public product list for a single indexed store |

@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
-import { applyD1Migrations, env, SELF, type D1Migration } from 'cloudflare:test';
+import { applyD1Migrations, createExecutionContext, env, SELF, waitOnExecutionContext, type D1Migration } from 'cloudflare:test';
+import { checkCrawlerAccess } from '../src/routes/crawlerAccess';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 declare global {
@@ -268,6 +269,20 @@ describe('流量访客 IP 去重统计', () => {
       expect.objectContaining({ ip: otherIp, path: '/catalog/', method: 'HEAD', blocked: 1, isBlocked: 0 }),
       expect.objectContaining({ ip: otherIp, path: '/catalog/', blocked: 0, userAgent: 'Mozilla/5.0 (compatible; OAI-SearchBot/1.0)' }),
     ]));
+  });
+
+  it('同一个节点对同一 IP 的重复爬虫拦截只写一次 D1 日志', async () => {
+    const ip = '192.0.2.222';
+    for (const path of ['/api/products', '/api/shops', '/api/products']) {
+      const ctx = createExecutionContext();
+      const req = new Request(new URL(path, 'https://crawler-budget.example'), {
+        headers: { 'CF-Connecting-IP': ip, 'User-Agent': 'curl/8.1' },
+      });
+      expect((await checkCrawlerAccess(req, path, env.DB, ctx))?.status).toBe(500);
+      await waitOnExecutionContext(ctx);
+    }
+    const logs = await env.DB.prepare('SELECT request_path FROM crawler_access_logs WHERE ip = ?').bind(ip).all();
+    expect(logs.results).toEqual([{ request_path: '/api/products' }]);
   });
 
   it('仅已鉴权的同步读取可通过爬虫规则和共享 IP 黑名单', async () => {

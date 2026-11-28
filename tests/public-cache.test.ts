@@ -22,6 +22,9 @@ describe("公开结果缓存与配额降级", () => {
     expect(await hit.json()).toEqual({ value: "same" });
     expect(hit.headers.get("X-Prism-Cache")).toBe("HIT");
     expect(hit.headers.get("X-D1-Rows-Read")).toBe("0");
+    const same = await withPublicResponseCache(request("?type=recharge&fields=sync", { Authorization: "Bearer ignored" }), load, store);
+    expect(same.headers.get("X-Prism-Cache")).toBe("HIT");
+    expect(same.headers.get("X-D1-Queries")).toBe("0");
     expect(load).toHaveBeenCalledTimes(1);
   });
   it("成功副本过新鲜期后遇到额度错误仍可读，新请求熔断且不串搜索结果", async () => {
@@ -69,10 +72,13 @@ describe("公开结果缓存与配额降级", () => {
     const other = await withPublicResponseCache(request("?q=other"), async () => fresh("new"), store, () => time);
     expect(await other.json()).toEqual({ value: "new" });
   });
-  it("管理员凭据、内部同步清单和私有/Set-Cookie响应都不进入公共缓存", async () => {
+  it("完整商品目录、鉴权店铺读取和私有响应都绕过共享缓存", async () => {
     const store = new MemoryStore();
     const load = vi.fn(async () => Response.json({ private: true }, { headers: { "Cache-Control": "private, no-store", "Set-Cookie": "test=private" } }));
-    await withPublicResponseCache(request("", { Authorization: "Bearer test-only" }), load, store);
+    await withPublicResponseCache(new Request("https://cache-fixture.example/api/shops?page=1", {
+      headers: { Authorization: "Bearer test-only" },
+    }), load, store);
+    expect((await withPublicResponseCache(request("?full=1"), load, store)).headers.has("X-Prism-Cache")).toBe(false);
     await withPublicResponseCache(new Request("https://cache-fixture.example/api/shops?fields=%20sync%20"), load, store);
     const response = await withPublicResponseCache(request(), load, store);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -107,6 +113,19 @@ describe("公开结果缓存与配额降级", () => {
     time = 31_000;
     expect((await withPublicResponseCache(shops("page=1"), load, store, now)).headers.get("X-Prism-Cache")).toBe("MISS");
     expect(load).toHaveBeenCalledTimes(4);
+  });
+
+  it("库存筛选的列表响应与查询结果同窗过期", async () => {
+    const store = new MemoryStore();
+    const load = vi.fn(async () => fresh("stocks"));
+    const query = request("?hideRecentOutOfStock=1");
+    const late = await withPublicResponseCache(query, load, store, () => 28_000);
+    expect(late.headers.get("Cache-Control")).toBe("public, max-age=2");
+    const hit = await withPublicResponseCache(query, load, store, () => 29_000);
+    expect(hit.headers.get("X-Prism-Cache")).toBe("HIT");
+    const nextWindow = await withPublicResponseCache(query, load, store, () => 30_000);
+    expect(nextWindow.headers.get("X-Prism-Cache")).toBe("MISS");
+    expect(load).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -1,51 +1,105 @@
 const RECENT_STOCK_MS = 24 * 60 * 60 * 1000;
+export const STOCK_CATALOG_WINDOW_SECONDS = 30;
+
+export function stockCatalogWindowStart(time: number): number {
+  const windowMs = STOCK_CATALOG_WINDOW_SECONDS * 1000;
+  return Math.floor(time / windowMs) * windowMs;
+}
 
 interface StockFilter {
   hiddenOfferClause: string;
+  hiddenOffersSql: string;
   groupsSql: string;
+  pageGroupsSql: string;
   params: string[];
 }
 
 /** Stock filters also exclude shops with an active closure observation. */
 export async function resolveProductStockFilter(
-  db: D1Database, hideRecent?: true, hideLastSync?: true,
+  db: D1Database, hideRecent?: true, hideLastSync?: true, asOf = Date.now(),
 ): Promise<StockFilter | null> {
   if (!hideRecent && !hideLastSync) return null;
   const columns = await db.prepare(`SELECT
     EXISTS(SELECT 1 FROM pragma_table_info('shops') WHERE name = 'last_full_sync_at') AS sync_times,
     EXISTS(SELECT 1 FROM pragma_table_info('shops') WHERE name = 'last_closed_at') AS closure_grace`)
     .first<{ sync_times: number; closure_grace: number }>();
-  const clauses: string[] = [];
-  const params: string[] = [];
-  if (hideLastSync) {
-    clauses.push("o.stock_count = 0");
-    if (columns?.closure_grace) clauses.push("s.last_closed_at IS NOT NULL");
-  } else {
-    const cutoff = new Date(Date.now() - RECENT_STOCK_MS).toISOString();
-    if (columns?.sync_times) {
-      clauses.push("(o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?))");
-      params.push(cutoff, cutoff);
-    }
-    if (columns?.closure_grace) {
-      clauses.push("s.last_closed_at >= ?");
-      params.push(cutoff);
-    }
-  }
-  if (!clauses.length) return null;
+  const stockCondition = hideLastSync
+    ? "o.stock_count = 0"
+    : columns?.sync_times ? "o.stock_count = 0 AND (o.last_observed_at >= ? OR s.last_full_sync_at >= ?)" : "";
+  const closureCondition = columns?.closure_grace
+    ? hideLastSync ? "s.last_closed_at IS NOT NULL" : "s.last_closed_at >= ?"
+    : "";
+  if (!stockCondition && !closureCondition) return null;
 
-  const hiddenOfferClause = clauses.join(" OR ");
-  return { hiddenOfferClause, groupsSql: filteredGroupsSql(hiddenOfferClause), params };
+  const params: string[] = [];
+  if (!hideLastSync) {
+    const cutoff = new Date(asOf - RECENT_STOCK_MS).toISOString();
+    if (stockCondition) params.push(cutoff, cutoff);
+    if (closureCondition) params.push(cutoff);
+  }
+
+  const hiddenOfferClause = [stockCondition, closureCondition].filter(Boolean).map(condition => `(${condition})`).join(" OR ");
+  // Separate candidates so SQLite can start from the partial stock and closure indexes.
+  const hiddenSources: string[] = [];
+  if (stockCondition) hiddenSources.push(`SELECT o.id, o.group_key FROM offers o
+    CROSS JOIN shops s ON s.id = o.shop_id WHERE ${stockCondition}`);
+  if (closureCondition) hiddenSources.push(`SELECT o.id, o.group_key FROM shops s
+    CROSS JOIN offers o ON o.shop_id = s.id WHERE ${closureCondition}`);
+  const hiddenOffersSql = hiddenSources.join(" UNION ALL ");
+  const pageHiddenOffers = `SELECT o.id, o.group_key FROM requested_stock_groups k
+    CROSS JOIN offers o ON o.group_key = k.group_key
+    CROSS JOIN shops s ON s.id = o.shop_id WHERE ${hiddenOfferClause}`;
+  return {
+    hiddenOfferClause,
+    hiddenOffersSql,
+    groupsSql: filteredGroupsSql(hiddenOffersSql),
+    pageGroupsSql: filteredGroupsSql(pageHiddenOffers, true),
+    params,
+  };
+}
+
+/** Only group fields used by the default list's counters and ordering. */
+export function stockHomepageGroupsSql(hiddenOffersSql: string, recommendsShops: boolean): string {
+  const recommendations = recommendsShops ? `recommended_shops AS MATERIALIZED (
+    SELECT value AS shop_id, 4.0 / (1.0 + key * 0.1) AS bonus FROM json_each(?)
+  ),` : "";
+  const position = recommendsShops ? ", ROW_NUMBER() OVER (PARTITION BY o.group_key ORDER BY o.price, o.id) AS position" : "";
+  const liveBonus = recommendsShops ? `, MAX((SELECT bonus FROM recommended_shops WHERE shop_id = o.shop_id))
+    FILTER (WHERE o.position <= 12) AS bonus` : "";
+  const groupColumns = "p.group_key, p.brand_group, p.attr_type, p.attr_plan, p.attr_duration, p.attr_sms";
+  return `WITH hidden_offers AS MATERIALIZED (
+    ${hiddenOffersSql}
+  ), affected_groups AS MATERIALIZED (
+    SELECT DISTINCT group_key FROM hidden_offers
+  ), ${recommendations} available_offers AS (
+    SELECT o.group_key, o.shop_id, o.price${position}
+    FROM affected_groups a CROSS JOIN offers o ON o.group_key = a.group_key
+    WHERE o.id NOT IN (SELECT id FROM hidden_offers)
+  ), available_groups AS MATERIALIZED (
+    SELECT o.group_key, MIN(o.price) AS min_price, COUNT(DISTINCT o.shop_id) AS shop_count,
+      COUNT(*) AS offer_count${liveBonus}
+    FROM available_offers o CROSS JOIN shops s ON s.id = o.shop_id
+    GROUP BY o.group_key
+  ), stock_home_groups AS (
+    SELECT ${groupColumns}, p.min_price, p.offer_count
+    FROM product_groups p WHERE p.group_key NOT IN (SELECT group_key FROM affected_groups)
+    UNION ALL
+    SELECT ${groupColumns}, a.min_price, a.offer_count
+    FROM available_groups a CROSS JOIN product_groups p ON p.group_key = a.group_key
+  )`;
 }
 
 /**
  * Reuse materialized groups except where a quote was filtered. Recompute those groups
  * before search, price filters and pagination including quotes beyond the stored preview.
  */
-function filteredGroupsSql(hiddenOfferClause: string): string {
-  return `WITH hidden_offers AS MATERIALIZED (
-  SELECT o.id, o.group_key
-  FROM offers o JOIN shops s ON s.id = o.shop_id
-  WHERE ${hiddenOfferClause}
+function filteredGroupsSql(hiddenOffers: string, pageOnly = false): string {
+  const requestedGroups = pageOnly ? "requested_stock_groups(group_key) AS MATERIALIZED (SELECT value FROM json_each(?))," : "";
+  const productSource = pageOnly
+    ? "requested_stock_groups k CROSS JOIN product_groups p ON p.group_key = k.group_key"
+    : "product_groups p";
+  return `WITH ${requestedGroups} hidden_offers AS MATERIALIZED (
+  ${hiddenOffers}
 ), affected_groups AS MATERIALIZED (
   SELECT DISTINCT group_key FROM hidden_offers
 ), available_offers AS (
@@ -69,7 +123,7 @@ function filteredGroupsSql(hiddenOfferClause: string): string {
       'itemUrl', o.item_url, 'updatedAt', o.updated_at, 'staleDays', s.stale_days,
       'shopProductCount', s.product_count
     ) ORDER BY o.position) FILTER (WHERE o.position <= 12) AS offers_preview_json
-  FROM available_offers o JOIN shops s ON s.id = o.shop_id
+  FROM available_offers o CROSS JOIN shops s ON s.id = o.shop_id
   GROUP BY o.group_key
 ), stock_filtered_groups AS (
   SELECT p.group_key, p.display_name, p.brand_group, p.shop_category, p.attr_type,
@@ -85,7 +139,7 @@ function filteredGroupsSql(hiddenOfferClause: string): string {
     COALESCE(a.lead_item_url, p.lead_item_url) AS lead_item_url,
     COALESCE(a.stock_status, p.stock_status) AS stock_status,
     COALESCE(a.offers_preview_json, p.offers_preview_json) AS offers_preview_json
-  FROM product_groups p LEFT JOIN available_groups a ON a.group_key = p.group_key
+  FROM ${productSource} LEFT JOIN available_groups a ON a.group_key = p.group_key
   WHERE a.group_key IS NOT NULL OR p.group_key NOT IN (SELECT group_key FROM affected_groups)
 )`;
 }

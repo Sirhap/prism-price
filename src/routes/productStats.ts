@@ -1,5 +1,9 @@
 import { PRODUCT_GROUPS } from "../types";
-import { PRODUCT_DURATION_OPTIONS, PRODUCT_PLAN_SET, PRODUCT_TYPE_OPTIONS, type NormalizedProductQuery } from "./search";
+import {
+  PRODUCT_DURATION_OPTIONS, PRODUCT_PLAN_OPTIONS, PRODUCT_PLAN_SET, PRODUCT_PRICE_OPTIONS,
+  PRODUCT_TYPE_OPTIONS, PUBLIC_PRODUCT_RESULT_LIMIT, type NormalizedProductQuery,
+} from "./search";
+import { stockHomepageGroupsSql } from "./productStockFilter";
 
 export const TYPE_SQL_EXPR = "CASE WHEN attr_sms = 'service' THEN 'sms-service' WHEN attr_type = 'cdk' THEN 'recharge' ELSE attr_type END";
 export const PLAN_SQL_EXPR = "CASE WHEN attr_plan = 'business' THEN 'team' WHEN attr_plan IN ('free', 'plus', 'pro', 'ultra', 'team', 'pro5', 'pro20') THEN attr_plan ELSE '' END";
@@ -22,15 +26,92 @@ interface ProductScopeRow extends Omit<ProductStatBucket, "groups" | "offers" | 
   group_key: string;
 }
 
+const PRODUCT_SCOPE_COLUMNS = `brand_group, (${TYPE_SQL_EXPR}) AS normalized_type,
+  (${PLAN_SQL_EXPR}) AS normalized_plan, attr_duration, min_price, offer_count, group_key`;
+
 /** 一次紧凑投影扫描，内存合并规格/精确价格桶，避免 SQLite 临时排序表再计一次读取。 */
 export async function loadProductBuckets(
   db: D1Database, searchWhere: string, params: Array<string | number>, stockFilter?: { groupsSql: string; params: string[] },
 ): Promise<ProductStatBucket[]> {
-  const { results } = await db.prepare(`${stockFilter?.groupsSql ?? ""} SELECT brand_group, (${TYPE_SQL_EXPR}) AS normalized_type,
-    (${PLAN_SQL_EXPR}) AS normalized_plan, attr_duration, min_price, offer_count,
-    group_key
+  const { results } = await db.prepare(`${stockFilter?.groupsSql ?? ""} SELECT ${PRODUCT_SCOPE_COLUMNS}
     FROM ${stockFilter ? "stock_filtered_groups" : "product_groups"} ${searchWhere}`)
     .bind(...(stockFilter?.params ?? []), ...params).all<ProductScopeRow>();
+  return toProductBuckets(results);
+}
+
+/** Reuse one stock-adjusted scan for both facet counts and pagination order. */
+export async function loadStockProductCatalog(
+  db: D1Database, stockGroupsSql: string, searchWhere: string, orderSql: string, params: Array<string | number>,
+): Promise<{ buckets: ProductStatBucket[]; orderedKeys: string[] }> {
+  const { results } = await db.prepare(`${stockGroupsSql} SELECT ${PRODUCT_SCOPE_COLUMNS}
+    FROM stock_filtered_groups ${searchWhere} ${orderSql}`).bind(...params).all<ProductScopeRow>();
+  return { buckets: toProductBuckets(results), orderedKeys: results.map(row => row.group_key) };
+}
+
+/** Count the default homepage with SQL and return only the public window's ordered keys. */
+export async function loadHomepageStockCatalog(
+  db: D1Database, stock: { hiddenOffersSql: string; params: string[] }, recommendedShops: string[],
+): Promise<ReturnType<typeof summarizeProducts>> {
+  const dimensions = [
+    ["brand_group", PRODUCT_GROUPS],
+    ["normalized_type", PRODUCT_TYPE_OPTIONS],
+    ["normalized_plan", PRODUCT_PLAN_OPTIONS],
+    ["attr_duration", PRODUCT_DURATION_OPTIONS],
+    ["price_band", PRODUCT_PRICE_OPTIONS],
+  ] as const;
+  const counters = dimensions.flatMap(([column, values], dimension) =>
+    values.map((value, index) => ({ value, alias: `c${dimension}_${index}`, column })));
+  const countsSql = counters.map(({ column, alias }) => `COUNT(*) FILTER (WHERE ${column} = ?) AS ${alias}`).join(", ");
+  const recommendsShops = recommendedShops.length > 0;
+  const ordering = (recommendsShops ? "(10.0 * shop_count / (shop_count + 10.0) + recommendation_bonus) DESC, " : "") +
+    "shop_count DESC, min_price ASC, group_key ASC";
+  const unaffectedBonus = recommendsShops ? `, COALESCE((SELECT MAX(r.bonus)
+    FROM json_each(CASE WHEN json_valid(p.offers_preview_json) THEN p.offers_preview_json ELSE '[]' END) preview
+    JOIN recommended_shops r ON r.shop_id = json_extract(preview.value, '$.shopId')), 0) AS recommendation_bonus` : "";
+  const affectedBonus = recommendsShops ? ", COALESCE(a.bonus, 0) AS recommendation_bonus" : "";
+  // Only the leading public window from the unchanged groups can rank in the final window.
+  const row = await db.prepare(`${stockHomepageGroupsSql(stock.hiddenOffersSql, recommendsShops)},
+    scope AS (
+      SELECT group_key, brand_group, (${TYPE_SQL_EXPR}) AS normalized_type,
+        (${PLAN_SQL_EXPR}) AS normalized_plan, attr_duration, offer_count,
+        CASE WHEN min_price < 10 THEN 'under-10' WHEN min_price < 50 THEN '10-50'
+          WHEN min_price < 150 THEN '50-150' WHEN min_price < 500 THEN '150-500' ELSE '500-plus' END AS price_band
+      FROM stock_home_groups
+    )
+    SELECT COUNT(*) AS total, COALESCE(SUM(offer_count), 0) AS offerTotal, ${countsSql},
+      (SELECT json_group_array(group_key) FROM (
+        SELECT group_key FROM (
+          SELECT * FROM (
+            SELECT p.group_key, p.shop_count, p.min_price${unaffectedBonus}
+            FROM product_groups p WHERE p.group_key NOT IN (SELECT group_key FROM affected_groups)
+            ORDER BY ${ordering} LIMIT ?
+          )
+          UNION ALL
+          SELECT a.group_key, a.shop_count, a.min_price${affectedBonus}
+          FROM available_groups a CROSS JOIN product_groups p ON p.group_key = a.group_key
+        ) ORDER BY ${ordering} LIMIT ?
+      )) AS orderedKeys
+    FROM scope`).bind(...stock.params, ...(recommendsShops ? [JSON.stringify(recommendedShops)] : []),
+      ...counters.map(counter => counter.value), PUBLIC_PRODUCT_RESULT_LIMIT, PUBLIC_PRODUCT_RESULT_LIMIT)
+    .first<Record<string, number | string>>();
+  const readCounts = (dimension: number, includeZeros = false): Record<string, number> =>
+    Object.fromEntries(dimensions[dimension][1].flatMap((value, index) => {
+      const count = Number(row?.[`c${dimension}_${index}`] ?? 0);
+      return includeZeros || count > 0 ? [[value, count]] : [];
+    }));
+  return {
+    total: Number(row?.total ?? 0),
+    offerTotal: Number(row?.offerTotal ?? 0),
+    groupKeys: JSON.parse(String(row?.orderedKeys ?? "[]")),
+    facets: {
+      groups: readCounts(0, true),
+      options: { type: readCounts(1), plan: readCounts(2), duration: readCounts(3) },
+      prices: readCounts(4, true),
+    },
+  };
+}
+
+function toProductBuckets(results: ProductScopeRow[]): ProductStatBucket[] {
   const buckets = new Map<string, ProductStatBucket>();
   for (const row of results) {
     const key = JSON.stringify([row.brand_group, row.normalized_type, row.normalized_plan, row.attr_duration, row.min_price]);
@@ -90,8 +171,15 @@ export function summarizeProducts(buckets: readonly ProductStatBucket[], query: 
   return { total, offerTotal, groupKeys, facets: { groups, options, prices } };
 }
 
-export function catalogGroups(buckets: readonly ProductStatBucket[]): Record<string, number> {
+export function catalogGroups(buckets: readonly Pick<ProductStatBucket, "brand_group" | "groups">[]): Record<string, number> {
   const groups: Record<string, number> = Object.fromEntries(PRODUCT_GROUPS.map((name) => [name, 0]));
   for (const bucket of buckets) if (bucket.brand_group in groups) groups[bucket.brand_group] += Number(bucket.groups);
   return groups;
+}
+
+/** Return only brand counts when the request's product scope cannot supply the catalog baseline. */
+export async function loadCatalogGroupCounts(db: D1Database): Promise<Record<string, number>> {
+  const { results } = await db.prepare("SELECT brand_group, COUNT(*) AS groups FROM product_groups GROUP BY brand_group")
+    .all<Pick<ProductStatBucket, "brand_group" | "groups">>();
+  return catalogGroups(results);
 }
