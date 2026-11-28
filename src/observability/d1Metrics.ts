@@ -2,7 +2,7 @@ export interface D1Cost {
   queries: number;
   rowsRead: number;
   rowsWritten: number;
-  statements: Array<{ sql: string; rowsRead: number; rowsWritten: number }>;
+  statements: Array<{ sql: string; rowsRead: number; rowsWritten: number; resultBytes: number }>;
 }
 
 /** 请求内计量 D1 返回的真实行数；不保存绑定值，不向 D1 写入计量日志。 */
@@ -16,7 +16,10 @@ export function observeD1(database: D1Database, recordStatements = false): { db:
     cost.queries += 1;
     cost.rowsRead += rowsRead;
     cost.rowsWritten += rowsWritten;
-    if (recordStatements) cost.statements.push({ sql: sql.replace(/\s+/g, " ").trim(), rowsRead, rowsWritten });
+    if (recordStatements) {
+      const resultBytes = new TextEncoder().encode(JSON.stringify(result.results ?? [])).byteLength;
+      cost.statements.push({ sql: sql.replace(/\s+/g, " ").trim(), rowsRead, rowsWritten, resultBytes });
+    }
   };
   const wrap = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
     const proxy = new Proxy(statement, {

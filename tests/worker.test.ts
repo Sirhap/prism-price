@@ -641,7 +641,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     expect(bigIngest.outcomes[0].itemCount).toBe(1000);
 
     const bigDetail = (await (
-      await SELF.fetch("http://localhost/api/shops/big-shop-1000/products")
+      await SELF.fetch("http://localhost/api/shops/big-shop-1000/products", { headers: ADMIN_AUTH_HEADERS })
     ).json()) as { shop: { productItems: unknown[] } };
     expect(bigDetail.shop.productItems).toHaveLength(1000);
 
@@ -770,7 +770,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     expect(sharedAfterBBanned.items).toHaveLength(0);
 
     const bDetail = (await (
-      await SELF.fetch("http://localhost/api/shops/delist-shop-b/products")
+      await SELF.fetch("http://localhost/api/shops/delist-shop-b/products", { headers: ADMIN_AUTH_HEADERS })
     ).json()) as { shop: { productItems: unknown[] } };
     expect(bDetail.shop.productItems).toHaveLength(0);
   });
@@ -1018,7 +1018,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     const { systemType: _systemType, ...withoutType } = entries[0];
     expect((await upsert([withoutType])).status).toBe(200);
     expect((await get("&systemType=acg-faka")).total).toBe(1);
-    const detail = await (await SELF.fetch("http://localhost/api/shops/system-acg/products")).json() as { shop: { systemType: string } };
+    const detail = await (await SELF.fetch("http://localhost/api/shops/system-acg/products", { headers: ADMIN_AUTH_HEADERS })).json() as { shop: { systemType: string } };
     expect(detail.shop.systemType).toBe("acg-faka");
     const sync = await (await SELF.fetch("http://localhost/api/shops?fields=sync")).json() as ShopResult;
     expect(sync.shops.find((shop) => shop.id === "system-acg")?.systemType).toBe("acg-faka");
@@ -1277,7 +1277,7 @@ describe("正式生产版 Workers + D1 核心链路测试", () => {
     expect(nullCreatedRes.shop.createdAt).toBeNull();
 
     // 验证兼容明细接口 GET /api/shops/:id/products 仍返回 productItems 与丰富元数据
-    const compatRes = await SELF.fetch(`http://localhost/api/shops/${introShopId}/products`);
+    const compatRes = await SELF.fetch(`http://localhost/api/shops/${introShopId}/products`, { headers: ADMIN_AUTH_HEADERS });
     expect(compatRes.status).toBe(200);
     const compatData = (await compatRes.json()) as {
       shop: {

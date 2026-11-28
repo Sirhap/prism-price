@@ -106,9 +106,9 @@ npm run typecheck    # TypeScript 类型检查
 ## 常用公开接口与直达筛选参数
 
 - **公开只读接口**：
-  - `GET /api/products`：按关键词、品牌、商品形态、套餐、时长与价格区间检索聚合商品组
+  - `GET /api/products` 可检索聚合商品组。公开分页最多展示 300 个匹配结果，`visibleTotal` 为可浏览数量。完整分页需传 `full=1` 并使用同步密钥进行 Bearer 鉴权。
   - `GET /api/shops`：按卡网系统、在售状态与是否含对接码筛选已收录店铺
-  - `GET /api/shops/:id` 与 `GET /api/shops/:id/products`：获取单店脱敏档案与在售商品
+  - `GET /api/shops/:id` 返回单店脱敏档案。完整报价清单 `GET /api/shops/:id/products` 需通过 Bearer 同步密钥鉴权。
   - `GET /api/locale`：返回当前识别的站点语言（`zh` / `en`）
 - **常用前台检索直达链接**：
   - 按品牌比价：`https://parity.sirhao.top/?group=ChatGPT`、`/?group=Codex`、`/?group=Claude`、`/?group=Gemini`

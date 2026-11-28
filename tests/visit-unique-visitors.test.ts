@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
-import { applyD1Migrations, env, SELF, type D1Migration } from 'cloudflare:test';
+import { applyD1Migrations, createExecutionContext, env, SELF, waitOnExecutionContext, type D1Migration } from 'cloudflare:test';
+import { checkCrawlerAccess } from '../src/routes/crawlerAccess';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 declare global {
@@ -270,6 +271,20 @@ describe('流量访客 IP 去重统计', () => {
     ]));
   });
 
+  it('同一个节点对同一 IP 的重复爬虫拦截只写一次 D1 日志', async () => {
+    const ip = '192.0.2.222';
+    for (const path of ['/api/products', '/api/shops', '/api/products']) {
+      const ctx = createExecutionContext();
+      const req = new Request(new URL(path, 'https://crawler-budget.example'), {
+        headers: { 'CF-Connecting-IP': ip, 'User-Agent': 'curl/8.1' },
+      });
+      expect((await checkCrawlerAccess(req, path, env.DB, ctx))?.status).toBe(500);
+      await waitOnExecutionContext(ctx);
+    }
+    const logs = await env.DB.prepare('SELECT request_path FROM crawler_access_logs WHERE ip = ?').bind(ip).all();
+    expect(logs.results).toEqual([{ request_path: '/api/products' }]);
+  });
+
   it('仅已鉴权的同步读取可通过爬虫规则和共享 IP 黑名单', async () => {
     const ip = '192.0.2.130';
     const secret = 'test-ingest-secret';
@@ -293,7 +308,7 @@ describe('流量访客 IP 去重统计', () => {
 
     await env.DB.prepare('INSERT INTO crawler_blocked_ips(ip, blocked_at) VALUES (?, ?)').bind(ip, new Date().toISOString()).run();
     try {
-      expect((await read(detail, undefined, 'node')).status).toBe(500);
+      expect((await read(detail, undefined, 'node')).status).toBe(401);
       const response = await read(detail, secret, 'node');
       expect(response.status).toBe(200);
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
@@ -309,6 +324,7 @@ describe('流量访客 IP 去重统计', () => {
       expect(rotated.status).toBe(200);
       expect((await read(list, secret)).status).toBe(500);
       expect((await read(list, nextSecret)).status).toBe(200);
+      expect((await read(detail, nextSecret)).status).toBe(200);
     } finally {
       await env.DB.batch([
         env.DB.prepare('DELETE FROM crawler_blocked_ips WHERE ip = ?').bind(ip),

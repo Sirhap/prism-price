@@ -2166,6 +2166,9 @@ function renderFilterControls() {
 
 function updateResultStatus() {
   const product = state.mode === "product";
+  const totalProducts = state.productsData?.total ?? 0;
+  const visibleProducts = state.productsData?.visibleTotal ?? totalProducts;
+  const atProductLimit = visibleProducts < totalProducts && state.page >= (state.productsData?.totalPages ?? 1);
   const note = document.querySelector('.results-note');
   if (note) {
     note.textContent = product
@@ -2192,10 +2195,11 @@ function updateResultStatus() {
   els.resultStatus.textContent = loading
     ? L("正在查找，请稍候…", "Searching, please wait…")
     : product
-      ? L(
-          `找到 ${state.productsData?.total ?? 0} 组商品 · 已展示 ${state.allItems.length} 组`,
-          `Found ${state.productsData?.total ?? 0} items · Showing ${state.allItems.length}`,
-        )
+      ? atProductLimit
+        ? L(`已展示前 ${visibleProducts} 组商品，请用搜索或筛选缩小范围`,
+            `Showing the first ${visibleProducts} items. Narrow your search to see more.`)
+        : L(`找到 ${totalProducts} 组商品 · 已展示 ${state.allItems.length} 组`,
+            `Found ${totalProducts} items · Showing ${state.allItems.length}`)
       : L(
           `找到 ${state.shopTotal} 家店铺 · 已展示 ${state.shopsData.length} 家`,
           `Found ${state.shopTotal} stores · Showing ${state.shopsData.length}`,
@@ -2548,7 +2552,7 @@ function renderOfficialPriceAnchor() {
 
 function renderProducts(append = false) {
   const items = state.allItems;
-  const total = Number(state.productsData?.total ?? 0);
+  const total = Number(state.productsData?.visibleTotal ?? state.productsData?.total ?? 0);
   const totalPages = Number(state.productsData?.totalPages ?? 1);
 
   if (items.length === 0) {
@@ -3451,7 +3455,7 @@ function bindEvents() {
   });
 
   els.loadMoreBtn.addEventListener("click", () => {
-    if (state.productLoading) return;
+    if (state.productLoading || state.page >= (state.productsData?.totalPages ?? 1)) return;
     state.page += 1;
     fetchProducts(true, false, { preserveNotice: true });
   });

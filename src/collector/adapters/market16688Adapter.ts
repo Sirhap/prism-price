@@ -1,16 +1,15 @@
 import type { RawOfferItem, RawShopSnapshot, ShopRecord } from '../../types';
 import type { ShopAdapter } from './fetcher';
+import { MARKET16688_ORIGIN, market16688ShopKey, normalizeMarket16688Url } from '../../../scripts/lib/market16688.mjs';
 
 /** 16688 的列表接口未返回总数，只允许以部分结果更新，不能据此删除旧商品。 */
 export const market16688Adapter: ShopAdapter = {
   type: 'shop_api',
   async fetchSnapshot(shop: ShopRecord): Promise<RawShopSnapshot> {
-    const source = new URL(shop.shop_url);
-    if (!['16688.com.cn', 'www.16688.com.cn'].includes(source.hostname.toLowerCase())) throw new Error('不支持的 16688 域名');
-    const token = source.pathname.match(/^\/shop\/([a-zA-Z0-9_-]+)\/?$/)?.[1];
+    const token = market16688ShopKey(shop.shop_url);
     if (!token) throw new Error('16688 店铺地址无效');
     async function post(path: string, data: unknown): Promise<Record<string, unknown>> {
-      const response = await fetch(`https://www.16688.com.cn/shopApi/${path}`, { method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'}, body:JSON.stringify(data), signal:AbortSignal.timeout(12000), redirect:'manual' });
+      const response = await fetch(`${MARKET16688_ORIGIN}/shopApi/${path}`, { method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'}, body:JSON.stringify(data), signal:AbortSignal.timeout(12000), redirect:'manual' });
       if (!response.ok || !(response.headers.get('content-type') || '').toLowerCase().includes('json')) throw new Error(`16688 源站异常 HTTP ${response.status}`);
       const json = await response.json() as {code?:number;msg?:string;data?:unknown};
       if (json.code !== 1 || !json.data || typeof json.data !== 'object' || Array.isArray(json.data)) throw new Error(String(json.msg || '16688 数据无效'));
@@ -19,7 +18,7 @@ export const market16688Adapter: ShopAdapter = {
     const detail = await post('shop/detail', {shop_no:token});
     const shopNo = typeof detail.shop_no === 'string' ? detail.shop_no.trim() : '';
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(shopNo)) throw new Error('16688 店铺编号无效');
-    const categoriesResponse = await fetch('https://www.16688.com.cn/shopApi/goodsCategory/list', {method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({shop_no:shopNo}),signal:AbortSignal.timeout(30000),redirect:'manual'});
+    const categoriesResponse = await fetch(`${MARKET16688_ORIGIN}/shopApi/goodsCategory/list`, {method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({shop_no:shopNo}),signal:AbortSignal.timeout(30000),redirect:'manual'});
     if (!categoriesResponse.ok || !(categoriesResponse.headers.get('content-type') || '').toLowerCase().includes('json')) throw new Error('16688 商品分类请求失败');
     const categories = await categoriesResponse.json() as {code?:number;data?:Array<{goods_category_no?:string;name?:string}>};
     if (categories.code !== 1 || !Array.isArray(categories.data)) throw new Error('16688 商品分类无效');
@@ -37,8 +36,8 @@ export const market16688Adapter: ShopAdapter = {
       seen.add(key);
       const rawStock = item.stock_available_quantity;
       const stock = item.stock_available_status === 'out' ? 0 : typeof rawStock === 'number' && Number.isFinite(rawStock) && rawStock >= 0 ? rawStock : null;
-      items.push({itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient',itemUrl:`https://www.16688.com.cn/goods/${encodeURIComponent(key)}`});
+      items.push({itemKey:key,rawName:name,shopCategory:categoryNames.get(String(item.goods_category_no || '')) || '',price,stockCount:stock,stockStatus:stock !== null && stock <= 5 ? 'low' : stock !== null && stock <= 20 ? 'normal' : 'sufficient',itemUrl:`${MARKET16688_ORIGIN}/goods/${encodeURIComponent(key)}`});
     }
-    return { shopName:typeof detail.name === 'string' && detail.name.trim() ? detail.name.trim() : shop.shop_name, canonicalUrl:shop.canonical_url, telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items };
+    return { shopName:typeof detail.name === 'string' && detail.name.trim() ? detail.name.trim() : shop.shop_name, canonicalUrl:normalizeMarket16688Url(shop.canonical_url), telegram:shop.telegram || '', shopSellCount:shop.shop_sell_count, salesVisible:!!shop.sales_visible, depositVisible:!!shop.deposit_visible, depositMoney:shop.deposit_money, items };
   },
 };

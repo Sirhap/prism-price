@@ -105,6 +105,12 @@ export function createRequestGate(intervalMs = 1000, { maxIntervalMs = 2000, sle
   };
 }
 
+function sameStorefront(left, right) {
+  if (left === right) return true;
+  const marketKey = market16688ShopKey(left);
+  return Boolean(marketKey && marketKey === market16688ShopKey(right));
+}
+
 /** Returns a nonzero failure count for partial runs; injected dependencies permit offline tests. */
 export async function runSync(options, deps = {}) {
   const base = normalizeSyncApiBase(options.apiBase);
@@ -142,7 +148,8 @@ export async function runSync(options, deps = {}) {
     data.shops.filter(s => is16688(s) || (s.syncSupported && ['push_ingest', 'shop_api', 'ka123_api'].includes(s.adapterType)));
   if (options.shops.length) {
     const wanted = new Set(options.shops);
-    targets = targets.filter((s) => wanted.has(s.id) || wanted.has(s.shopUrl) || wanted.has(new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1)));
+    targets = targets.filter(s => wanted.has(s.id) || wanted.has(new URL(s.shopUrl).pathname.split('/').filter(Boolean).at(-1)) ||
+      options.shops.some(term => sameStorefront(s.shopUrl, term)));
   }
   const shardCount = options.shardCount ?? 1;
   const shardIndex = options.shardIndex ?? 1;
@@ -159,9 +166,10 @@ export async function runSync(options, deps = {}) {
   }
   // 续跑时已处理的店铺可能已删除，不应因清单缺失而阻断其他店铺。
   for (const term of options.shops) {
-    const present = targets.some((shop) => shop.id === term || shop.shopUrl === term || new URL(shop.shopUrl).pathname.split('/').filter(Boolean).at(-1) === term);
+    const present = targets.some(shop => shop.id === term || sameStorefront(shop.shopUrl, term) ||
+      new URL(shop.shopUrl).pathname.split('/').filter(Boolean).at(-1) === term);
     const completed = options.resume && Object.entries(state.completed).some(([id, value]) => {
-      if (id === term || value === term) return true;
+      if (id === term || sameStorefront(value, term)) return true;
       try { return new URL(String(value)).pathname.split('/').filter(Boolean).at(-1) === term; } catch { return false; }
     });
     if (!present && !completed) throw new Error(`没有找到支持同步的店铺: ${term}`);
@@ -180,7 +188,7 @@ export async function runSync(options, deps = {}) {
   async function worker() {
     while (cursor < targets.length && !gate.isBlocked()) {
       const shop = targets[cursor++];
-      if (options.resume && state.completed[shop.id] === shop.shopUrl) { stats.resumed++; continue; }
+      if (options.resume && sameStorefront(state.completed[shop.id], shop.shopUrl)) { stats.resumed++; continue; }
       try {
         const snapshot = await collect(shop);
         const partial = isPartialAdapter(shop) || snapshot.items.length > maxSnapshotItems;
@@ -296,7 +304,10 @@ export async function runSync(options, deps = {}) {
         }
         if ([401, 403, 429].includes(error?.status)) gate.block();
         stats.failed++;
-        console.warn(`[local-sync] ${shop.id}: 失败，未覆盖原数据：${error instanceof Error ? error.message : String(error)}`);
+        const message = error?.status === 401
+          ? "目标站拒绝鉴权，请检查该 API_BASE 对应的 INGEST_SECRET"
+          : error instanceof Error ? error.message : String(error);
+        console.warn(`[local-sync] ${shop.id}: 失败，未覆盖原数据：${message}`);
       }
     }
   }
@@ -310,7 +321,7 @@ export async function runSync(options, deps = {}) {
 export function describeWorkflow() {
   return {
     mode: '仅说明，不访问网络、不读取密钥、不修改数据',
-    credentials: 'INGEST_SECRET 只用于配置的目标 API 地址的 Bearer 鉴权；不向店铺源站发送。',
+    credentials: 'INGEST_SECRET 只用于配置的目标 API 地址的 Bearer 鉴权；不向店铺源站发送。目标站整店报价读取需要密钥，读取旧报价做下架复核时预览也需要。',
     destinations: {
       catalog: '从目标 API 的 /api/shops?fields=sync 获取店铺地址及摘要。',
       source: '从各店铺 URL 指向的源站请求店铺信息和商品列表；pay.ldxp.cn 对应 wzyp.cn。16688 和 LDXP 大店部分同步会逐条复核完整采集结果中缺失的旧报价，每次最多推送 12 条确认。--verify-all-16688 只筛选 16688 店铺。仅源站明确回复商品未上架、已下架或不存在才提交下架确认。',

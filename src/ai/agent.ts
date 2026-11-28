@@ -125,7 +125,7 @@ async function runProductSearch(env: Env, args: Record<string, unknown>) {
   params.set("page", "1");
   params.set("pageSize", "6");
 
-  const response = await handleGetProducts(new URL(`/api/products?${params.toString()}`, INTERNAL_ORIGIN), env, false);
+  const response = await handleGetProducts(new URL(`/api/products?${params.toString()}`, INTERNAL_ORIGIN), env, { enableRecommendation: false });
   const data = await response.json() as { items?: ProductSearchItem[]; total?: number };
   const items: AgentProductPreview[] = (data.items || []).slice(0, 4).map((item) => ({
     name: String(item.name || ""),

@@ -21,6 +21,8 @@ describe("卡网系统类型", () => {
     expect(inferShopSystem("https://catfk.com.evil.example/shop/a")).toBe("unknown");
     expect(inferShopSystem("https://16688.com.cn/shop/a")).toBe("16688");
     expect(inferShopSystem("https://www.16688.com.cn/shop/a")).toBe("16688");
+    expect(inferShopSystem("https://www.16688.store/shop/a")).toBe("16688");
+    expect(inferShopSystem("https://16688.store/shop/a")).toBe("16688");
     expect(inferShopSystem("https://16688.com.cn.evil.example/shop/a")).toBe("unknown");
   });
 });

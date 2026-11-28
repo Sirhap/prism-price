@@ -1,4 +1,6 @@
 import { isLocalizedHtmlPath } from '../i18n/locale';
+import { canCacheQuery } from '../cache/queryCache';
+import { responseStore } from '../cache/responseStore';
 
 const INDEXING_AGENTS = new Set([
   'googlebot', 'google-extended', 'bingbot', 'baiduspider', 'bytespider', 'yisouspider', 'applebot',
@@ -44,6 +46,22 @@ function isPublicContent(path: string): boolean {
     /^\/llms(?:-full)?\.txt$/.test(path) || /^\/api\/(?:products|shops(?:\/.*)?|sponsors(?:\/.*)?|visit|locale|public-settings|shop-favorite)$/.test(path);
 }
 
+/** Keep the first blocked request per IP in each node's one-minute window. */
+async function shouldLogBlockedRequest(url: URL, ip: string): Promise<boolean> {
+  if (!ip || !canCacheQuery(url)) return true;
+  const key = new URL('/__prism_crawler_log__/v1', url.origin);
+  key.searchParams.set('ip', ip);
+  const request = new Request(key);
+  const store = responseStore();
+  try {
+    if (await store.match(request)) return false;
+    await store.put(request, new Response(null, { headers: { 'Cache-Control': 'public, max-age=60' } }));
+  } catch (error) {
+    console.warn('crawler_log_cache_unavailable', error);
+  }
+  return true;
+}
+
 /** 只拦公开内容，命中规则时再验证可使用同步豁免的请求。客户端 IP 必须由可信入口提供。 */
 export async function checkCrawlerAccess(
   request: Request,
@@ -73,12 +91,15 @@ export async function checkCrawlerAccess(
   if (blocked || (isRead && isCrawlerAgent(userAgent))) {
     const now = Date.now();
     const day = new Date(now + 8 * 3600_000).toISOString().slice(0, 10);
-    ctx.waitUntil(db.prepare(`INSERT INTO crawler_access_logs(day, visited_at, ip, request_path, method, user_agent, blocked)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(day, new Date(now).toISOString(), ip, path.slice(0, 300), request.method, agent, Number(blocked)).run()
-      .catch((error: unknown) => {
-        if (!(error instanceof Error && error.message.includes('no such table'))) console.warn('crawler_access_log_failed', error);
-      }));
+    const logAccess = async () => {
+      if (blocked && !await shouldLogBlockedRequest(new URL(request.url), ip)) return;
+      await db.prepare(`INSERT INTO crawler_access_logs(day, visited_at, ip, request_path, method, user_agent, blocked)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .bind(day, new Date(now).toISOString(), ip, path.slice(0, 300), request.method, agent, Number(blocked)).run();
+    };
+    ctx.waitUntil(logAccess().catch((error: unknown) => {
+      if (!(error instanceof Error && error.message.includes('no such table'))) console.warn('crawler_access_log_failed', error);
+    }));
   }
 
   return blocked ? new Response(request.method === 'HEAD' ? null : 'Internal Server Error', {

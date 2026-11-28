@@ -68,7 +68,7 @@ it("16688 部分快照只补查本次出现的商品，详情限流时保留历�
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => detailResponse(details));
   try {
     await ingestPushedSnapshots(env, [entry]);
-    expect(fetcher).toHaveBeenCalledWith("https://www.16688.com.cn/shopApi/goods/detail",
+    expect(fetcher).toHaveBeenCalledWith("https://www.16688.store/shopApi/goods/detail",
       expect.objectContaining({ body: '{"goods_no":"a"}' }));
     await env.DB.prepare("UPDATE offer_classification_details SET checked_at='2020-01-01' WHERE offer_id IN (?, ?)")
       .bind(entry.shopId + ":a", entry.shopId + ":b").run();

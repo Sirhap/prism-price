@@ -1,4 +1,5 @@
 import type { RawOfferItem } from "../../types";
+import { MARKET16688_HOSTS, MARKET16688_ORIGIN } from "../../../scripts/lib/market16688.mjs";
 import { classifyProduct, isNonSalePlaceholderItem, needsProductDetail, type ProductClassification } from "./cleaner";
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -9,14 +10,13 @@ const BATCH_TIMEOUT_MS = 6500;
 
 const LDXP_DETAIL = "https://wzyp.cn/shopApi/Shop/goodsInfo";
 const CATFK_DETAIL = "https://catfk.com/shopApi/Shop/goodsInfo";
-const MARKET_DETAIL = "https://www.16688.com.cn/shopApi/goods/detail";
+const MARKET_DETAIL = `${MARKET16688_ORIGIN}/shopApi/goods/detail`;
 const DETAIL_SOURCES = new Map([
   ["wzyp.cn", LDXP_DETAIL],
   ["pay.ldxp.cn", LDXP_DETAIL],
   ["catfk.com", CATFK_DETAIL],
   ["www.catfk.com", CATFK_DETAIL],
-  ["www.16688.com.cn", MARKET_DETAIL],
-  ["16688.com.cn", MARKET_DETAIL],
+  ...MARKET16688_HOSTS.map(host => [host, MARKET_DETAIL] as const),
 ]);
 
 function sourceFor(url: string): string | undefined {

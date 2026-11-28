@@ -115,7 +115,7 @@ it("同步时间区分完整与部分观察，商品聚合时间不随相同快�
   expect(items[0].offers).toMatchObject(expected);
   const expanded = await SELF.fetch(`http://localhost/api/products?offerKey=${encodeURIComponent(items[0].id)}`);
   expect((await expanded.json<{ items: Array<{ offers: OfferTime[] }> }>()).items[0].offers).toMatchObject(expected);
-  const profile = await SELF.fetch(`http://localhost/api/shops/${id}/products`);
+  const profile = await SELF.fetch(`http://localhost/api/shops/${id}/products`, { headers: { Authorization: `Bearer ${env.INGEST_SECRET}` } });
   expect((await profile.json<{ shop: { lastSyncedAt: string; productItems: OfferTime[] } }>()).shop)
     .toMatchObject({ lastSyncedAt: partial, productItems: expected });
 });
@@ -146,7 +146,7 @@ it("分类复核后拆开模糊月卡并保持明确同款报价的最低价", a
   expect(await response.json()).toMatchObject({ total: 1, items: [{ name, minPrice: 9, offerCount: 2 }] });
   const expanded = await SELF.fetch(`http://localhost/api/products?offerKey=${encodeURIComponent(results[2].group_key)}`);
   expect(await expanded.json()).toMatchObject({ items: [{ offers: [{ price: 9 }, { price: 10 }] }] });
-  const profile = await SELF.fetch(`http://localhost/api/shops/${shopA}/products`);
+  const profile = await SELF.fetch(`http://localhost/api/shops/${shopA}/products`, { headers: { Authorization: `Bearer ${env.INGEST_SECRET}` } });
   expect(await profile.json()).toMatchObject({ shop: {
     productItems: [{ group: "Gemini", price: 1 }, { group: "Gemini", price: 9 }],
   } });

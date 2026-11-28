@@ -1,9 +1,13 @@
 import { responseStore } from "./responseStore";
 
+export function canCacheQuery(url: URL): boolean {
+  return !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+}
+
 /** 公开统计按数据版本与搜索作用域复用；缓存不落 D1，也不跨请求保存数据库对象。 */
 export async function cachedQuery<T>(url: URL, key: string, load: () => Promise<T>, seconds = 300): Promise<T> {
   // 本地开发及语义测试保持实时；缓存集成测试使用独立测试域名。
-  if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return load();
+  if (!canCacheQuery(url)) return load();
   const cacheUrl = new URL("/__prism_query_cache__/v1", url.origin);
   cacheUrl.searchParams.set("key", key);
   const request = new Request(cacheUrl);

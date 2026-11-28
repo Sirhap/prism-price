@@ -277,3 +277,12 @@ export function positiveInteger(raw: string | null, fallback: number, max: numbe
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), max) || fallback : fallback;
 }
+
+export const PUBLIC_PRODUCT_RESULT_LIMIT = 300;
+export const SHOP_PRODUCTS_PATH = /^\/api\/shops\/([^/]+)\/products$/;
+
+export function productListPagination(params: URLSearchParams) {
+  const page = positiveInteger(params.get("page"), 1, 1_000_000);
+  const pageSize = positiveInteger(params.get("pageSize"), 30, 50);
+  return { page, pageSize, offset: (page - 1) * pageSize };
+}

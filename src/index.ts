@@ -8,7 +8,7 @@ import {
 import { withPublicResponseCache, isDailyD1Limit, quotaUnavailable } from "./cache/publicResponseCache";
 import { observeD1 } from "./observability/d1Metrics";
 import { runSyncBatch } from "./collector/scheduler";
-import { handleApiRequest, isSyncCatalogRead, verifyAdminSecret } from "./routes/api";
+import { handleApiRequest, isSyncCatalogRead, rejectProductListRequest, verifyAdminSecret } from "./routes/api";
 import { handleAdminRoute } from "./routes/admin";
 import { checkCrawlerAccess } from "./routes/crawlerAccess";
 import { handleSponsorPublic } from "./routes/sponsors";
@@ -19,7 +19,7 @@ const HOME_ASSET_PRELOADS = [
   '</styles.css?v=ai-assistant-3>; rel=preload; as=style',
   '</i18n.js?v=ai-assistant-2>; rel=preload; as=script',
   '</select-picker.js?v=20261119-dropdowns>; rel=preload; as=script',
-  '</app.js?v=stock-label>; rel=preload; as=script',
+  '</app.js?v=product-query-limit-v1>; rel=preload; as=script',
 ].join(", ");
 
 /** Only preload list requests that match the exact default URL built by app.js. */
@@ -41,7 +41,9 @@ export default {
     const url = new URL(request.url);
 
     try {
-      const syncReadWithCredentials = isSyncCatalogRead(request, url.pathname) && /^Bearer\s+\S/i.test(request.headers.get("Authorization") || "");
+      const rejection = rejectProductListRequest(request, url);
+      if (rejection) return rejection;
+      const syncReadWithCredentials = isSyncCatalogRead(request, url) && /^Bearer\s+\S/i.test(request.headers.get("Authorization") || "");
       const crawlerResponse = await checkCrawlerAccess(request, url.pathname, env.DB, ctx,
         syncReadWithCredentials ? async () => (await verifyAdminSecret(request, env)).ok : undefined);
       if (crawlerResponse) return crawlerResponse;

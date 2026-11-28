@@ -11,6 +11,7 @@ import { hasShopDescriptionColumn } from "../shopSystems";
 import { calculateMedian, isNonSalePlaceholderItem, normalizeOffer } from "./cleaner";
 import { prepareProductDetails, type ProductDetailBudget } from "./productDetails";
 import type { LdxpOfferVersion } from "../../../scripts/lib/missingOffers.mjs";
+import { market16688ShopKey, normalizeMarket16688Url } from "../../../scripts/lib/market16688.mjs";
 import { offerLastSyncedAt } from "./offerSyncTimes";
 import { observeZeroStock, stockWarningDay } from "./stockObservations";
 
@@ -392,6 +393,13 @@ export async function persistShopSnapshot(
   estimatedWrites: number;
   descriptionUpdated: boolean;
 }> {
+  if (market16688ShopKey(shop.shop_url)) {
+    snapshot = {
+      ...snapshot,
+      canonicalUrl: normalizeMarket16688Url(snapshot.canonicalUrl),
+      items: snapshot.items.map(item => ({ ...item, itemUrl: normalizeMarket16688Url(item.itemUrl) })),
+    };
+  }
   const newHash = await computeSnapshotHash(snapshot);
   const nextSyncAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   const today = nowIso.slice(0, 10);

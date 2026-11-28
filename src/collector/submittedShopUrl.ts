@@ -1,3 +1,5 @@
+import { MARKET16688_HOST, MARKET16688_HOSTS } from "../../scripts/lib/market16688.mjs";
+
 /** Normalize public storefront URLs without fetching the submitted destination. */
 export function normalizeSubmittedShopUrl(input: unknown): string | null {
   if (typeof input !== 'string' || input.length > 2048) return null;
@@ -8,9 +10,8 @@ export function normalizeSubmittedShopUrl(input: unknown): string | null {
   const platforms: Record<string, string> = {
     'pay.ldxp.cn': 'wzyp.cn', 'wzyp.cn': 'wzyp.cn',
     'catfk.com': 'catfk.com', 'www.catfk.com': 'catfk.com',
-    '16688.com.cn': 'www.16688.com.cn', 'www.16688.com.cn': 'www.16688.com.cn',
   };
-  const canonicalHost = platforms[host];
+  const canonicalHost = MARKET16688_HOSTS.includes(host) ? MARKET16688_HOST : platforms[host];
   if (!canonicalHost) {
     if (!host.includes('.') || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost') || /^[0-9.]+$/.test(host) || host.includes(':')) return null;
     url.hash = '';

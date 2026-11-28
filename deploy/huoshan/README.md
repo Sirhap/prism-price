@@ -53,6 +53,8 @@ bash deploy/huoshan/deploy.sh --ref HEAD --apply --expect <当前版本目录名
 
 上线 7 天打烊观察前，备份生产 SQLite，再应用 `0025_shop_closure_grace.sql`。观察从新版同步首次确认打烊时开始，成功同步或确认恢复营业会重置。部署后更新各机器的同步脚本，再恢复自动同步。
 
+上线 16688 域名切换时，先核对同一店铺编号的新旧记录是否重复，备份生产 SQLite，并在事务中应用 `0029_market16688_store_domain.sql`。迁移保留店铺、商品和聚合组 ID。随后验证线上店铺、报价及目录链接，再更新各运行同步工具的机器。
+
 上线访客时间筛选及爬虫拦截前，先备份生产 SQLite，再按顺序应用 `0011_visit_logs_day_ip_index.sql` 和 `0012_crawler_access.sql`（按当前库已应用的迁移跳过）。黑名单只信任 `CF-Connecting-IP`，须先确认源站只接受可信 Cloudflare 回源，或由 OpenResty 丢弃直连请求携带的该头部。若配置了公开页面/API 的边缘缓存，也应确认这些请求会到达应用，否则命中缓存的请求既不会拦截也不会被记录。
 
 自动规则在公开页面及公开 API 的 GET/HEAD 请求上拦截明确的爬虫和脚本标识（包括 curl、wget），拦截返回不可缓存的 500 并保留记录，不自动写入手动 IP 黑名单。`robots.txt` 和其中显式放行的索引爬虫访问公开页面可通过 UA 规则，公开 API 仍检查 UA。用浏览器或默认 Node.js `fetch` 验证公开页面的正常响应。
