@@ -7,15 +7,15 @@
   <title>管理后台 · 棱镜比价</title>
   <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/admin/admin.bd13f75c5bed.css">
-  <script type="module" src="/admin/admin.e694b32341e7.js"></script>
+  <link rel="stylesheet" href="/admin/admin.286650feaee6.css">
+  <script type="module" src="/admin/admin.f11448e6bbfd.js"></script>
 </head>
 <body>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 <div class="login-shell">
   <section id="loginPanel" class="admin-card login-card">
     <div class="section-icon">✦</div>
-    <p class="eyebrow">WELCOME BACK</p>
+    <p class="admin-kicker">PRISM ADMIN</p>
     <h2>管理员登录</h2>
     <p class="muted">请妥善保管密码，首次登录后建议修改。</p>
     <form id="loginForm">
@@ -26,17 +26,17 @@
 </div>
 <div id="dashboard" class="admin-workspace" hidden>
   <aside class="admin-sidebar">
-    <a class="admin-brand" href="/"><span>✦</span><div>棱镜比价<small>PRISM / 管理后台</small></div></a>
-    <p class="sidebar-caption">管理工作台</p>
+    <div class="sidebar-top">
+      <a class="admin-brand" href="/"><span>✦</span><div>棱镜比价<small>PRISM / 管理后台</small></div></a>
+    </div>
     <nav aria-label="后台导航">
-      <button type="button" class="admin-nav-item" data-panel="overview"><span class="nav-symbol" aria-hidden="true">◈</span><span><strong>工作台</strong><small>核心运行概览</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="visits"><span class="nav-symbol" aria-hidden="true">◔</span><span><strong>流量访客</strong><small>趋势与来源明细</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="catalog"><span class="nav-symbol" aria-hidden="true">▤</span><span><strong>平台与品牌</strong><small>商家与商品结构</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="sync"><span class="nav-symbol" aria-hidden="true">↻</span><span><strong>商品同步</strong><small>进度与采集批次</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="ranking"><span class="nav-symbol" aria-hidden="true">≡</span><span><strong>店铺管理</strong><small>排序与推荐</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="sponsors"><span class="nav-symbol" aria-hidden="true">◇</span><span><strong>赞助推广</strong><small>投放与授权码</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="settings"><span class="nav-symbol" aria-hidden="true">⚙</span><span><strong>站点设置</strong><small>收藏与收录</small></span></button>
-      <button type="button" class="admin-nav-item" data-panel="security"><span class="nav-symbol" aria-hidden="true">⌘</span><span><strong>安全设置</strong><small>密码与密钥</small></span></button>
+      <button type="button" class="admin-nav-item" data-group="overview" data-panel="overview"><span class="nav-symbol" aria-hidden="true">◈</span><span><strong>工作台</strong><small>核心指标与健康摘要</small></span></button>
+      <p class="nav-section-label">运营</p>
+      <button type="button" class="admin-nav-item" data-group="analytics" data-panel="visits"><span class="nav-symbol" aria-hidden="true">◔</span><span><strong>数据分析</strong><small>流量访客 · 平台品牌</small></span></button>
+      <button type="button" class="admin-nav-item" data-group="shops" data-panel="ranking"><span class="nav-symbol" aria-hidden="true">▤</span><span><strong>店铺与同步</strong><small>店铺管理 · 商品同步</small></span></button>
+      <button type="button" class="admin-nav-item" data-group="sponsors" data-panel="sponsors"><span class="nav-symbol" aria-hidden="true">◇</span><span><strong>赞助推广</strong><small>投放与授权码</small></span></button>
+      <p class="nav-section-label">系统</p>
+      <button type="button" class="admin-nav-item" data-group="system" data-panel="settings"><span class="nav-symbol" aria-hidden="true">⚙</span><span><strong>系统设置</strong><small>站点配置 · 账号安全</small></span></button>
     </nav>
     <div class="sidebar-bottom">
       <a href="/" target="_blank" rel="noopener">打开前台 ↗</a>
@@ -45,17 +45,20 @@
   </aside>
   <main class="admin-content">
     <header class="workspace-header">
-      <div>
-        <p class="eyebrow">PRISM / ADMIN</p>
+      <div class="workspace-title-group">
+        <p id="panelEyebrow" class="admin-kicker">工作台</p>
         <h1 id="panelTitle">工作台</h1>
         <p id="panelDescription" class="muted">全站核心运行概览</p>
       </div>
-      <span class="session-status">● 管理员已登录</span>
+      <div class="workspace-header-actions">
+        <span class="session-status">● 管理员已登录</span>
+      </div>
     </header>
+    <nav id="panelTabs" class="panel-tabs" aria-label="分组页面" hidden></nav>
 
     <div class="admin-panel" id="panel-overview" hidden>
       <div class="overview-toolbar">
-        <span class="muted">北京时间 · 首页仅保留核心指标与健康摘要，专项明细请在左侧对应模块查看</span>
+        <span class="muted">北京时间 · 核心运行概览，点击任意指标或状态条可直达明细</span>
         <button id="refreshOverview" class="btn btn-secondary" type="button">↻ 刷新概览</button>
       </div>
       <div class="metric-grid">
@@ -69,9 +72,9 @@
       <div class="overview-grid">
         <section class="admin-card visits-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>近 30 天访问趋势</h2>
-              <p class="muted">访问次数（30 分钟内同浏览器计 1 次）与实际访客人数（按 IP 去重）</p>
+              <p class="muted">同浏览器 30 分钟内计 1 次，实访按 IP 去重</p>
             </div>
             <button type="button" class="card-link" data-panel="visits">地区与 IP 明细 →</button>
           </div>
@@ -80,7 +83,7 @@
         </section>
         <section class="admin-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>同步健康与库存状态</h2>
               <p class="muted">点击任意状态条直达店铺列表筛选</p>
             </div>
@@ -90,25 +93,20 @@
           <div id="stockBreakdown" class="sub-chip-row" aria-live="polite"></div>
         </section>
       </div>
-      <div class="quick-links-bar">
-        <button type="button" class="quick-chip" data-panel="visits">查看访客地区分布与最近 IP 记录 →</button>
-        <button type="button" class="quick-chip" data-panel="catalog">查看发卡平台分布与热门品牌规模 →</button>
-        <button type="button" class="quick-chip" data-panel="sync">管理浏览器同步与服务端采集批次 →</button>
-      </div>
     </div>
 
     <div class="admin-panel" id="panel-visits" hidden>
       <div class="overview-toolbar">
-        <span class="muted">北京时间 · 概览与趋势固定展示近 30 天，分布与访问明细可按日期筛选</span>
+        <span class="muted">北京时间 · 上方固定展示近 30 天全站趋势，下方分布与日志可按日期筛选</span>
         <button id="refreshVisits" class="btn btn-secondary" type="button">↻ 刷新访客数据</button>
       </div>
       <div id="visitUniqueStats" class="mini-stat-row visits-uv-row" aria-live="polite"></div>
-      <div id="visitSummaryStats" class="mini-stat-row visits-kpi-row" aria-live="polite"></div>
+      <div id="visitSummaryStats" class="visit-summary-strip" aria-live="polite"></div>
       <section class="admin-card visits-trend-card">
         <div class="card-head">
-          <div>
+          <div class="card-head-title">
             <h2>最近 30 天每日访问量</h2>
-            <p class="muted">鼠标悬停柱状条可查看对应日期、实际访客人数与访问次数</p>
+            <p class="muted">悬停柱状条可查看对应日期、实际访客人数与访问次数</p>
           </div>
         </div>
         <div id="visitTrendChart" class="trend-chart" aria-label="最近 30 天访问量柱状图"></div>
@@ -117,29 +115,31 @@
           <div id="visitHistory" aria-live="polite">正在加载…</div>
         </details>
       </section>
-      <section class="admin-card visit-range-card" aria-label="访客分布与访问记录筛选">
-        <form id="visitRangeForm" class="visit-range-form">
-          <label>时间范围（北京时间）
-            <select id="visitRange" name="range">
-              <option value="today">今天</option>
-              <option value="yesterday">昨天</option>
-              <option value="7d">近 7 天</option>
-              <option value="30d" selected>近 30 天</option>
-              <option value="custom">自定义日期</option>
-            </select>
-          </label>
-          <fieldset id="visitCustomRange" aria-label="自定义日期范围" hidden disabled>
-            <label>开始日期<input type="date" name="from" required></label>
-            <label>结束日期<input type="date" name="to" required></label>
-          </fieldset>
-          <button class="btn btn-primary" type="submit">应用筛选</button>
-        </form>
-        <p id="visitRangeStatus" class="muted" role="status">正在加载日期范围…</p>
+      <section class="admin-card visit-insights-card" aria-label="访客分布与访问记录筛选">
+        <div class="visit-filter-bar">
+          <form id="visitRangeForm" class="visit-range-form">
+            <label>时间范围
+              <select id="visitRange" name="range">
+                <option value="today">今天</option>
+                <option value="yesterday">昨天</option>
+                <option value="7d">近 7 天</option>
+                <option value="30d" selected>近 30 天</option>
+                <option value="custom">自定义日期</option>
+              </select>
+            </label>
+            <fieldset id="visitCustomRange" aria-label="自定义日期范围" hidden disabled>
+              <label>开始日期<input type="date" name="from" required></label>
+              <label>结束日期<input type="date" name="to" required></label>
+            </fieldset>
+            <button class="btn btn-primary" type="submit">应用筛选</button>
+          </form>
+          <p id="visitRangeStatus" class="muted" role="status">正在加载日期范围…</p>
+        </div>
       </section>
       <div class="overview-grid">
         <section class="admin-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>访客地区分布（Top 8）</h2>
               <p class="muted" id="visitSampleHint">按筛选范围内的访问日志聚合</p>
             </div>
@@ -148,9 +148,9 @@
         </section>
         <section class="admin-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>终端设备与浏览器分布</h2>
-              <p class="muted">设备占比按访问次数计算，访客数按各分组内的 IP 去重</p>
+              <p class="muted">设备占比按访问次数计算，访客数按各分组 IP 去重</p>
             </div>
           </div>
           <div id="visitDeviceBreakdown" class="breakdown-list" aria-live="polite">正在加载…</div>
@@ -159,7 +159,7 @@
       </div>
       <section class="admin-card visit-logs-card">
         <div class="card-head">
-          <div>
+          <div class="card-head-title">
             <h2>最近访问记录（IP · 地区 · 设备）</h2>
             <p class="muted" id="visitLogsHint">按访问时间倒序展示筛选范围内的最新 50 条</p>
           </div>
@@ -168,9 +168,9 @@
       </section>
       <section class="admin-card crawler-access-card">
         <div class="card-head">
-          <div>
+          <div class="card-head-title">
             <h2>爬虫访问与拦截</h2>
-            <p class="muted">按所选时间范围展示最新 50 条。自动拦截可识别的爬虫和采集脚本并保留记录，不自动永久封 IP。已放行的索引爬虫仍可读取公开页面；伪装成普通浏览器的请求可能识别不到。</p>
+            <p class="muted">按所选时间范围展示最新 50 条，自动拦截可识别的爬虫与采集脚本；已放行的索引爬虫仍可读取公开页面，伪装成普通浏览器的请求可能无法识别。</p>
           </div>
         </div>
         <div id="crawlerAccessLogs" class="visit-logs-wrap" aria-live="polite">正在加载…</div>
@@ -190,7 +190,7 @@
       <div class="overview-grid">
         <section class="admin-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>发卡平台系统分布</h2>
               <p class="muted">点击平台条目可直达对应店铺列表</p>
             </div>
@@ -199,7 +199,7 @@
         </section>
         <section class="admin-card">
           <div class="card-head">
-            <div>
+            <div class="card-head-title">
               <h2>热门品牌商品规模（Top 15）</h2>
               <p class="muted">按报价条目降序统计聚合规格组与最低参考价</p>
             </div>
@@ -210,49 +210,51 @@
     </div>
 
     <div class="admin-panel" id="panel-sync" hidden>
-      <section class="admin-card sync-card">
-        <p class="eyebrow">BROWSER SYNC</p>
-        <h2>店铺商品同步</h2>
-        <p class="muted">使用当前浏览器网络采集并同步。页面关闭或断网后暂停，重新打开可继续。</p>
-        <div class="sync-config">
-          <label>最小间隔（秒）<input id="syncMin" type="number" min="0.1" max="60" step="0.1" value="1"></label>
-          <label>最大间隔（秒）<input id="syncMax" type="number" min="0.1" max="60" step="0.1" value="2"></label>
-        </div>
-        <div class="sync-actions">
-          <button id="syncStart" class="btn btn-primary" type="button">开始同步</button>
-          <button id="syncResume" class="btn btn-secondary" type="button" hidden>继续上次同步</button>
-          <button id="syncStop" class="btn btn-secondary" type="button" hidden>暂停</button>
-          <button id="syncRetryFailed" class="btn btn-secondary" type="button" hidden>重试失败店铺</button>
-        </div>
-        <progress id="syncProgress" value="0" max="1"></progress>
-        <p id="syncStatus" class="muted" role="status">尚未开始</p>
-        <small class="muted">仅支持 wzyp.cn、pay.ldxp.cn、catfk.com；16688 和其他平台暂不支持浏览器直接同步。源站跨域限制或验证页面也可能导致单店失败。</small>
-        <details class="sync-history">
-          <summary>查看本次浏览器同步日志</summary>
-          <ol id="syncLog"></ol>
-        </details>
-      </section>
-      <section class="admin-card recent-runs-card">
-        <div class="card-head">
-          <div>
-            <h2>最近服务端采集批次</h2>
-            <p class="muted">展示最近 10 次定时或手动触发的服务端同步批次</p>
+      <div class="sync-workspace-grid">
+        <section class="admin-card sync-card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2>浏览器端手动同步</h2>
+              <p class="muted">使用当前浏览器网络采集并回传。页面关闭或断网后暂停，重新打开可继续。</p>
+            </div>
           </div>
-          <button id="refreshSyncRuns" class="btn btn-secondary" type="button">↻ 刷新批次</button>
-        </div>
-        <div id="recentSyncRuns" class="sync-runs-list" aria-live="polite">正在加载…</div>
-      </section>
+          <div class="sync-config">
+            <label>最小间隔（秒）<input id="syncMin" type="number" min="0.1" max="60" step="0.1" value="1"></label>
+            <label>最大间隔（秒）<input id="syncMax" type="number" min="0.1" max="60" step="0.1" value="2"></label>
+          </div>
+          <div class="sync-actions">
+            <button id="syncStart" class="btn btn-primary" type="button">开始同步</button>
+            <button id="syncResume" class="btn btn-secondary" type="button" hidden>继续上次同步</button>
+            <button id="syncStop" class="btn btn-secondary" type="button" hidden>暂停</button>
+            <button id="syncRetryFailed" class="btn btn-secondary" type="button" hidden>重试失败店铺</button>
+          </div>
+          <progress id="syncProgress" value="0" max="1"></progress>
+          <p id="syncStatus" class="muted" role="status">尚未开始</p>
+          <small class="muted">仅支持 wzyp.cn、pay.ldxp.cn、catfk.com；16688 和其他平台暂不支持浏览器直接同步。源站跨域限制或验证页面也可能导致单店失败。</small>
+          <details class="sync-history">
+            <summary>查看本次浏览器同步日志</summary>
+            <ol id="syncLog"></ol>
+          </details>
+        </section>
+        <section class="admin-card recent-runs-card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2>最近服务端采集批次</h2>
+              <p class="muted">展示最近 10 次定时或手动触发的服务端同步批次</p>
+            </div>
+            <button id="refreshSyncRuns" class="btn btn-secondary" type="button">↻ 刷新批次</button>
+          </div>
+          <div id="recentSyncRuns" class="sync-runs-list" aria-live="polite">正在加载…</div>
+        </section>
+      </div>
     </div>
 
     <div class="admin-panel" id="panel-ranking" hidden>
       <section class="admin-card ranking-card">
-        <p class="eyebrow">SHOP MANAGEMENT</p>
-        <h2>店铺管理</h2>
-        <p class="muted">搜索店铺，查看同步状态，按需编辑排名、对接码和收藏数。</p>
         <form id="searchForm" class="rank-search">
           <label class="sr-only" for="searchInput">搜索店铺</label>
-          <input id="searchInput" placeholder="输入店铺名称、网址或对接码">
-          <button class="btn btn-secondary" type="submit">搜索</button>
+          <input id="searchInput" placeholder="搜索店铺名称、网址或对接码">
+          <button class="btn btn-primary" type="submit">搜索</button>
         </form>
         <div class="rank-filters">
           <label class="rank-sort">查看顺序<select id="rankSort"><option value="manual">已设置人工排名优先</option><option value="current">前台当前排名</option><option value="synced">最近同步优先</option><option value="stale">最久未同步优先</option><option value="favorites">收藏数从高到低</option><option value="sales">店铺销量从高到低</option><option value="products">收录商品从多到少</option><option value="products-asc">收录商品从少到多</option><option value="newest">最新收录优先</option><option value="failures">同步失败优先</option></select></label>
@@ -273,54 +275,67 @@
     </div>
 
     <div class="admin-panel" id="panel-sponsors" hidden>
-      <section class="admin-card sponsor-settings" aria-labelledby="sponsorEnabledLabel">
-        <label class="toggle-row sponsor-toggle-row" for="sponsorEnabled">
-          <span class="sponsor-toggle-copy"><strong id="sponsorEnabledLabel">启用赞助推广</strong><small id="sponsorEnabledHint">关闭后隐藏前台并暂停投稿，有效期照常计算。</small></span>
-          <span id="sponsorEnabledStatus" class="sponsor-status" role="status">加载中</span>
-          <input id="sponsorEnabled" type="checkbox" role="switch" disabled aria-labelledby="sponsorEnabledLabel" aria-describedby="sponsorEnabledHint sponsorEnabledStatus">
-        </label>
-        <label class="toggle-row sponsor-toggle-row" for="sponsorAutoApprove">
-          <span class="sponsor-toggle-copy"><strong id="sponsorAutoApproveLabel">自动审批</strong><small id="sponsorAutoApproveHint">开启后新投稿自动通过。轮播已满的投稿仍需手动审批。</small></span>
-          <span id="sponsorAutoApproveStatus" class="sponsor-status" role="status">加载中</span>
-          <input id="sponsorAutoApprove" type="checkbox" role="switch" disabled aria-labelledby="sponsorAutoApproveLabel" aria-describedby="sponsorAutoApproveHint sponsorAutoApproveStatus">
-        </label>
-      </section>
-      <section class="admin-card">
-        <h2>批量生成赞助授权码</h2>
-        <p class="muted">授权码一次性使用，完整码只在生成时显示。顶部轮播限 4 张，固定位可接收多条推广并上下轮动。</p>
-        <div id="sponsorCapacity" class="sponsor-capacity" role="status" aria-label="赞助投放数量"></div>
-        <form id="sponsorGenerateForm">
-          <label>生成数量<input name="quantity" type="number" min="1" max="50" value="1" required></label>
-          <label>有效时长<input name="duration" type="number" min="1" max="365" value="30" required></label>
-          <label>单位<select name="unit"><option value="days">天</option><option value="months">自然月</option></select></label>
-          <label class="sponsor-placement-field">投放位置<select name="placement">
-            <option value="choose">投稿人选择轮播或固定</option>
-            <option value="carousel">顶部轮播（最多 4 张）</option><option value="fixed-1">固定位 1</option>
-            <option value="fixed-2">固定位 2</option><option value="fixed-3">固定位 3</option><option value="fixed-4">固定位 4</option>
-          </select></label>
-          <button type="submit" class="btn btn-primary">生成授权码</button>
-        </form>
-        <div id="sponsorGenerated" hidden>
-          <div class="sponsor-card-heading">
-            <label for="sponsorCodesOutput">本次生成 · 请复制保存</label>
-            <button type="button" class="btn btn-secondary" id="sponsorCopyBtn">复制全部授权码</button>
+      <div class="sponsor-top-grid">
+        <section class="admin-card sponsor-settings" aria-labelledby="sponsorEnabledLabel">
+          <h2>展示与审批开关</h2>
+          <label class="toggle-row sponsor-toggle-row" for="sponsorEnabled">
+            <span class="sponsor-toggle-copy"><strong id="sponsorEnabledLabel">启用赞助推广</strong><small id="sponsorEnabledHint">关闭后隐藏前台并暂停投稿，有效期照常计算。</small></span>
+            <span class="sponsor-toggle-controls">
+              <span id="sponsorEnabledStatus" class="sponsor-status" role="status">加载中</span>
+              <input id="sponsorEnabled" type="checkbox" role="switch" disabled aria-labelledby="sponsorEnabledLabel" aria-describedby="sponsorEnabledHint sponsorEnabledStatus">
+            </span>
+          </label>
+          <label class="toggle-row sponsor-toggle-row" for="sponsorAutoApprove">
+            <span class="sponsor-toggle-copy"><strong id="sponsorAutoApproveLabel">自动审批</strong><small id="sponsorAutoApproveHint">开启后新投稿自动通过。轮播已满的投稿仍需手动审批。</small></span>
+            <span class="sponsor-toggle-controls">
+              <span id="sponsorAutoApproveStatus" class="sponsor-status" role="status">加载中</span>
+              <input id="sponsorAutoApprove" type="checkbox" role="switch" disabled aria-labelledby="sponsorAutoApproveLabel" aria-describedby="sponsorAutoApproveHint sponsorAutoApproveStatus">
+            </span>
+          </label>
+          <div class="sponsor-capacity-wrap">
+            <p class="muted">当前投放位占用情况（轮播限 4 张）</p>
+            <div id="sponsorCapacity" class="sponsor-capacity" role="status" aria-label="赞助投放数量"></div>
           </div>
-          <textarea id="sponsorCodesOutput" rows="3" readonly aria-label="本次生成的完整授权码"></textarea>
-        </div>
-      </section>
-      <section class="admin-card">
+        </section>
+        <section class="admin-card sponsor-generate-card">
+          <h2>批量生成赞助授权码</h2>
+          <p class="muted">授权码一次性使用，完整码只在生成时显示；固定位支持多条推广上下轮播。</p>
+          <form id="sponsorGenerateForm">
+            <label>生成数量<input name="quantity" type="number" min="1" max="50" value="1" required></label>
+            <label>有效时长<input name="duration" type="number" min="1" max="365" value="30" required></label>
+            <label>单位<select name="unit"><option value="days">天</option><option value="months">自然月</option></select></label>
+            <label class="sponsor-placement-field">投放位置<select name="placement">
+              <option value="choose">投稿人选择轮播或固定</option>
+              <option value="carousel">顶部轮播（最多 4 张）</option><option value="fixed-1">固定位 1</option>
+              <option value="fixed-2">固定位 2</option><option value="fixed-3">固定位 3</option><option value="fixed-4">固定位 4</option>
+            </select></label>
+            <button type="submit" class="btn btn-primary">生成授权码</button>
+          </form>
+          <div id="sponsorGenerated" hidden>
+            <div class="sponsor-card-heading">
+              <label for="sponsorCodesOutput">本次生成 · 请复制保存</label>
+              <button type="button" class="btn btn-secondary" id="sponsorCopyBtn">复制全部授权码</button>
+            </div>
+            <textarea id="sponsorCodesOutput" rows="3" readonly aria-label="本次生成的完整授权码"></textarea>
+          </div>
+        </section>
+      </div>
+      <section class="admin-card sponsor-list-card">
         <div class="sponsor-card-heading">
-          <h2>审批与授权码管理</h2>
+          <div>
+            <h2>审批与授权码管理</h2>
+            <p class="muted">支持按状态筛选、预览投稿素材并完成审批、编辑或作废</p>
+          </div>
           <div class="sponsor-admin-controls">
             <select id="sponsorStatusFilter" aria-label="按状态筛选授权码">
               <option value="all">全部状态</option><option value="pending">待审批</option><option value="rejected">已驳回</option>
               <option value="unused">未使用</option><option value="active">已使用 · 有效</option>
               <option value="expired">已到期</option><option value="revoked">已作废</option>
             </select>
-            <button type="button" id="sponsorRefreshBtn" class="btn btn-secondary">刷新</button>
+            <button type="button" id="sponsorRefreshBtn" class="btn btn-secondary">↻ 刷新</button>
           </div>
         </div>
-        <div id="sponsorAdminRows" class="visit-logs-wrap" role="region" aria-label="授权码列表" aria-live="polite" tabindex="0"></div>
+        <div id="sponsorAdminRows" class="sponsor-records-list" role="region" aria-label="授权码列表" aria-live="polite" tabindex="0"></div>
         <div class="sponsor-admin-controls sponsor-pagination">
           <button type="button" class="btn btn-secondary" id="sponsorPreviousBtn" disabled>上一页</button>
           <span id="sponsorAdminPage" class="muted">第 1 页</span>
@@ -358,59 +373,95 @@
     </div>
 
     <div class="admin-panel" id="panel-settings" hidden>
-      <section class="admin-card">
-        <p class="eyebrow">SITE SETTINGS</p>
-        <h2>站点设置</h2>
-        <p class="muted">调整后对所有访问者生效。</p>
-        <form id="settingsForm">
-          <label class="toggle-row"><span><strong>记录店铺收藏</strong><small>关闭后保留已有统计，本地收藏仍可使用</small></span><input name="favoritesEnabled" type="checkbox"></label>
-          <label class="toggle-row"><span><strong>启用人工排名</strong><small>已设置排名的店铺优先展示</small></span><input name="manualRankEnabled" type="checkbox"></label>
-          <label class="toggle-row"><span><strong>接受新店提交</strong><small>关闭后不影响已收录店铺</small></span><input name="submissionsEnabled" type="checkbox"></label>
-          <label>联动小铺开店地址（默认入口）<input name="openStoreUrl" type="url" maxlength="2048" required></label>
-          <p class="muted">其他店铺类型可单独填写注册地址，留空则不显示该类型的开店入口。</p>
-          <label>云猫寄售注册地址<input name="store_catfk" type="url" maxlength="2048" placeholder="未配置"></label>
-          <label>16688 交易平台注册地址<input name="store_16688" type="url" maxlength="2048" placeholder="未配置"></label>
-          <label>二次元发卡注册地址<input name="store_acg-faka" type="url" maxlength="2048" placeholder="未配置"></label>
-          <label>独角数卡注册地址<input name="store_dujiaoka" type="url" maxlength="2048" placeholder="未配置"></label>
-          <label>其它平台注册地址<input name="store_other" type="url" maxlength="2048" placeholder="未配置"></label>
-          <label>第三方自建站注册地址<input name="store_unknown" type="url" maxlength="2048" placeholder="未配置"></label>
-          <div id="settingsSaveHint" class="save-hint" aria-live="polite"></div>
-          <button class="btn btn-primary" type="submit">保存站点设置</button>
-        </form>
-      </section>
-      <section class="admin-card" aria-labelledby="aiSettingsTitle">
-        <p class="eyebrow">AI ASSISTANT</p>
-        <h2 id="aiSettingsTitle">AI 助手模型</h2>
-        <p class="muted">配置 OpenAI 兼容接口后，悬浮助手在知识库无法回答时会调用模型；留空则只使用内置规则回答，不产生任何费用。</p>
-        <form id="aiSettingsForm">
-          <label>接口地址（Base URL）<input name="aiApiBase" type="url" maxlength="2048" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
-          <label>模型名称<input name="aiModel" type="text" maxlength="128" autocomplete="off" placeholder="例如 doubao-seed-1-6-flash"></label>
-          <label>API Key<input name="aiApiKey" type="password" maxlength="512" autocomplete="new-password" placeholder="留空表示不修改"></label>
-          <p class="muted" id="aiKeyHint">尚未配置 API Key，助手只使用内置规则回答。</p>
-          <label class="toggle-row"><span><strong>清除已保存的 API Key</strong><small>勾选后保存会删除密钥并停用模型</small></span><input name="clearAiApiKey" type="checkbox"></label>
-          <div id="aiSettingsHint" class="save-hint" aria-live="polite"></div>
-          <button class="btn btn-primary" type="submit">保存模型配置</button>
-        </form>
-      </section>
+      <div class="settings-layout-grid">
+        <section class="admin-card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2>功能开关与开店入口</h2>
+              <p class="muted">调整后立即对所有前台访问者生效</p>
+            </div>
+          </div>
+          <form id="settingsForm">
+            <div class="settings-toggles">
+              <label class="toggle-row"><span><strong>记录店铺收藏</strong><small>关闭后保留已有统计，本地收藏仍可使用</small></span><input name="favoritesEnabled" type="checkbox"></label>
+              <label class="toggle-row"><span><strong>启用人工排名</strong><small>已设置排名的店铺优先展示</small></span><input name="manualRankEnabled" type="checkbox"></label>
+              <label class="toggle-row"><span><strong>接受新店提交</strong><small>关闭后不影响已收录店铺</small></span><input name="submissionsEnabled" type="checkbox"></label>
+            </div>
+            <div class="settings-url-group">
+              <label>联动小铺开店地址（默认入口）<input name="openStoreUrl" type="url" maxlength="2048" required></label>
+              <p class="muted settings-url-hint">其他店铺类型可单独配置注册地址，留空则不显示该类型的开店入口。</p>
+              <div class="settings-url-grid">
+                <label>云猫寄售注册地址<input name="store_catfk" type="url" maxlength="2048" placeholder="未配置"></label>
+                <label>16688 交易平台注册地址<input name="store_16688" type="url" maxlength="2048" placeholder="未配置"></label>
+                <label>二次元发卡注册地址<input name="store_acg-faka" type="url" maxlength="2048" placeholder="未配置"></label>
+                <label>独角数卡注册地址<input name="store_dujiaoka" type="url" maxlength="2048" placeholder="未配置"></label>
+                <label>其它平台注册地址<input name="store_other" type="url" maxlength="2048" placeholder="未配置"></label>
+                <label>第三方自建站注册地址<input name="store_unknown" type="url" maxlength="2048" placeholder="未配置"></label>
+              </div>
+            </div>
+            <div class="form-submit-row">
+              <div id="settingsSaveHint" class="save-hint" aria-live="polite"></div>
+              <button class="btn btn-primary" type="submit">保存站点设置</button>
+            </div>
+          </form>
+        </section>
+        <section class="admin-card" aria-labelledby="aiSettingsTitle">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2 id="aiSettingsTitle">AI 助手模型</h2>
+              <p class="muted">配置 OpenAI 兼容接口后，悬浮助手在知识库无法回答时会调用模型；留空则仅使用内置规则回答。</p>
+            </div>
+          </div>
+          <form id="aiSettingsForm">
+            <label>接口地址（Base URL）<input name="aiApiBase" type="url" maxlength="2048" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
+            <label>模型名称<input name="aiModel" type="text" maxlength="128" autocomplete="off" placeholder="例如 doubao-seed-1-6-flash"></label>
+            <label>API Key<input name="aiApiKey" type="password" maxlength="512" autocomplete="new-password" placeholder="留空表示不修改"></label>
+            <p class="muted ai-key-status" id="aiKeyHint">尚未配置 API Key，助手只使用内置规则回答。</p>
+            <label class="toggle-row"><span><strong>清除已保存的 API Key</strong><small>勾选后保存会删除密钥并停用模型</small></span><input name="clearAiApiKey" type="checkbox"></label>
+            <div class="form-submit-row">
+              <div id="aiSettingsHint" class="save-hint" aria-live="polite"></div>
+              <button class="btn btn-primary" type="submit">保存模型配置</button>
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
 
     <div class="admin-panel" id="panel-security" hidden>
-      <section class="admin-card">
-        <p class="eyebrow">SECURITY</p>
-        <h2>安全设置</h2>
-        <p class="muted">密钥只可修改，不会在页面显示。</p>
-        <form id="secretForm">
-          <label>新同步密钥<input name="secret" type="password" minlength="24" maxlength="256" autocomplete="new-password" required></label>
-          <button class="btn btn-secondary" type="submit">更新同步密钥</button>
-          <small class="muted">更新后，请同步修改所有执行同步的工具配置。</small>
-        </form>
-        <hr>
-        <form id="passwordForm">
-          <label>当前密码<input name="oldPassword" type="password" autocomplete="current-password" required></label>
-          <label>新密码<input name="newPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
-          <button class="btn btn-secondary" type="submit">修改登录密码</button>
-        </form>
-      </section>
+      <div class="security-layout-grid">
+        <section class="admin-card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2>同步密钥</h2>
+              <p class="muted">用于本地同步脚本与采集推送接口鉴权，密钥只可修改，不会在页面回显。</p>
+            </div>
+          </div>
+          <form id="secretForm">
+            <label>新同步密钥（24–256 位）<input name="secret" type="password" minlength="24" maxlength="256" autocomplete="new-password" placeholder="输入新的同步密钥" required></label>
+            <small class="muted">更新后，请同步修改所有执行同步的工具和环境变量配置。</small>
+            <div class="form-submit-row">
+              <span></span>
+              <button class="btn btn-primary" type="submit">更新同步密钥</button>
+            </div>
+          </form>
+        </section>
+        <section class="admin-card">
+          <div class="card-head">
+            <div class="card-head-title">
+              <h2>管理员登录密码</h2>
+              <p class="muted">修改后当前登录会话将失效，需使用新密码重新登录后台。</p>
+            </div>
+          </div>
+          <form id="passwordForm">
+            <label>当前密码<input name="oldPassword" type="password" autocomplete="current-password" required></label>
+            <label>新密码（12–256 位）<input name="newPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label>
+            <div class="form-submit-row">
+              <span></span>
+              <button class="btn btn-primary" type="submit">修改登录密码</button>
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
   </main>
 </div>

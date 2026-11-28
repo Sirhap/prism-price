@@ -1,0 +1,1219 @@
+const $ = (s) => document.querySelector(s);
+const notice = $('#notice');
+let noticeTimer, settingsDirty = false;
+const panelMeta = {
+  overview: ['工作台', '全站核心运行概览'],
+  visits: ['流量访客', '访问趋势、地域设备分布与近期明细'],
+  catalog: ['平台与品牌', '发卡平台架构分布与热门品牌商品规模'],
+  sync: ['商品同步', '浏览器端手动同步与服务端采集批次记录'],
+  ranking: ['店铺管理', '查看同步状态、管理店铺与排名'],
+  sponsors: ['赞助推广', '生成一次性赞助授权码，查看有效期并管理投放'],
+  settings: ['站点设置', '管理收藏、收录与开店入口'],
+  security: ['安全设置', '管理密码与同步凭据'],
+};
+// 侧栏分组：同组页面在页头下方以页签切换，面板 key 与 URL hash 保持不变
+const panelGroups = {
+  overview: { label: '工作台', panels: ['overview'] },
+  analytics: { label: '数据分析', panels: ['visits', 'catalog'] },
+  shops: { label: '店铺与同步', panels: ['ranking', 'sync'] },
+  sponsors: { label: '赞助推广', panels: ['sponsors'] },
+  system: { label: '系统设置', panels: ['settings', 'security'] },
+};
+const panelTabLabels = { visits: '流量访客', catalog: '平台与品牌', ranking: '店铺管理', sync: '商品同步', settings: '站点设置', security: '安全设置' };
+const groupOfPanel = key => Object.keys(panelGroups).find(group => panelGroups[group].panels.includes(key)) || 'overview';
+function renderPanelTabs(group, key) {
+  const tabs = $('#panelTabs'), { panels } = panelGroups[group];
+  tabs.hidden = panels.length < 2;
+  tabs.replaceChildren(...(panels.length < 2 ? [] : panels.map(panel => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'panel-tab';
+    tab.dataset.panel = panel;
+    tab.textContent = panelTabLabels[panel];
+    if (panel === key) tab.setAttribute('aria-current', 'page');
+    return tab;
+  })));
+}
+const panelLoaded = { overview: false, visits: false, catalog: false, sync: false };
+let activePanel = 'overview';
+let visitRangeQuery = '';
+let visitLoading = null;
+let appliedVisitRange;
+
+function message(text, error = false) { clearTimeout(noticeTimer); notice.textContent=text;notice.dataset.error=String(error);notice.hidden=false; if(!error) noticeTimer=setTimeout(()=>notice.hidden=true,4500); }
+function ensurePanelData(key) {
+  if (key === 'visits' && !panelLoaded.visits) loadVisits().catch(err => message(err.message, true));
+  else if (key === 'catalog' && !panelLoaded.catalog) loadCatalog().catch(err => message(err.message, true));
+  else if (key === 'sync' && !panelLoaded.sync) loadSyncRuns().catch(err => message(err.message, true));
+  else if (key === 'sponsors') loadSponsors().catch(err => message(err.message, true));
+}
+function selectPanel(key) {
+  if (!panelMeta[key]) key = 'overview';
+  activePanel = key;
+  document.querySelectorAll('.admin-panel').forEach(panel => panel.hidden = panel.id !== `panel-${key}`);
+  const group = groupOfPanel(key);
+  document.querySelectorAll('.admin-nav-item').forEach(button => {
+    if (button.dataset.group === group) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  renderPanelTabs(group, key);
+  const groupLabel = panelGroups[group].label;
+  $('#panelEyebrow').textContent = groupLabel === panelMeta[key][0] ? 'PRISM / 管理控制台' : groupLabel;
+  $('#panelTitle').textContent = panelMeta[key][0];
+  $('#panelDescription').textContent = panelMeta[key][1];
+  history.replaceState(null, '', `#${key}`);
+  if (!$('#dashboard').hidden) ensurePanelData(key);
+}
+document.addEventListener('click',e=>{const button=e.target.closest('[data-panel]');if(button)selectPanel(button.dataset.panel);});
+window.addEventListener('hashchange',()=>selectPanel(location.hash.slice(1)));
+async function api(path,data) {
+  const options = { cache: 'no-store' };
+  if (data !== undefined) {
+    options.method = 'POST';
+    if (data instanceof FormData) options.body = data;
+    else {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(data);
+    }
+  }
+  const res=await fetch(path,options);
+  const result=await res.json();if(!res.ok)throw new Error(result.error||'请求失败');return result;
+}
+function submitForm(selector,action) {
+  $(selector).addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button[type=submit]');if(button.disabled)return;const label=button.textContent;button.disabled=true;button.textContent='处理中…';form.setAttribute('aria-busy','true');try{await action(form);}catch(err){message(err.message,true);}finally{button.textContent=label;button.disabled=false;form.removeAttribute('aria-busy');}});
+}
+let page=1,pages=1,query='',listRequest=0;
+function setDirty(value) {settingsDirty=value;$('#settingsSaveHint').textContent=value?'有未保存的修改':'设置已与服务器同步';}
+async function loadSettings() {
+  const data=await api('/api/control/settings'), f=$('#settingsForm');
+  for(const k of ['favoritesEnabled','manualRankEnabled','submissionsEnabled'])f.elements[k].checked=data[k];
+  f.elements.openStoreUrl.value=data.openStoreUrl; for(const key of ['catfk','16688','acg-faka','dujiaoka','other','unknown'])f.elements[`store_${key}`].value=data.openStoreUrls?.[key] || '';setDirty(false);updateMetrics(data);
+  const af=$('#aiSettingsForm');
+  if(af){af.elements.aiApiBase.value=data.aiApiBase || '';af.elements.aiModel.value=data.aiModel || '';af.elements.aiApiKey.value='';af.elements.clearAiApiKey.checked=false;syncAiKeyHint(!!data.aiApiKeyConfigured,!!data.aiReady);}
+}
+function syncAiKeyHint(configured,ready){const hint=$('#aiKeyHint');if(!hint)return;if(ready)hint.textContent='已启用：助手会调用该模型回答开放式问题。';else if(configured)hint.textContent='已保存 API Key，但接口地址或模型为空，模型尚未启用。';else hint.textContent='尚未配置 API Key，助手只使用内置规则回答。';}
+function formatBjTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+}
+function fillRecentDays(days, todayStr) {
+  const map = new Map((days || []).map(item => [
+    item.day,
+    {
+      pageViews: Number(item.pageViews ?? item.page_views ?? 0),
+      uniqueVisitors: Number(item.uniqueVisitors ?? item.unique_visitors ?? 0),
+    },
+  ]));
+  const base = todayStr ? new Date(`${todayStr}T00:00:00Z`) : new Date(Date.now() + 8 * 3600000);
+  const list = [];
+  for (let i = 29; i >= 0; i--) {
+    const day = new Date(base.getTime() - i * 86400000).toISOString().slice(0, 10);
+    const entry = map.get(day);
+    list.push({
+      day,
+      pageViews: entry?.pageViews || 0,
+      uniqueVisitors: entry?.uniqueVisitors || 0,
+      isToday: day === todayStr,
+    });
+  }
+  return list;
+}
+function jumpToRanking({ filter = 'all', sync = 'all', stock = 'all', system = 'all' } = {}) {
+  if ($('#searchInput')) $('#searchInput').value = '';
+  query = '';
+  if ($('#rankFilter')) $('#rankFilter').value = filter;
+  if ($('#rankSyncFilter')) $('#rankSyncFilter').value = sync;
+  if ($('#rankStockFilter')) $('#rankStockFilter').value = stock;
+  if ($('#rankSystemFilter')) $('#rankSystemFilter').value = system;
+  page = 1;
+  selectPanel('ranking');
+  loadShops().catch(err => message(err.message, true));
+}
+function renderMiniStats(container, items, extraClass = '') {
+  if (!container) return;
+  container.replaceChildren();
+  for (const [label, value, sub] of items) {
+    const chip = document.createElement('div');
+    chip.className = extraClass ? `mini-stat ${extraClass}` : 'mini-stat';
+    const k = document.createElement('small');
+    k.textContent = label;
+    const v = document.createElement('strong');
+    v.textContent = value;
+    chip.append(k, v);
+    if (sub) {
+      const subEl = document.createElement('span');
+      subEl.className = 'mini-stat-sub';
+      subEl.textContent = sub;
+      chip.append(subEl);
+    }
+    container.append(chip);
+  }
+}
+function renderTrendBars(container, days, todayStr) {
+  if (!container) return;
+  container.replaceChildren();
+  const series = fillRecentDays(days || [], todayStr);
+  const maxViews = Math.max(1, ...series.map(item => item.pageViews));
+  for (const item of series) {
+    const barWrap = document.createElement('div');
+    barWrap.className = `trend-bar${item.isToday ? ' is-today' : ''}${item.pageViews === 0 ? ' is-zero' : ''}`;
+    const tip = `${item.day}：实际 ${item.uniqueVisitors.toLocaleString()} 人（IP 去重） · ${item.pageViews.toLocaleString()} 次访问`;
+    barWrap.title = tip;
+    barWrap.setAttribute('aria-label', tip);
+    const bar = document.createElement('span');
+    bar.className = 'trend-bar-fill';
+    const pct = item.pageViews > 0 ? Math.max(8, Math.round((item.pageViews / maxViews) * 100)) : 4;
+    bar.style.height = `${pct}%`;
+    const dayLabel = document.createElement('small');
+    dayLabel.textContent = item.isToday ? '今' : item.day.slice(8);
+    barWrap.append(bar, dayLabel);
+    container.append(barWrap);
+  }
+}
+function renderVisitLogs(logs) {
+  const wrap = $('#visitRecentLogs');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  if (!logs || !logs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '所选日期内暂无访问明细';
+    wrap.append(empty);
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'visit-logs-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const title of ['访问时间（北京时间）', 'IP 地址', '地区', '设备终端']) {
+    const th = document.createElement('th');
+    th.textContent = title;
+    headRow.append(th);
+  }
+  thead.append(headRow);
+  const tbody = document.createElement('tbody');
+  for (const log of logs) {
+    const tr = document.createElement('tr');
+    const tdTime = document.createElement('td');
+    tdTime.textContent = formatBjTime(log.visitedAt);
+    const tdIp = document.createElement('td');
+    const code = document.createElement('code');
+    code.textContent = log.ip || 'unknown';
+    tdIp.append(code);
+    const tdLoc = document.createElement('td');
+    tdLoc.textContent = log.location || '未知地区';
+    const tdDev = document.createElement('td');
+    tdDev.textContent = [log.device, log.os, log.browser].filter(Boolean).join(' · ') || '未知设备';
+    tr.append(tdTime, tdIp, tdLoc, tdDev);
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+}
+
+function renderCrawlerAccess(access) {
+  const logs = $('#crawlerAccessLogs');
+  const blocklist = $('#crawlerBlocklist');
+  logs.replaceChildren();
+  blocklist.replaceChildren();
+  const showEmpty = (container, text) => {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = text;
+    container.append(empty);
+  };
+  const blockButton = (ip, blocked) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-secondary';
+    button.textContent = blocked ? '解除拉黑' : '拉黑 IP';
+    button.setAttribute('aria-label', `${button.textContent} ${ip}`);
+    button.addEventListener('click', async () => {
+      if (!blocked && !confirm(`拉黑 ${ip}？该 IP 上的所有客户端将无法访问公开页面和公开 API。`)) return;
+      button.disabled = true;
+      try {
+        await api('/api/control/crawler-block', { ip, blocked: !blocked });
+        await loadVisits(visitRangeQuery, true);
+        message(blocked ? `已解除 ${ip} 的手动拉黑，自动拦截仍生效` : `已手动拉黑 ${ip}`);
+      } catch (err) {
+        message(err.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
+  };
+  $('#crawlerBlocklistTitle').textContent = `手动 IP 黑名单（${access?.blocklist.length || 0}）`;
+  if (!access?.available) {
+    showEmpty(logs, '爬虫记录暂不可用，请先应用数据库迁移。');
+    return;
+  }
+  if (!access.logs.length) {
+    showEmpty(logs, '所选日期内暂无爬虫访问或拦截记录');
+  } else {
+    const table = document.createElement('table');
+    table.className = 'visit-logs-table';
+    const head = table.createTHead().insertRow();
+    for (const title of ['访问时间（北京时间）', 'IP 地址', '请求', '客户端标识', '处理结果', '操作']) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = title;
+      head.append(cell);
+    }
+    const body = table.createTBody();
+    for (const log of access.logs) {
+      const row = body.insertRow();
+      row.insertCell().textContent = formatBjTime(log.visitedAt);
+      const ipCell = row.insertCell();
+      if (log.ip) {
+        const ipCode = document.createElement('code');
+        ipCode.textContent = log.ip;
+        ipCell.append(ipCode);
+      } else {
+        ipCell.textContent = '未知 IP';
+      }
+      row.insertCell().textContent = `${log.method} ${log.path}`;
+      const agent = row.insertCell();
+      agent.className = 'crawler-agent';
+      agent.textContent = log.userAgent || '未提供';
+      row.insertCell().textContent = log.blocked ? '已拦截（500）' : '未拦截';
+      const action = row.insertCell();
+      if (log.ip) action.append(blockButton(log.ip, log.isBlocked));
+    }
+    logs.append(table);
+  }
+  if (!access.blocklist.length) showEmpty(blocklist, '暂无手动拉黑的 IP');
+  for (const entry of access.blocklist) {
+    const row = document.createElement('div');
+    row.className = 'visit-row';
+    const label = document.createElement('span');
+    label.textContent = `${entry.ip} · ${formatBjTime(entry.blockedAt)}`;
+    row.append(label, blockButton(entry.ip, true));
+    blocklist.append(row);
+  }
+}
+function renderBreakdownRow({ label, countText, ratio, tone = 'indigo', subText = '', onClick }) {
+  const row = document.createElement(onClick ? 'button' : 'div');
+  if (onClick) row.type = 'button';
+  row.className = `breakdown-row tone-${tone}${onClick ? ' is-clickable' : ''}`;
+  const head = document.createElement('div');
+  head.className = 'breakdown-head';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'breakdown-label';
+  nameEl.textContent = label;
+  const valEl = document.createElement('strong');
+  valEl.className = 'breakdown-value';
+  valEl.textContent = countText;
+  head.append(nameEl, valEl);
+  const track = document.createElement('div');
+  track.className = 'breakdown-track';
+  const fill = document.createElement('span');
+  fill.className = 'breakdown-fill';
+  fill.style.width = `${Math.max(ratio > 0 ? 3 : 0, Math.min(100, ratio))}%`;
+  track.append(fill);
+  row.append(head, track);
+  if (subText) {
+    const sub = document.createElement('small');
+    sub.className = 'breakdown-sub';
+    sub.textContent = subText;
+    row.append(sub);
+  }
+  if (onClick) row.addEventListener('click', onClick);
+  return row;
+}
+function renderShareBreakdown(container, items, total, tone, emptyText) {
+  if (!container) return;
+  container.replaceChildren();
+  if (!items || !items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = emptyText;
+    container.append(empty);
+    return;
+  }
+  const denom = Math.max(1, total || items.reduce((s, i) => s + Number(i.count || 0), 0));
+  for (const item of items) {
+    const count = Number(item.count || 0);
+    const pct = Math.round((count / denom) * 1000) / 10;
+    const hasUv = item.uniqueVisitors !== undefined && item.uniqueVisitors !== null;
+    const uvText = hasUv ? `${Number(item.uniqueVisitors || 0).toLocaleString()} 人 · ` : '';
+    container.append(renderBreakdownRow({
+      label: item.label,
+      countText: `${uvText}${count.toLocaleString()} 次 (${pct}%)`,
+      ratio: pct,
+      tone,
+    }));
+  }
+}
+function renderVisitsPanel(visits) {
+  const todayViews = Number(visits?.todayViews || 0);
+  const yesterdayViews = Number(visits?.yesterdayViews || 0);
+  const last7 = Number(visits?.last7DaysViews || 0);
+  const last30 = Number(visits?.last30DaysViews || 0);
+  const avg = Number(visits?.avgDailyViews || 0);
+  const peakText = visits?.peakDay ? `${visits.peakDay.day.slice(5)} (${Number(visits.peakDay.pageViews).toLocaleString()})` : '—';
+
+  const todayVisitors = Number(visits?.todayVisitors || 0);
+  const yesterdayVisitors = Number(visits?.yesterdayVisitors || 0);
+  const last7Visitors = Number(visits?.last7DaysVisitors || 0);
+  const last30Visitors = Number(visits?.last30DaysVisitors || 0);
+  const avgVisitors = Number(visits?.avgDailyVisitors || 0);
+  const peakVisitorsText = visits?.peakVisitorsDay
+    ? `${visits.peakVisitorsDay.day.slice(5)} (${Number(visits.peakVisitorsDay.uniqueVisitors).toLocaleString()} 人)`
+    : '—';
+
+  renderMiniStats($('#visitUniqueStats'), [
+    ['今日实际访客', `${todayVisitors.toLocaleString()} 人`, `访问 ${todayViews.toLocaleString()} 次`],
+    ['昨日实际访客', `${yesterdayVisitors.toLocaleString()} 人`, `访问 ${yesterdayViews.toLocaleString()} 次`],
+    ['近 7 天实际访客', `${last7Visitors.toLocaleString()} 人`, `累计访问 ${last7.toLocaleString()} 次`],
+    ['近 30 天实际访客', `${last30Visitors.toLocaleString()} 人`, `累计访问 ${last30.toLocaleString()} 次`],
+  ], 'is-uv');
+
+  const summaryStrip = $('#visitSummaryStats');
+  if (summaryStrip) {
+    summaryStrip.replaceChildren();
+    for (const [label, value] of [
+      ['日均实访', `${avgVisitors.toLocaleString()} 人`],
+      ['日均访问', `${avg.toLocaleString()} 次`],
+      ['实访峰值', peakVisitorsText],
+      ['访问峰值', peakText],
+    ]) {
+      const item = document.createElement('span');
+      const k = document.createElement('span');
+      k.textContent = `${label}：`;
+      const v = document.createElement('strong');
+      v.textContent = value;
+      item.append(k, v);
+      summaryStrip.append(item);
+    }
+  }
+
+  renderTrendBars($('#visitTrendChart'), visits?.days || [], visits?.today);
+
+  const sampleTotal = Number(visits?.sampleTotal || 0);
+  const uniqueIpCount = Number(visits?.uniqueIpCount || 0);
+  const { from, to } = visits.insightRange;
+  $('#visitRangeStatus').textContent = `当前范围：${from === to ? from : `${from} 至 ${to}`}`;
+  $('#visitSampleHint').textContent = `${sampleTotal.toLocaleString()} 条访问日志 · ${uniqueIpCount.toLocaleString()} 个独立 IP · 占比按访问次数计算`;
+  renderShareBreakdown($('#visitGeoBreakdown'), visits?.geoBreakdown || [], sampleTotal, 'indigo', '暂无来访地区数据');
+  renderShareBreakdown($('#visitDeviceBreakdown'), visits?.deviceBreakdown || [], sampleTotal, 'emerald', '暂无设备终端数据');
+
+  const browserEl = $('#visitBrowserBreakdown');
+  if (browserEl) {
+    browserEl.replaceChildren();
+    for (const item of visits?.browserBreakdown || []) {
+      const chip = document.createElement('span');
+      chip.className = 'sub-chip';
+      const uv = Number(item.uniqueVisitors || 0);
+      chip.textContent = `${item.label} · ${uv.toLocaleString()} 人 / ${Number(item.count || 0).toLocaleString()} 次`;
+      browserEl.append(chip);
+    }
+  }
+
+  renderVisitLogs(visits?.recentLogs || []);
+  $('#visitLogsHint').textContent = `显示 ${(visits.recentLogs?.length || 0).toLocaleString()} / ${sampleTotal.toLocaleString()} 条 · 按时间倒序，最多 50 条`;
+  renderCrawlerAccess(visits.crawlerAccess);
+
+  const list = $('#visitHistory');
+  if (list) {
+    list.replaceChildren();
+    const rawDays = visits?.days || [];
+    if (!rawDays.length) {
+      list.textContent = '暂无按日访问计数';
+    } else {
+      for (const item of rawDays) {
+        const row = document.createElement('div');
+        row.className = 'visit-row';
+        const day = document.createElement('span');
+        day.textContent = item.day;
+        const count = document.createElement('strong');
+        const uv = Number(item.uniqueVisitors ?? item.unique_visitors ?? 0);
+        const pv = Number(item.pageViews ?? item.page_views ?? 0);
+        count.textContent = `实际 ${uv.toLocaleString()} 人 · ${pv.toLocaleString()} 次`;
+        row.append(day, count);
+        list.append(row);
+      }
+    }
+  }
+}
+function renderCatalogPanel(data) {
+  const totalShops = Number(data?.totalShops || 0);
+  const catalog = data?.catalog || {};
+  const minPrice = catalog.minPrice != null ? `¥${catalog.minPrice}` : '—';
+  const avgPrice = catalog.avgMinPrice != null ? `¥${catalog.avgMinPrice}` : '—';
+
+  renderMiniStats($('#catalogSummaryStats'), [
+    ['聚合规格组', `${Number(catalog.groupCount || 0).toLocaleString()} 组`],
+    ['在售商品报价', `${Number(catalog.offerCount || 0).toLocaleString()} 条`],
+    ['低库存规格', `${Number(catalog.lowStockGroups || 0).toLocaleString()} 组`],
+    ['最低参考价 / 均价', `${minPrice} / ${avgPrice}`],
+  ]);
+
+  const systemEl = $('#systemBreakdown');
+  if (systemEl) {
+    systemEl.replaceChildren();
+    const systems = data?.systems || [];
+    if (!systems.length) {
+      systemEl.textContent = '暂无平台分布数据';
+    } else {
+      const denom = Math.max(1, totalShops);
+      for (const sys of systems) {
+        const pct = totalShops > 0 ? Math.round((sys.shopCount / denom) * 1000) / 10 : 0;
+        systemEl.append(renderBreakdownRow({
+          label: sys.label || sys.systemType,
+          countText: `${Number(sys.shopCount || 0).toLocaleString()} 家 (${pct}%)`,
+          ratio: pct,
+          tone: 'indigo',
+          subText: `有货 ${Number(sys.inStockCount || 0)} 家 · 商品 ${Number(sys.productCount || 0).toLocaleString()} 件`,
+          onClick: () => jumpToRanking({ system: sys.systemType }),
+        }));
+      }
+    }
+  }
+
+  const brandEl = $('#brandBreakdown');
+  if (brandEl) {
+    brandEl.replaceChildren();
+    const brands = catalog.brands || [];
+    if (!brands.length) {
+      brandEl.textContent = '暂无已聚合商品品牌数据';
+    } else {
+      const maxOffers = Math.max(1, ...brands.map(b => Number(b.offerCount || 0)));
+      for (const b of brands) {
+        const ratio = Math.round((Number(b.offerCount || 0) / maxOffers) * 100);
+        const priceTip = b.minPrice != null ? ` · 最低 ¥${b.minPrice}` : '';
+        brandEl.append(renderBreakdownRow({
+          label: b.brand,
+          countText: `${Number(b.offerCount || 0).toLocaleString()} 条报价`,
+          ratio,
+          tone: 'emerald',
+          subText: `${Number(b.groupCount || 0).toLocaleString()} 个规格组${priceTip}`,
+        }));
+      }
+    }
+  }
+}
+function renderSyncRunsPanel(data) {
+  const runsEl = $('#recentSyncRuns');
+  if (!runsEl) return;
+  runsEl.replaceChildren();
+  const runs = data?.recentSyncs || [];
+  if (!runs.length) {
+    runsEl.textContent = '暂无服务端采集批次记录（可使用上方浏览器端同步工具更新商品）';
+    return;
+  }
+  for (const run of runs) {
+    const item = document.createElement('div');
+    item.className = 'sync-run-item';
+    const left = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `${run.triggerSource === 'cron' ? '定时调度' : '手动触发'} · ${formatBjTime(run.createdAt)}`;
+    const detail = document.createElement('small');
+    detail.textContent = `处理 ${run.processedCount} 家 · 未变更跳过 ${run.skippedUnchanged} · 更新 ${run.updatedCount} · 失败 ${run.failedCount}`;
+    left.append(title, detail);
+    const badge = document.createElement('span');
+    badge.className = `run-badge ${run.failedCount > 0 ? 'has-error' : 'is-ok'}`;
+    badge.textContent = `写入 ~${Number(run.estimatedD1Writes || 0).toLocaleString()} 行`;
+    item.append(left, badge);
+    runsEl.append(item);
+  }
+}
+function renderOverview(data) {
+  const visits = data.visits || {};
+  const todayViews = Number(visits.todayViews || 0);
+  const yesterdayViews = Number(visits.yesterdayViews || 0);
+  const last7 = Number(visits.last7DaysViews || 0);
+  const last30 = Number(visits.last30DaysViews || 0);
+  const avg = Number(visits.avgDailyViews || 0);
+  const todayVisitors = Number(visits.todayVisitors || 0);
+  const yesterdayVisitors = Number(visits.yesterdayVisitors || 0);
+  const last7Visitors = Number(visits.last7DaysVisitors || 0);
+  const last30Visitors = Number(visits.last30DaysVisitors || 0);
+  const avgVisitors = Number(visits.avgDailyVisitors || 0);
+  const diff = todayViews - yesterdayViews;
+  const diffText = diff === 0 ? '与昨日持平' : (diff > 0 ? `较昨日 +${diff.toLocaleString()}` : `较昨日 ${diff.toLocaleString()}`);
+
+  $('#metricVisits').textContent = todayViews.toLocaleString();
+  if ($('#metricVisitsSub')) $('#metricVisitsSub').textContent = `实访 ${todayVisitors.toLocaleString()} 人 · 昨日 ${yesterdayViews.toLocaleString()} 次（${diffText}）`;
+  if ($('#metricVisits30d')) $('#metricVisits30d').textContent = last30.toLocaleString();
+  if ($('#metricVisits30dSub')) {
+    const peakText = visits.peakDay ? ` · 峰值 ${visits.peakDay.day.slice(5)}` : '';
+    $('#metricVisits30dSub').textContent = `实访 ${last30Visitors.toLocaleString()} 人 · 7 日 ${last7.toLocaleString()} 次${peakText}`;
+  }
+
+  renderMiniStats($('#overviewVisitStats'), [
+    ['今日', `${todayViews.toLocaleString()} 次`, `实访 ${todayVisitors.toLocaleString()} 人`],
+    ['近 7 天', `${last7.toLocaleString()} 次`, `实访 ${last7Visitors.toLocaleString()} 人`],
+    ['近 30 天', `${last30.toLocaleString()} 次`, `实访 ${last30Visitors.toLocaleString()} 人`],
+    ['有记录日均', `${avg.toLocaleString()} 次`, `日均 ${avgVisitors.toLocaleString()} 人`],
+  ]);
+  renderTrendBars($('#overviewVisitChart'), visits.days || [], visits.today);
+
+  const shops = data.shops || {};
+  const totalShops = Number(shops.total || 0);
+  const catalog = data.catalog || {};
+
+  $('#metricShops').textContent = totalShops.toLocaleString();
+  if ($('#metricShopsSub')) {
+    $('#metricShopsSub').textContent = `有货 ${Number(shops.inStock || 0).toLocaleString()} 家 · 近7日 +${Number(shops.added7d || 0)} ↗`;
+  }
+  if ($('#metricGroups')) {
+    $('#metricGroups').textContent = `${Number(catalog.groupCount || 0).toLocaleString()} 组`;
+  }
+  if ($('#metricGroupsSub')) {
+    const minP = catalog.minPrice != null ? `最低 ¥${catalog.minPrice}` : '暂无价格';
+    $('#metricGroupsSub').textContent = `${Number(catalog.offerCount || 0).toLocaleString()} 报价 · ${minP}`;
+  }
+  if ($('#metricSyncHealth')) {
+    $('#metricSyncHealth').textContent = `${Number(shops.healthRate || 0)}%`;
+  }
+  if ($('#metricSyncHealthSub')) {
+    $('#metricSyncHealthSub').textContent = `异常 ${Number(shops.error || 0)} · 24h同步 ${Number(shops.synced24h || 0)} ↗`;
+  }
+  if ($('#metricIntegrationCodes')) {
+    const withCode = Number(shops.withCode || 0);
+    const pct = totalShops > 0 ? Math.round((withCode / totalShops) * 1000) / 10 : 0;
+    $('#metricIntegrationCodes').textContent = `${withCode.toLocaleString()} 家`;
+    if ($('#metricIntegrationCodesSub')) $('#metricIntegrationCodesSub').textContent = `占比 ${pct}% · 点此筛选 ↗`;
+  }
+
+  const syncEl = $('#syncBreakdown');
+  if (syncEl) {
+    syncEl.replaceChildren();
+    const denom = Math.max(1, totalShops);
+    const states = [
+      { key: 'ready', label: '同步正常', count: Number(shops.ready || 0), tone: 'emerald' },
+      { key: 'pending', label: '待同步', count: Number(shops.pending || 0), tone: 'amber' },
+      { key: 'error', label: '同步异常', count: Number(shops.error || 0), tone: 'rose' },
+      { key: 'manual', label: '待适配 / 人工', count: Number(shops.manual || 0), tone: 'slate' },
+      { key: 'never', label: '从未同步过', count: Number(shops.neverSynced || 0), tone: 'amber' },
+    ];
+    for (const item of states) {
+      const pct = totalShops > 0 ? Math.round((item.count / denom) * 1000) / 10 : 0;
+      syncEl.append(renderBreakdownRow({
+        label: item.label,
+        countText: `${item.count.toLocaleString()} 家 (${pct}%)`,
+        ratio: pct,
+        tone: item.tone,
+        onClick: () => jumpToRanking({ sync: item.key }),
+      }));
+    }
+  }
+
+  const stockEl = $('#stockBreakdown');
+  if (stockEl) {
+    stockEl.replaceChildren();
+    const chips = [
+      { label: `有在售商品 ${Number(shops.inStock || 0)} 家`, onClick: () => jumpToRanking({ stock: 'in-stock' }), tone: 'emerald' },
+      { label: `空店（0 商品）${Number(shops.empty || 0)} 家`, onClick: () => jumpToRanking({ stock: 'empty' }), tone: 'rose' },
+      { label: `自动采集支持 ${Number(shops.syncSupported || 0)} 家`, tone: 'indigo' },
+      { label: `累计店铺商品 ${Number(shops.totalShopProducts || 0)} 件`, tone: 'slate' },
+    ];
+    for (const chip of chips) {
+      const btn = document.createElement(chip.onClick ? 'button' : 'span');
+      if (chip.onClick) {
+        btn.type = 'button';
+        btn.addEventListener('click', chip.onClick);
+      }
+      btn.className = `sub-chip tone-${chip.tone}${chip.onClick ? ' is-clickable' : ''}`;
+      btn.textContent = chip.label;
+      stockEl.append(btn);
+    }
+  }
+}
+async function loadOverview() {
+  try {
+    const data = await api('/api/control/overview?lite=1');
+    panelLoaded.overview = true;
+    renderOverview(data);
+  } catch {
+    $('#metricVisits').textContent = '暂不可用';
+  }
+}
+async function loadVisits(query = visitRangeQuery, force = false) {
+  if (visitLoading) {
+    if (!force) return;
+    try { await visitLoading; } catch {}
+    return loadVisits(visitRangeQuery, true);
+  }
+  const form = $('#visitRangeForm');
+  const apply = form.querySelector('button[type=submit]');
+  const refresh = $('#refreshVisits');
+  apply.disabled = refresh.disabled = true;
+  form.setAttribute('aria-busy', 'true');
+  try {
+    visitLoading = api(`/api/control/visits${query ? `?${query}` : ''}`);
+    const data = await visitLoading;
+    renderVisitsPanel(data);
+    visitRangeQuery = query;
+    appliedVisitRange = data.insightRange;
+    form.elements.from.max = form.elements.to.max = data.today;
+    panelLoaded.visits = true;
+  } finally {
+    form.removeAttribute('aria-busy');
+    apply.disabled = refresh.disabled = false;
+    visitLoading = null;
+  }
+}
+async function loadCatalog() {
+  const data = await api('/api/control/catalog');
+  panelLoaded.catalog = true;
+  renderCatalogPanel(data);
+}
+async function loadSyncRuns() {
+  const data = await api('/api/control/sync-runs');
+  panelLoaded.sync = true;
+  renderSyncRunsPanel(data);
+}
+function updateMetrics(data) {
+  if ($('#metricFavorites')) $('#metricFavorites').textContent = data.favoritesEnabled ? '已开启' : '已关闭';
+  if ($('#metricSubmissions')) $('#metricSubmissions').textContent = data.submissionsEnabled ? '接受提交' : '暂停收录';
+}
+$('#settingsForm').addEventListener('input',()=>setDirty(true));
+window.addEventListener('beforeunload',e=>{if(settingsDirty){e.preventDefault();e.returnValue='';}});
+function formatPriceNum(value) {
+ const num = Number(value);
+ return Number.isFinite(num) ? num.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') : '0';
+}
+function formatMoneyText(value) {
+ const text = String(value ?? '').trim();
+ if (!text) return '—';
+ return /^\d+(\.\d+)?$/.test(text) ? `¥${Number(text).toLocaleString()}` : text.replace(/^￥/, '¥');
+}
+function shopRow(shop) {
+ const row=document.createElement('article'); row.className='rank-row';
+ const main=document.createElement('div'); main.className='shop-manage-main';
+ const identity=document.createElement('div'); identity.className='shop-manage-identity';
+ const avatar=document.createElement('span'); avatar.className='shop-manage-avatar'; avatar.textContent=(shop.shopName || '店').trim().slice(0,1);
+ const info=document.createElement('div'); info.className='rank-row-info';
+ const titleLine=document.createElement('div'); titleLine.className='shop-title-line';
+ const name=document.createElement('strong'); name.textContent=shop.shopName;
+ const badges=document.createElement('div'); badges.className='shop-badge-list';
+ const sysLabel=({ldxp:'联动小铺',catfk:'云猫寄售','16688':'16688','acg-faka':'二次元发卡',dujiaoka:'独角数卡',other:'其它平台',unknown:'自建站'})[shop.systemType];
+ const offerStats=shop.offerStats || {};
+ const chips=[
+  {text:`前台 #${shop.rank||'—'}`},
+  ...(shop.manualRank?[{text:`人工 #${shop.manualRank}`,tone:'accent'}]:[]),
+  ...(shop.integrationCode?[{text:`对接码 ${shop.integrationCode}`,tone:'price'}]:[]),
+  ...(Number(shop.consecutiveFailures||0)>0?[{text:`连续失败 ${shop.consecutiveFailures} 次`,tone:'danger'}]:[]),
+  ...(Number(shop.staleDays||0)>0?[{text:`连续无货 ${shop.staleDays} 天`,tone:'warn'}]:[]),
+ ];
+ for(const chip of chips){const item=document.createElement('span');item.textContent=chip.text;if(chip.tone)item.className=`stat-chip-${chip.tone}`;badges.append(item);}
+ titleLine.append(name,badges);
+ const metaParts=[
+  ...(sysLabel?[sysLabel]:[]),
+  `${Number(shop.productCount||0).toLocaleString()} 件商品`,
+  `★ ${Number(shop.favoriteCount||0).toLocaleString()} 收藏`,
+  ...(shop.salesCount!=null&&Number(shop.salesCount)>0?[`销量 ${Number(shop.salesCount).toLocaleString()}`]:[]),
+  ...(shop.depositMoney!=null&&String(shop.depositMoney).trim()&&String(shop.depositMoney).trim()!=='0'?[`保证金 ${formatMoneyText(shop.depositMoney)}`]:[]),
+  ...(offerStats.minPrice!=null?[`最低 ¥${formatPriceNum(offerStats.minPrice)}`]:[]),
+  ...(Number(offerStats.brandCount||0)>0?[`${offerStats.brandCount} 个品牌`]:[]),
+ ];
+ const metaLine=document.createElement('div'); metaLine.className='shop-meta-line'; metaLine.textContent=metaParts.join(' · ');
+ const date=shop.lastSyncedAt?new Date(shop.lastSyncedAt):null;const sync=document.createElement('small');sync.textContent=`最近同步 ${date&&!Number.isNaN(date.getTime())?date.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'尚未同步'} · ${({ready:'正常',pending:'待同步',error:'同步异常',manual:'待适配'})[shop.syncState]||'未知'}`;
+ info.append(titleLine,metaLine,sync);identity.append(avatar,info);
+ const actions=document.createElement('div');actions.className='shop-manage-actions';
+ const open=document.createElement('a');try{const u=new URL(shop.shopUrl);if(['http:','https:'].includes(u.protocol)){open.href=u.href;open.target='_blank';open.rel='noopener noreferrer';open.textContent='访问店铺 ↗';actions.append(open);}}catch{}
+ const edit=document.createElement('button');edit.type='button';edit.className='shop-edit-trigger';edit.textContent='管理';edit.setAttribute('aria-label',`管理${shop.shopName}`);actions.append(edit);
+ const panel=document.createElement('div');panel.className='shop-editor';panel.hidden=true;
+ const title=document.createElement('div');title.className='shop-editor-title';title.textContent='店铺运行档案与设置';
+ const detailGrid=document.createElement('div');detailGrid.className='shop-detail-grid';
+ const offerText=Number(offerStats.offerCount||0)>0?`${Number(offerStats.offerCount).toLocaleString()} 条报价 · ${Number(offerStats.brandCount||0)} 品牌 · 低库存 ${Number(offerStats.lowStockCount||0)}`:'暂无在售报价';
+ const priceText=offerStats.minPrice!=null?`¥${formatPriceNum(offerStats.minPrice)} ~ ¥${formatPriceNum(offerStats.maxPrice)}（均价 ¥${formatPriceNum(offerStats.avgPrice)}）`:'暂无报价区间';
+ const visibilityText=`销量 ${shop.salesVisible===false?'隐藏':(shop.salesCount!=null?Number(shop.salesCount).toLocaleString():'未披露')} · 保证金 ${shop.depositVisible===false?'隐藏':(shop.depositMoney!=null&&String(shop.depositMoney).trim()?formatMoneyText(shop.depositMoney):'未披露')}`;
+ const detailItems=[
+  ['收录时间',formatBjTime(shop.createdAt)],
+  ['下次计划同步',shop.nextSyncAt?formatBjTime(shop.nextSyncAt):'随定时批次调度'],
+  ['销量与保证金',visibilityText],
+  ['在售报价概览',offerText],
+  ['价格区间与均价',priceText],
+  ['健康状态与 ID',`失败 ${Number(shop.consecutiveFailures||0)} 次 · 无货 ${Number(shop.staleDays||0)} 天 · ID ${shop.id}`],
+ ];
+ for(const [k,v] of detailItems){const cell=document.createElement('div');cell.className='shop-detail-item';const label=document.createElement('small');label.textContent=k;const val=document.createElement('span');val.textContent=v;cell.append(label,val);detailGrid.append(cell);}
+ let errorBanner=null;
+ if(shop.lastError){errorBanner=document.createElement('div');errorBanner.className='shop-error-banner';errorBanner.textContent=`最近同步报错：${shop.lastError}`;}
+ const form=document.createElement('form');form.className='shop-editor-form';
+ function field(label,type,value,placeholder){const wrap=document.createElement('label');wrap.textContent=label;const input=document.createElement('input');input.type=type;input.value=value;input.placeholder=placeholder||'';wrap.append(input);return [wrap,input];}
+ const [rankLabel,rank]=field('人工排名','number',shop.manualRank??'','自然排名');rank.min='1';rank.max='1000000';
+ const [codeLabel,code]=field('分销码 / 对接码','text',shop.integrationCode||'','未填写');code.maxLength=128;
+ const [countLabel,count]=field('收藏数量','number',shop.favoriteCount??0,'');count.min='0';count.max='1000000000';count.required=true;
+ const help=document.createElement('p');help.className='shop-editor-help';help.textContent='排名数字越小越靠前；店名或简介公开标注的对接码优先。';
+ const buttons=document.createElement('div');buttons.className='shop-editor-footer';const cancel=document.createElement('button');cancel.type='button';cancel.className='btn btn-secondary';cancel.textContent='取消';const save=document.createElement('button');save.type='submit';save.className='btn btn-primary';save.textContent='保存修改';buttons.append(cancel,save);
+ form.append(rankLabel,codeLabel,countLabel,help,buttons);
+ if(errorBanner)panel.append(title,detailGrid,errorBanner,form);else panel.append(title,detailGrid,form);
+ edit.addEventListener('click',()=>{panel.hidden=!panel.hidden;edit.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)rank.focus();});edit.setAttribute('aria-expanded','false');
+ cancel.addEventListener('click',()=>{rank.value=shop.manualRank??'';code.value=shop.integrationCode||'';count.value=shop.favoriteCount??0;panel.hidden=true;edit.setAttribute('aria-expanded','false');edit.focus();});
+ form.addEventListener('submit',async e=>{e.preventDefault();save.disabled=true;save.textContent='保存中…';try{await api('/api/control/shop-details',{shopId:shop.id,integrationCode:code.value.trim(),favoriteCount:Number(count.value),manualRank:rank.value?Number(rank.value):null});message('店铺设置已保存');await loadShops();}catch(err){message(`保存未完成：${err.message}，请重试`,true);save.disabled=false;save.textContent='重试保存';}});
+ const more=document.createElement('div');more.className='shop-manage-more';
+ const copy=document.createElement('button');copy.type='button';copy.textContent='复制网址';copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(shop.shopUrl);message('店铺网址已复制');}catch{message('复制失败，请手动复制网址',true);}});more.append(copy);
+ if(browserSupported(shop.shopUrl)){const syncButton=document.createElement('button');syncButton.type='button';syncButton.textContent='同步此店';syncButton.addEventListener('click',async()=>{syncButton.disabled=true;syncButton.textContent='同步中…';try{const {syncShopFromBrowser}=await import('/browser-shop-preview.mjs');const result=await syncShopFromBrowser(shop.id,shop.shopUrl);message(`同步完成：${result.result.itemCount} 件商品`);await loadShops();}catch(err){message(`同步失败：${err.message}`,true);syncButton.disabled=false;syncButton.textContent='重试同步';}});more.append(syncButton);}
+ const remove=document.createElement('button');remove.type='button';remove.className='danger-link';remove.textContent='删除店铺';remove.addEventListener('click',async()=>{if(!confirm(`确定删除“${shop.shopName}”？该操作会删除店铺、商品和历史记录。`))return;remove.disabled=true;try{await api('/api/control/delete-shop',{shopId:shop.id});message('店铺已删除');await loadShops();}catch(err){message(err.message,true);remove.disabled=false;}});more.append(remove);panel.append(more);
+ main.append(identity,actions);row.append(main,panel);return row;
+}
+async function loadShops() {
+ const ticket=++listRequest,list=$('#shopResults');list.setAttribute('aria-busy','true');list.style.opacity='.5';
+ const filter=$('#rankFilter')?.value||'all',sync=$('#rankSyncFilter')?.value||'all',stock=$('#rankStockFilter')?.value||'all',system=$('#rankSystemFilter')?.value||'all';
+ const filtered=Boolean(query||filter!=='all'||sync!=='all'||stock!=='all'||system!=='all');
+ if($('#rankResetFilters'))$('#rankResetFilters').hidden=!filtered;
+ try{const data=await api(`/api/control/rank-shops?${new URLSearchParams({q:query,page:String(page),sort:$('#rankSort').value,filter,sync,stock,system})}`);if(ticket!==listRequest)return;const s=data.summary||{};renderMiniStats($('#rankSummaryStats'),[['匹配店铺',`${Number(s.total??data.total??0).toLocaleString()} 家`],['有货 / 空店',`${Number(s.inStockCount||0).toLocaleString()} / ${Number(s.emptyCount||0).toLocaleString()}`],['累计商品 / 销量',`${Number(s.totalProducts||0).toLocaleString()} 件 · ${Number(s.totalSales||0).toLocaleString()} 销`],['对接码 / 人工置顶',`${Number(s.withCodeCount||0).toLocaleString()} / ${Number(s.manualRankedCount||0).toLocaleString()}`],['同步异常 / 收藏',`${Number(s.errorCount||0).toLocaleString()} 异常 · ${Number(s.totalFavorites||0).toLocaleString()} 藏`]]);pages=data.totalPages||1;list.replaceChildren();for(const shop of data.shops)list.append(shopRow(shop));if(!data.shops.length)list.textContent='没有找到符合条件的店铺，试试调整筛选项或关键词';$('#pageInfo').textContent=`第 ${page} / ${pages} 页 · ${data.total} 家店铺`;$('#previousPage').disabled=page<=1;$('#nextPage').disabled=page>=pages;if(!filtered)$('#metricShops').textContent=data.total.toLocaleString();}
+ finally{if(ticket===listRequest){list.removeAttribute('aria-busy');list.style.opacity='1';}}
+}
+async function showDashboard() {$('#loginPanel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;selectPanel(location.hash.slice(1));try{await Promise.all([loadSettings(),loadShops(),loadOverview()]);}catch(err){message(err.message,true);}}
+
+let sponsorPage = 1;
+let sponsorRequest = 0;
+const sponsorEndpoint = '/api/control/sponsors';
+const sponsorSwitches = [
+  { id: 'sponsorEnabled', field: 'enabled', action: 'set-enabled', label: '赞助推广', value: false, saving: false },
+  { id: 'sponsorAutoApprove', field: 'autoApprove', action: 'set-auto-approve', label: '自动审批', value: false, saving: false },
+];
+const sponsorStatuses = { unused: '未使用', pending: '待审批', rejected: '已驳回', active: '已使用 · 投放中', expired: '已到期', revoked: '已作废' };
+const sponsorPlacements = { carousel: '顶部轮播', 'fixed-1': '固定位 1', 'fixed-2': '固定位 2', 'fixed-3': '固定位 3', 'fixed-4': '固定位 4' };
+function sponsorPreviewLink(label, href) {
+  const link = document.createElement('a');
+  link.textContent = label;
+  link.href = href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  return link;
+}
+const sponsorDialog = $('#sponsorRecordDialog');
+const sponsorEditForm = $('#sponsorEditForm');
+const sponsorRecordImage = $('#sponsorRecordImage');
+const sponsorRecordImageLink = $('#sponsorRecordImageLink');
+const sponsorRecordImageError = $('#sponsorRecordImageError');
+const sponsorEditError = $('#sponsorEditError');
+let selectedSponsor;
+let sponsorImageObjectUrl;
+const sponsorTime = value => value == null ? '—' : formatBjTime(new Date(value).toISOString());
+const sponsorImagePath = id => sponsorEndpoint + '/image/' + encodeURIComponent(id);
+const sponsorPlacement = code => code.placementChoice && code.redeemedAt == null
+  ? '投稿人选择' : sponsorPlacements[code.placement];
+const sponsorStatus = (code, enabled) => code.status === 'active' && !enabled
+  ? '已使用 · 暂停展示' : sponsorStatuses[code.status];
+const sponsorDuration = code => code.duration + (code.unit === 'days' ? ' 天' : ' 个月');
+
+function showSponsorImage(url) {
+  if (sponsorImageObjectUrl) URL.revokeObjectURL(sponsorImageObjectUrl);
+  sponsorImageObjectUrl = url.startsWith('blob:') ? url : undefined;
+  sponsorRecordImageError.hidden = true;
+  sponsorRecordImageLink.hidden = !url;
+  if (url) sponsorRecordImage.src = url;
+  else sponsorRecordImage.removeAttribute('src');
+  if (url && !sponsorImageObjectUrl) sponsorRecordImageLink.href = url;
+  else sponsorRecordImageLink.removeAttribute('href');
+}
+
+function showSponsorEditor() {
+  $('#sponsorRecordHeading').textContent = '编辑赞助内容';
+  $('#sponsorRecordDetails').hidden = true;
+  sponsorEditForm.hidden = false;
+  sponsorEditForm.elements.title.focus();
+}
+
+function openSponsorRecord(code, enabled, edit) {
+  selectedSponsor = code;
+  $('#sponsorRecordHeading').textContent = '赞助详情';
+  const details = $('#sponsorRecordFields');
+  const link = /^https?:\/\//i.test(code.linkUrl || '') ? sponsorPreviewLink(code.linkUrl, code.linkUrl) : '—';
+  details.replaceChildren();
+  for (const [label, value] of [
+    ['标题', code.title || '—'], ['跳转链接', link],
+    ['授权码尾号', '…' + code.codeHint], ['状态', sponsorStatus(code, enabled)],
+    ['投放位置', sponsorPlacement(code)], ['时长', sponsorDuration(code)],
+    ['生成时间', sponsorTime(code.createdAt)], ['提交时间', sponsorTime(code.redeemedAt)],
+    ['审批时间', sponsorTime(code.reviewedAt)], ['到期时间', sponsorTime(code.expiresAt)],
+    ['作废时间', sponsorTime(code.revokedAt)],
+  ]) {
+    const field = document.createElement('div');
+    const term = document.createElement('dt');
+    const description = document.createElement('dd');
+    term.textContent = label;
+    description.append(value);
+    field.append(term, description);
+    details.append(field);
+  }
+  sponsorEditForm.reset();
+  sponsorEditForm.elements.title.value = code.title || '';
+  sponsorEditForm.elements.linkUrl.value = code.linkUrl || '';
+  sponsorEditError.hidden = true;
+  sponsorEditForm.hidden = true;
+  $('#sponsorRecordDetails').hidden = false;
+  $('#sponsorRecordEdit').hidden = code.redeemedAt == null;
+  showSponsorImage(code.redeemedAt == null ? '' : sponsorImagePath(code.id));
+  sponsorDialog.showModal();
+  if (edit) showSponsorEditor();
+}
+
+sponsorRecordImage.addEventListener('error', () => { sponsorRecordImageError.hidden = false; });
+$('#sponsorRecordEdit').addEventListener('click', showSponsorEditor);
+for (const button of sponsorDialog.querySelectorAll('[data-sponsor-close]')) {
+  button.addEventListener('click', () => sponsorDialog.close());
+}
+sponsorDialog.addEventListener('close', () => showSponsorImage(''));
+sponsorDialog.addEventListener('cancel', event => {
+  if (sponsorEditForm.hasAttribute('aria-busy')) event.preventDefault();
+});
+sponsorEditForm.elements.image.addEventListener('change', event => {
+  const file = event.target.files[0];
+  sponsorEditError.hidden = true;
+  if (file?.size > 5 * 1024 * 1024) {
+    event.target.value = '';
+    sponsorEditError.textContent = '图片最大支持 5 MB，请重新选择。';
+    sponsorEditError.hidden = false;
+    showSponsorImage(sponsorImagePath(selectedSponsor.id));
+    return;
+  }
+  showSponsorImage(file ? URL.createObjectURL(file) : sponsorImagePath(selectedSponsor.id));
+});
+sponsorEditForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (sponsorEditForm.hasAttribute('aria-busy')) return;
+  const { title, linkUrl, image } = sponsorEditForm.elements;
+  const payload = new FormData();
+  payload.set('title', title.value);
+  payload.set('linkUrl', linkUrl.value);
+  if (image.files[0]) payload.set('image', image.files[0]);
+  const controls = sponsorEditForm.querySelectorAll('fieldset, button');
+  const save = sponsorEditForm.querySelector('[type=submit]');
+  sponsorEditForm.setAttribute('aria-busy', 'true');
+  controls.forEach(control => { control.disabled = true; });
+  save.textContent = '保存中…';
+  sponsorEditError.hidden = true;
+  try {
+    await api(sponsorEndpoint + '/content/' + encodeURIComponent(selectedSponsor.id), payload);
+  } catch (error) {
+    sponsorEditError.textContent = error.message;
+    sponsorEditError.hidden = false;
+    return;
+  } finally {
+    sponsorEditForm.removeAttribute('aria-busy');
+    controls.forEach(control => { control.disabled = false; });
+    save.textContent = '保存修改';
+  }
+  sponsorDialog.close();
+  message('赞助内容已保存');
+  refreshSponsors();
+});
+
+function renderSponsorSwitch(setting) {
+  const input = $('#' + setting.id);
+  if (!setting.saving) input.checked = setting.value;
+  input.disabled = setting.saving;
+  const status = $('#' + setting.id + 'Status');
+  status.dataset.enabled = String(setting.value && !setting.saving);
+  status.textContent = setting.saving ? '正在保存…' : setting.value ? '已开启' : '已关闭';
+}
+async function loadSponsors() {
+  const request = ++sponsorRequest;
+  const status = $('#sponsorStatusFilter').value;
+  const data = await api(sponsorEndpoint + '?' + new URLSearchParams({ status, page: String(sponsorPage) }));
+  if (request !== sponsorRequest) return;
+  for (const setting of sponsorSwitches) {
+    if (setting.saving) continue;
+    setting.value = data[setting.field] === true;
+    renderSponsorSwitch(setting);
+  }
+  if (!data.codes.length && sponsorPage > 1) {
+    sponsorPage -= 1;
+    return loadSponsors();
+  }
+  const list = $('#sponsorAdminRows');
+  list.replaceChildren();
+  $('#sponsorAdminPage').textContent = `第 ${data.page} 页`;
+  $('#sponsorPreviousBtn').disabled = data.page <= 1;
+  $('#sponsorNextBtn').disabled = !data.hasMore;
+  $('#sponsorCapacity').replaceChildren(...data.placements.map(slot => {
+    const badge = document.createElement('span');
+    const count = document.createElement('b');
+    count.textContent = slot.capacity == null ? `${slot.occupied} 条` : `${slot.occupied}/${slot.capacity}`;
+    badge.append(sponsorPlacements[slot.placement], count);
+    return badge;
+  }));
+  if (!data.codes.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '没有符合条件的授权码';
+    list.append(empty);
+    return;
+  }
+  const statusTone = code => {
+    if (code.status === 'pending') return 'is-pending';
+    if (code.status === 'active' && data.enabled) return 'is-active';
+    if (code.status === 'rejected' || code.status === 'revoked' || code.status === 'expired') return 'is-danger';
+    return '';
+  };
+  for (const code of data.codes) {
+    const row = document.createElement('article');
+    row.className = 'sponsor-record-row';
+
+    const metaCol = document.createElement('div');
+    metaCol.className = 'sponsor-col-meta';
+    const codeChip = document.createElement('span');
+    codeChip.className = 'sponsor-code-chip';
+    codeChip.textContent = '…' + code.codeHint;
+    const statusPill = document.createElement('span');
+    const tone = statusTone(code);
+    statusPill.className = `sponsor-status-pill${tone ? ` ${tone}` : ''}`;
+    statusPill.textContent = sponsorStatus(code, data.enabled);
+    const slotMeta = document.createElement('span');
+    slotMeta.className = 'sponsor-slot-meta';
+    slotMeta.textContent = `${sponsorPlacement(code)} · ${sponsorDuration(code)}`;
+    metaCol.append(codeChip, statusPill, slotMeta);
+
+    const contentCol = document.createElement('div');
+    contentCol.className = 'sponsor-col-content';
+    if (code.redeemedAt != null) {
+      const preview = sponsorPreviewLink('大图', sponsorImagePath(code.id));
+      preview.className = 'sponsor-thumb-link';
+      preview.title = '点击查看原图';
+      const image = document.createElement('img');
+      image.alt = '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => { preview.textContent = '重试'; }, { once: true });
+      image.src = preview.href;
+      preview.replaceChildren(image);
+      contentCol.append(preview);
+    }
+    const contentText = document.createElement('div');
+    contentText.className = 'sponsor-content-text';
+    const titleEl = document.createElement('strong');
+    titleEl.textContent = code.title || (code.redeemedAt == null ? '待投稿使用' : '未填写标题');
+    contentText.append(titleEl);
+    if (/^https?:\/\//i.test(code.linkUrl || '')) {
+      const link = sponsorPreviewLink(code.linkUrl, code.linkUrl);
+      link.className = 'sponsor-content-link';
+      link.title = code.linkUrl;
+      contentText.append(link);
+    }
+    const contentBtns = document.createElement('div');
+    contentBtns.className = 'sponsor-content-btns';
+    for (const label of code.redeemedAt == null ? ['查看详情'] : ['查看详情', '编辑']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary';
+      button.textContent = label;
+      button.addEventListener('click', () => openSponsorRecord(code, data.enabled, label === '编辑'));
+      contentBtns.append(button);
+    }
+    contentText.append(contentBtns);
+    contentCol.append(contentText);
+
+    const timesCol = document.createElement('div');
+    timesCol.className = 'sponsor-col-times';
+    const timePairs = [
+      ['生成', sponsorTime(code.createdAt)],
+      ...(code.redeemedAt != null ? [['提交', sponsorTime(code.redeemedAt)]] : []),
+      ...(code.reviewedAt != null ? [['审批', sponsorTime(code.reviewedAt)]] : []),
+      ...(code.expiresAt != null ? [['到期', sponsorTime(code.expiresAt)]] : []),
+    ];
+    for (const [label, value] of timePairs) {
+      const line = document.createElement('div');
+      const k = document.createElement('span');
+      k.textContent = label;
+      const v = document.createElement('span');
+      v.textContent = value;
+      line.append(k, v);
+      timesCol.append(line);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'sponsor-admin-actions';
+    const commands = [['delete', '删除', '授权码将被永久删除。']];
+    if (['active', 'unused'].includes(code.status)) commands.unshift(['revoke', '作废', '授权码将失效，正在展示的内容会下架。']);
+    if (code.status === 'pending') {
+      commands.unshift(['approve', '通过', data.enabled ? '推广将开始展示并计算有效期。' : '有效期将立即开始，开启赞助推广后才会展示。'],
+        ['reject', '驳回', '此投稿将结束审批，此授权码已使用。']);
+    }
+    for (const [action, label, confirmation] of commands) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = action === 'approve' ? 'btn btn-primary' : (action === 'delete' ? 'btn btn-secondary btn-danger-ghost' : 'btn btn-secondary');
+      button.textContent = label;
+      button.addEventListener('click', async () => {
+        if (!confirm(`确定${label}尾号 ${code.codeHint} 的记录？${confirmation}`)) return;
+        const buttons = actions.querySelectorAll('button');
+        buttons.forEach(entry => { entry.disabled = true; });
+        try {
+          await api(sponsorEndpoint, { action, id: code.id });
+          await loadSponsors();
+          message(`已${label}`);
+        } catch (error) { message(error.message, true); }
+        finally { buttons.forEach(entry => { entry.disabled = false; }); }
+      });
+      actions.append(button);
+    }
+
+    row.append(metaCol, contentCol, timesCol, actions);
+    list.append(row);
+  }
+}
+
+const sponsorForm = $('#sponsorGenerateForm');
+sponsorForm?.elements.unit.addEventListener('change', () => {
+  const months = sponsorForm.elements.unit.value === 'months';
+  sponsorForm.elements.duration.max = months ? '12' : '365';
+  sponsorForm.elements.duration.value = months ? '1' : '30';
+});
+if (sponsorForm) submitForm('#sponsorGenerateForm', async form => {
+  const { codes } = await api(sponsorEndpoint, {
+    action: 'create', quantity: Number(form.elements.quantity.value),
+    duration: Number(form.elements.duration.value), unit: form.elements.unit.value, placement: form.elements.placement.value,
+  });
+  $('#sponsorGenerated textarea').value = codes.join('\n');
+  $('#sponsorGenerated').hidden = false;
+  sponsorPage = 1;
+  $('#sponsorStatusFilter').value = 'all';
+  message(`已生成 ${codes.length} 个授权码，请复制保存`);
+  await loadSponsors();
+});
+$('#sponsorCopyBtn')?.addEventListener('click', async () => {
+  const output = $('#sponsorGenerated textarea');
+  try { await navigator.clipboard.writeText(output.value); message('已复制全部授权码'); }
+  catch { output.select(); message('请手动复制已选中的授权码', true); }
+});
+const refreshSponsors = () => loadSponsors().catch(err => message(err.message, true));
+for (const setting of sponsorSwitches) {
+  $('#' + setting.id).addEventListener('change', async event => {
+    const checked = event.currentTarget.checked;
+    setting.saving = true;
+    renderSponsorSwitch(setting);
+    try {
+      const data = await api(sponsorEndpoint, { action: setting.action, [setting.field]: checked });
+      setting.value = data[setting.field] === true;
+      message(setting.label + (setting.value ? '已开启' : '已关闭'));
+    } catch (error) {
+      message(error.message, true);
+    } finally {
+      setting.saving = false;
+      renderSponsorSwitch(setting);
+      refreshSponsors();
+    }
+  });
+}
+$('#sponsorStatusFilter')?.addEventListener('change', () => { sponsorPage = 1; refreshSponsors(); });
+$('#sponsorRefreshBtn')?.addEventListener('click', refreshSponsors);
+$('#sponsorPreviousBtn')?.addEventListener('click', () => { if (sponsorPage > 1) sponsorPage -= 1; refreshSponsors(); });
+$('#sponsorNextBtn')?.addEventListener('click', () => { sponsorPage += 1; refreshSponsors(); });
+
+submitForm('#loginForm',async f=>{await api('/api/control/login',{password:f.elements.password.value});f.reset();notice.hidden=true;await showDashboard();});
+submitForm('#settingsForm',async f=>{const data={favoritesEnabled:f.elements.favoritesEnabled.checked,manualRankEnabled:f.elements.manualRankEnabled.checked,submissionsEnabled:f.elements.submissionsEnabled.checked,openStoreUrl:f.elements.openStoreUrl.value,openStoreUrls:Object.fromEntries(['catfk','16688','acg-faka','dujiaoka','other','unknown'].map(key=>[key,f.elements[`store_${key}`].value.trim()]))};await api('/api/control/settings',data);setDirty(false);updateMetrics(data);message('站点设置已保存');await Promise.all([loadShops(),loadOverview()]);});
+submitForm('#aiSettingsForm',async f=>{const data={aiApiBase:f.elements.aiApiBase.value.trim(),aiModel:f.elements.aiModel.value.trim()};const key=f.elements.aiApiKey.value.trim();if(key)data.aiApiKey=key;if(f.elements.clearAiApiKey.checked)data.aiApiKey='';const saved=await api('/api/control/ai-settings',data);f.elements.aiApiKey.value='';f.elements.clearAiApiKey.checked=false;syncAiKeyHint(!!saved.aiApiKeyConfigured,!!saved.aiReady);$('#aiSettingsHint').textContent=saved.aiReady?'模型已启用':'模型未启用';message(saved.aiReady?'模型配置已保存并启用':'模型配置已保存，但接口地址、模型或 API Key 不完整，模型未启用',!saved.aiReady);});
+submitForm('#secretForm',async f=>{await api('/api/control/ingest-secret',{secret:f.elements.secret.value});f.reset();message('同步密钥已更新，请更新同步工具配置');await loadOverview();});
+submitForm('#passwordForm',async f=>{await api('/api/control/password',{oldPassword:f.elements.oldPassword.value,newPassword:f.elements.newPassword.value});f.reset();$('#dashboard').hidden=true;$('#loginPanel').hidden=false;$('#logout').hidden=true;message('密码已修改，请重新登录');});
+$('#logout').addEventListener('click',async()=>{try{await api('/api/control/logout',{});settingsDirty=false;Object.keys(panelLoaded).forEach(k=>panelLoaded[k]=false);location.reload();}catch(err){message(err.message,true);}});
+submitForm('#searchForm',async()=>{query=$('#searchInput').value.trim();page=1;await loadShops();});
+for(const sel of ['#rankSort','#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])$(sel)?.addEventListener('change',()=>{page=1;loadShops().catch(err=>message(err.message,true));});
+$('#rankResetFilters')?.addEventListener('click',()=>{$('#searchInput').value='';query='';for(const sel of ['#rankFilter','#rankSyncFilter','#rankStockFilter','#rankSystemFilter'])if($(sel))$(sel).value='all';page=1;loadShops().catch(err=>message(err.message,true));});
+function bindRefresh(selector, loader, idleLabel, successMessage) {
+  $(selector)?.addEventListener('click', async () => {
+    const btn = $(selector);
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '刷新中…';
+    try {
+      await loader();
+      message(successMessage);
+    } catch (err) {
+      message(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = idleLabel;
+    }
+  });
+}
+bindRefresh('#refreshOverview', loadOverview, '↻ 刷新概览', '工作台概览已刷新');
+$('#refreshVisits').addEventListener('click', () => {
+  loadVisits().then(() => message('当前范围访客数据已刷新')).catch(err => message(err.message, true));
+});
+$('#visitRange').addEventListener('change', ({ currentTarget }) => {
+  const custom = currentTarget.value === 'custom';
+  const fields = $('#visitCustomRange');
+  fields.hidden = fields.disabled = !custom;
+  if (custom && appliedVisitRange) {
+    const { from, to } = currentTarget.form.elements;
+    if (!from.value) from.value = appliedVisitRange.from;
+    if (!to.value) to.value = appliedVisitRange.to;
+  }
+});
+$('#visitRangeForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const query = new URLSearchParams(new FormData(event.currentTarget));
+  loadVisits(query.toString()).catch(err => message(err.message, true));
+});
+bindRefresh('#refreshCatalog', loadCatalog, '↻ 刷新分布数据', '平台与品牌分布已刷新');
+bindRefresh('#refreshSyncRuns', loadSyncRuns, '↻ 刷新批次', '采集批次已刷新');
+document.addEventListener('click',e=>{const el=e.target.closest('[data-jump-sync],[data-jump-stock],[data-jump-filter]');if(!el)return;jumpToRanking({sync:el.dataset.jumpSync||'all',stock:el.dataset.jumpStock||'all',filter:el.dataset.jumpFilter||'all'});});
+$('#previousPage').addEventListener('click',()=>{if(page>1){page--;loadShops().catch(err=>message(err.message,true));}});
+$('#nextPage').addEventListener('click',()=>{if(page<pages){page++;loadShops().catch(err=>message(err.message,true));}});
+api('/api/control/session').then(showDashboard).catch(()=>{});
+
+// Browser-local checkpoint: no credentials or product snapshots are retained.
+const syncKey = 'prism_admin_browser_sync_v1';
+let syncRunning = false, syncPaused = false;
+const syncRead = () => { try { return JSON.parse(localStorage.getItem(syncKey) || 'null'); } catch { return null; } };
+const syncSave = (state) => localStorage.setItem(syncKey, JSON.stringify(state));
+const elapsed = ms => { const s=Math.floor(ms/1000); return `${Math.floor(s/3600)}时${Math.floor(s%3600/60)}分${s%60}秒`; };
+function renderSync() {
+  const state=syncRead(); const done=state?.index || 0, total=state?.shops?.length || 0;
+  $('#syncProgress').max=Math.max(total,1); $('#syncProgress').value=done;
+  $('#syncStatus').textContent=state ? `${syncRunning?'正在同步':done<total?'已暂停':'已完成'} · ${done} / ${total} 家 · 成功 ${state.success} · 失败 ${state.failed} · 不支持 ${state.unsupported} · 耗时 ${elapsed(state.elapsed || 0)}` : '尚未开始';
+  if ($('#overviewSync')) $('#overviewSync').textContent=state ? `${syncRunning?'同步中':done<total?'上次暂停':'上轮完成'} · ${done} / ${total} 家，点击查看进度` : '从当前网络更新商品，支持断点续跑';
+  $('#syncMin').disabled=syncRunning; $('#syncMax').disabled=syncRunning;
+  $('#syncStart').disabled=syncRunning || !!(state && done<total); $('#syncResume').hidden=syncRunning || !state || done>=total; $('#syncStop').hidden=!syncRunning; $('#syncRetryFailed').hidden=syncRunning || !state || done<total || !state.failures?.length;
+  const list=$('#syncLog'); list.replaceChildren(); for (const line of [...(state?.logs || [])].reverse()) { const li=document.createElement('li'); li.textContent=line; list.append(li); }
+  if(state && !syncRunning) { $('#syncMin').value=state.min; $('#syncMax').value=state.max; }
+}
+function intervals() {
+  const min=Number($('#syncMin').value), max=Number($('#syncMax').value);
+  if (!Number.isFinite(min)||!Number.isFinite(max)||min<0.1||max>60||min>max) throw new Error('间隔须为 0.1～60 秒，且最小值不能大于最大值');
+  return {min,max};
+}
+async function listSyncShops() {
+  const data=await api('/api/control/sync-shops');
+  return data.shops;
+}
+function browserSupported(url) { try { const u=new URL(url); return ['wzyp.cn','pay.ldxp.cn','catfk.com','www.catfk.com'].includes(u.hostname.toLowerCase()) && /^\/shop\/[a-zA-Z0-9_-]+\/?$/.test(u.pathname); } catch { return false; } }
+function failureKind(error) {
+  const msg=String(error?.message || error);
+  if (/403|429|风控|频繁|限流|验证页面|浏览器验证|非.?json/i.test(msg)) return '源站限制或验证';
+  if (/超时|timeout|aborted/i.test(msg)) return '网络超时';
+  if (/跨域|无法连接|fetch failed|network/i.test(msg)) return '网络或跨域';
+  if (/不完整|缺少标识|字段|分页/i.test(msg)) return '数据不完整';
+  if (/没有可回传|列表为空/i.test(msg)) return '空商品列表';
+  return '其他错误';
+}
+async function runSync(mode) {
+  if(syncRunning) return;
+  const start=async () => {
+    syncRunning=true; syncPaused=false; renderSync();
+    let state=mode === 'resume' ? syncRead() : null;
+    const previous=mode === 'retry' ? syncRead() : null;
+    try {
+      const range=intervals();
+      if(!state) { const shops=previous ? (previous.failures || []).map(f=>f.shop) : await listSyncShops(); if(!shops.length) throw new Error('没有可重试的失败店铺'); state={shops,index:0,success:0,failed:0,unsupported:0,elapsed:0,logs:previous ? [...previous.logs,`${new Date().toLocaleString()} · 手动重试失败店铺`] : [],failures:[],...range}; syncSave(state); }
+      else { Object.assign(state,range); state.failures ||= []; syncSave(state); }
+      const {syncShopFromBrowser}=await import('/browser-shop-preview.mjs');
+      let lastRequest=0, lastDelay=0;
+      const pacedFetch=async (...args) => { const remaining=lastRequest+lastDelay-Date.now(); if(remaining>0) await new Promise(r=>setTimeout(r,remaining)); if(syncPaused) throw new Error('已暂停'); lastRequest=Date.now(); lastDelay=(state.min+Math.random()*(state.max-state.min))*1000; return fetch(...args); };
+      while(state.index<state.shops.length && !syncPaused) {
+        const shop=state.shops[state.index], started=Date.now(); let outcome;
+        if(!browserSupported(shop.url)) { state.unsupported++; outcome='不支持浏览器同步'; }
+        else try { const result=await syncShopFromBrowser(shop.id,shop.url,{fetcher:pacedFetch,wait:async()=>{}}); state.success++; outcome=`成功 · ${result.result.itemCount} 件`; }
+        catch(err) { if(syncPaused) break; state.failed++; const kind=failureKind(err); const reason=String(err.message || err).slice(0,200); state.failures.push({shop,kind,reason}); outcome=`失败 · ${kind} · ${reason}`; }
+        state.elapsed+=Date.now()-started; state.index++; state.logs.push(`${new Date().toLocaleString()} · ${shop.name} · ${outcome}`); syncSave(state); renderSync();
+      }
+      if(state.index>=state.shops.length) message('本轮同步完成，请查看记录');
+    } catch(err) { message(`同步暂停：${err.message}`,true); }
+    finally { syncRunning=false; renderSync(); }
+  };
+  if (!navigator.locks) { message('当前浏览器不支持同步锁，请使用新版 Chrome 或 Edge',true); return; }
+  await navigator.locks.request('prism-browser-sync',{ifAvailable:true},async lock=>{ if(!lock) { message('另一个页面正在同步',true); return; } await start(); });
+}
+$('#syncStart').addEventListener('click',()=>runSync('new'));
+$('#syncResume').addEventListener('click',()=>runSync('resume'));
+$('#syncRetryFailed').addEventListener('click',()=>runSync('retry'));
+$('#syncStop').addEventListener('click',()=>{syncPaused=true; message('正在暂停当前店铺');});
+renderSync();
