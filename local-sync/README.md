@@ -1,6 +1,6 @@
 # 本地同步
 
-本目录的 `config.env` 记录目标站点和密钥：
+在仓库根目录运行同步命令。已有配置直接使用；首次配置时复制 `local-sync/config.example.env` 为 `local-sync/config.env`，再填写以下值。
 
 ```dotenv
 API_BASE=https://parity.sirhao.top
@@ -9,17 +9,19 @@ SYNC_INTERVAL_MIN_MS=1000
 SYNC_INTERVAL_MAX_MS=2000
 ```
 
-配置文件不应提交或分享。若不存在，可从 `config.example.env` 复制；环境变量优先，密钥为空时兼容项目根目录 `.dev.vars`。Node.js 需支持 JSON 模块导入（建议 Node 22 以上）。
+配置文件不应提交或分享。环境变量优先，密钥为空时兼容项目根目录 `.dev.vars`。Node.js 需支持 JSON 模块导入（建议 Node 22 以上）。
 
 仅通过环境变量把 `API_BASE` 切换到另一域名、协议或端口时，预览会匿名读取，正式同步需显式提供新目标的 `INGEST_SECRET`。目标地址须使用 HTTPS，本机回环地址可用 HTTP 测试。
 
 目标站的整店报价接口 `GET /api/shops/:id/products` 需要有效的 Bearer 同步密钥。16688 或 LDXP 的下架复核需要读取旧报价，因此即使是只读预览也应配置对应目标的 `INGEST_SECRET`。目标站拒绝鉴权时，本轮会停止，未复核数据保留。
 
+把示例 `S123456` 换成要同步的店铺 ID 或链接末段。预览不会推送或删除数据。
+
 ```bash
-npm run sync:local -- --shop=King                 # 仅预览
-npm run sync:local -- --shop=King --apply         # 同步一店
-npm run sync:local -- --apply --shard=1/3        # 第 1 片
-npm run sync:local -- --apply --shard=1/3 --resume # 继续同一轮
+npm run sync:local -- --shop=S123456                    # 仅预览
+npm run sync:local -- --shop=S123456 --apply            # 正式同步，可能删除已确认不可用的数据
+npm run sync:local -- --shop=S123456 --apply --resume   # 沿用原命令的范围和断点
+npm run sync:local -- --verify-all-16688 --limit=1      # 仅预览一家 16688
 ```
 
 不指定店铺或分片会处理所有支持的已收录店铺。按店铺 ID 的 SHA-256 稳定分片；不同地点约定相同总数，每个地点使用不同序号，例如 `1/3`、`2/3`、`3/3`。**分片只避免店铺重复，不协调不同机器的请求速率**；同一出口 IP 的进程不要并行运行，不同出口同时运行也会叠加源站压力，建议错峰。分片期间总数不要变，新增店铺在下一轮覆盖。
